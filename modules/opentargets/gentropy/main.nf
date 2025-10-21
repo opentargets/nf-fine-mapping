@@ -20,11 +20,10 @@ process GENTROPY {
     def prefix = task.ext.prefix ?: "${meta.id}"
     def VERSION = '2.4.2-internal.3' // WARN: Version information not provided by tool on CLI. Please update this string when bumping container versions.
     """
-    gentropy \\
         $args \\
         step=gwas_catalog_sumstat_preprocess \\
-        -o ${prefix}.parquet \\
-        $tsv
+        step.out_sumstats_path=${prefix}.parquet \\
+        step.raw_sumstats_path=$tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
