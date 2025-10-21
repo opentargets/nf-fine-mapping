@@ -10,7 +10,7 @@ process GENTROPY {
 
     output:
     tuple val(meta), path("*.parquet"), emit: parquet
-    path "versions.yml"           , emit: versions
+    path "versions.yml"               , emit: versions
 
     when:
     task.ext.when == null || task.ext.when
