@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nf-core/modules/master/modules/meta-schema.json
+name: "gentropy"
+description: Open Targets python framework for post-GWAS analysis
+keywords:
+  - functional
+  - genomics
+  - gwas
+tools:
+  - "gentropy":
+      description: "Open Targets python framework for post-GWAS analysis"
+      homepage: "https://github.com/opentargets/gentropy"
+      documentation: "https://opentargets.github.io/gentropy/"
+      tool_dev_url: "https://github.com/opentargets/gentropy"
+      doi: ""
+      licence: ["Apache-2.0"]
+      identifier: bio.tools:gentropy
+
+input:
+  - - meta:
+        type: map
+        description: |
+          Groovy Map containing sample information
+          e.g. `[ id:'sample1' ]`
+    - bam:
+        type: file
+        description: TSV file
+        pattern: "*.{tsv}"
+        ontologies:
+          - edam: "http://edamontology.org/format_3475" # TSV
+
+output:
+  parquet:
+    - - meta:
+          type: map
+          description: |
+            Groovy Map containing sample information
+            e.g. `[ id:'sample1' ]`
+      - "*.parquet":
+          type: file
+          description: Parquet file
+          pattern: "*.{parquet}"
+
+  versions:
+    - "versions.yml":
+        type: file
+        description: File containing software versions
+        pattern: "versions.yml"
+        ontologies:
+          - edam: "http://edamontology.org/format_3750" # YAML
+
+authors:
+  - "@camlloyd"
+maintainers:
+  - "@camlloyd"
