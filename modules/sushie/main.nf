@@ -1,23 +1,29 @@
 
-test_sumstats = channel.fromPath("/home/louwenjjr/sushie/data/AFR.gwas")
-test_LD = channel.fromPath("/home/louwenjjr/sushie/data/AFR.ld")
+test_sumstats = "/home/louwenjjr/sushie/data/EUR.gwas /home/louwenjjr/sushie/data/AFR.gwas"
+test_ld = "/home/louwenjjr/sushie/data/EUR.ld /home/louwenjjr/sushie/data/AFR.ld"
+test_sample_sizes = "489 639"
+output = "test_output"
 
 
 workflow {
-    run_sushie(test_sumstats, test_LD, channel.fromPath("test_output"), 639)
+    run_sushie(test_sumstats, test_ld, test_sample_sizes, output)
 }
-
 
 process run_sushie {
     input:
-    path sumstats_file
-    path ld // LD file, with column names, variant ids need to correspond to sumstats file
-    path output_prefix
-    val sample_size
+    val study_locus_files
+    // LD files: with column names (variant ids), variant ids need to correspond to sumstats file
+    val ld_files
+    val sample_sizes
+    val output_prefix
+
+    output:
+    val "*.sushie.corr.tsv", emit: corr
+    val "*.sushie.cs.tsv", emit: cs
+    val "*.sushie.weights.tsv", emit: weights
 
     shell:
     """
-    # need to somehow explode the other columns based on number of ancestries
-    sushie finemap --summary --gwas $sumstats_file --ld $ld --sample-size $sample_size --output $output_prefix
+    sushie finemap --summary --gwas $study_locus_files --ld $ld_files --sample-size $sample_sizes --output $output_prefix
     """
 }
