@@ -1,0 +1,3 @@
+[submodule "modules/opentargets/gentropy/gentropy"]
+	path = modules/opentargets/gentropy/gentropy
+	url = git@github.com:opentargets/gentropy.git
