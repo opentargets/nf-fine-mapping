@@ -27,6 +27,6 @@ process SUSHIE {
 
     shell:
     """
-    sushie finemap --summary --gwas $study_locus_files --ld $ld_files --sample-size $sample_sizes --output $output_prefix
+    sushie finemap --summary --gwas $study_locus_files --ld $ld_files --sample-size $sample_sizes --output $output_prefix --gwas-header chromosome variantId position referenceAllele alternateAllele zScore
     """
 }
