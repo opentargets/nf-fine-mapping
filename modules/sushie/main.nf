@@ -1,11 +1,16 @@
 
-test_sumstats = "/home/louwenjjr/sushie/data/EUR.gwas /home/louwenjjr/sushie/data/AFR.gwas"
-test_ld = "/home/louwenjjr/sushie/data/EUR.ld /home/louwenjjr/sushie/data/AFR.ld"
-test_sample_sizes = "489 639"
-output = "test_output"
-
-
 workflow {
+    test_sumstats = Channel
+        .fromPath('/workspaces/nf-fine-mapping/sushie/data/{EUR,AFR}.gwas')
+        .collect()
+
+    test_ld = Channel
+        .fromPath('/workspaces/nf-fine-mapping/sushie/data/{EUR,AFR}.ld')
+        .collect()
+
+    test_sample_sizes = Channel.value('489 639')
+    output            = Channel.value('test_output')
+    
     SUSHIE(test_sumstats, test_ld, test_sample_sizes, output)
 }
 
@@ -25,8 +30,13 @@ process SUSHIE {
     path "*.sushie.cs.tsv", emit: cs
     path "*.sushie.weights.tsv", emit: weights
 
-    shell:
-    """
-    sushie finemap --summary --gwas $study_locus_files --ld $ld_files --sample-size $sample_sizes --output $output_prefix --gwas-header chromosome variantId position referenceAllele alternateAllele zScore
-    """
+  shell:
+  """
+  sushie finemap \
+    --summary \
+    --gwas ${study_locus_files.join(' ')} \
+    --ld ${ld_files.join(' ')} \
+    --sample-size ${sample_sizes} \
+    --output ${output_prefix}
+  """
 }
