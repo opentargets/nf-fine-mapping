@@ -7,9 +7,10 @@ process GENTROPY_LD_PREPARE {
 
     input:
     tuple val(meta), path(tsv), val(ancestry)
+    val ld_block_matrix_path
 
     output:
-    tuple val(meta), path("*.parquet"), val(ancestry), path("*.ld"), emit: parquet
+    tuple val(meta), path("*.csv"), val(ancestry), path("*.ld.bm"), emit: result
     path "versions.yml", emit: versions
 
     when:
@@ -26,7 +27,7 @@ process GENTROPY_LD_PREPARE {
     gentropy \\
         step=sushie_ld_input \\
         step.sushie_sumstat_input_path=${tsv} \\
-        step.ld_block_matrix_path= \\
+        step.ld_block_matrix_path=${ld_block_matrix_path} \\
         step.ld_slice_output_path=${prefix}.ld.bm \\
         step.ancestry=${ancestry} \\
         ${args}
@@ -53,10 +54,9 @@ process GENTROPY_LD_PREPARE {
     """
 }
 
-
-
 workflow {
     ch = Channel.fromPath(params.input)
+    ld_ch = Channel.of(params.ld_ld_matrix_path)
     // Extract metadata
     metaCh = ch.map { path ->
         def m = path =~ /leadvariantId=([^\/]+)\/ldPopulation=([^\/]+)/
@@ -73,5 +73,5 @@ workflow {
 
     // Test output
     metaCh.subscribe { println(it) }
-    g = GENTROPY_LD_PREPARE(metaCh)
+    g = GENTROPY_LD_PREPARE(metaCh, ld_ch)
 }
