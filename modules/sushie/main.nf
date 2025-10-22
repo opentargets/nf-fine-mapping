@@ -14,16 +14,16 @@ process SUSHIE {
     container "sushie"
 
     input:
-    val study_locus_files
+    path study_locus_files
     // LD files: only column names (variant ids), variant ids need to correspond to sumstats file
-    val ld_files
+    path ld_files
     val sample_sizes
     val output_prefix
 
     output:
-    val "*.sushie.corr.tsv", emit: corr
-    val "*.sushie.cs.tsv", emit: cs
-    val "*.sushie.weights.tsv", emit: weights
+    path "*.sushie.corr.tsv", emit: corr
+    path "*.sushie.cs.tsv", emit: cs
+    path "*.sushie.weights.tsv", emit: weights
 
     shell:
     """
