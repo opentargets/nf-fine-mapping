@@ -11,7 +11,7 @@ workflow {
 
 process SUSHIE {
     // todo: push the image to a registry. for now build the Dockerfile in this dir like docker build . -t sushie
-    container sushie
+    container "sushie"
 
     input:
     val study_locus_files
