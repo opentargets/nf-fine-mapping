@@ -1,0 +1,15 @@
+.nextflow*
+work/
+data/
+results/
+.DS_Store
+testing/
+testing*
+*.pyc
+null/
+outputs
+.nextflow.log
+.venv
+outdir
+logs
+main.nf.test.snap
