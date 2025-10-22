@@ -1,0 +1,59 @@
+nextflow_process {
+
+    name "Test Process GENTROPY"
+    script "../main.nf"
+    process "GENTROPY"
+
+    tag "modules"
+    tag "modules_opentargets"
+    tag "gentropy"
+
+    test("sumstats - tsv") {
+
+        when {
+            process {
+                """
+                
+                input[0] = [
+                    [ id:'test' ], // meta map
+                    file('../../../tests/data/GCST90573121.h.tsv', checkIfExists: true),
+                ]
+                """
+            }
+        }
+
+        then {
+            assertAll(
+                { assert process.success },
+                { assert snapshot(process.out).match() }
+            )
+        }
+
+    }
+
+    test("sumstats - tsv - stub") {
+
+        options "-stub"
+
+        when {
+            process {
+                """
+                
+                input[0] = [
+                    [ id:'test' ], // meta map
+                    file('../../../tests/data/GCST90573121.h.tsv', checkIfExists: true),
+                ]
+                """
+            }
+        }
+
+        then {
+            assertAll(
+                { assert process.success },
+                { assert snapshot(process.out).match() }
+            )
+        }
+
+    }
+
+}
