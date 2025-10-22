@@ -31,12 +31,14 @@ process SUSHIE {
     path "*.sushie.weights.tsv", emit: weights
 
   shell:
+  args = task.ext.args ?: ''
   """
   sushie finemap \
     --summary \
     --gwas ${study_locus_files.join(' ')} \
     --ld ${ld_files.join(' ')} \
     --sample-size ${sample_sizes} \
-    --output ${output_prefix}
+    --output ${output_prefix} \
+    $args
   """
 }
