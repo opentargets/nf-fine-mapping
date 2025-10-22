@@ -32,8 +32,7 @@ process GENTROPY_LD_PREPARE {
         ${args}
 
     cat <<-END_VERSIONS > versions.yml
-    "${VERSION}":
-        gentropy: 
+        gentropy: "${VERSION}"
     END_VERSIONS
     """
 
