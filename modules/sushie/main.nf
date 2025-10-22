@@ -6,10 +6,10 @@ output = "test_output"
 
 
 workflow {
-    run_sushie(test_sumstats, test_ld, test_sample_sizes, output)
+    SUSHIE(test_sumstats, test_ld, test_sample_sizes, output)
 }
 
-process run_sushie {
+process SUSHIE {
     // todo: push the image to a registry. for now build the Dockerfile in this dir like docker build . -t sushie
     container sushie
 
