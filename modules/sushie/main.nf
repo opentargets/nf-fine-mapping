@@ -10,6 +10,9 @@ workflow {
 }
 
 process run_sushie {
+    // todo: push the image to a registry. for now build the Dockerfile in this dir like docker build . -t sushie
+    container sushie
+
     input:
     val study_locus_files
     // LD files: with column names (variant ids), variant ids need to correspond to sumstats file
