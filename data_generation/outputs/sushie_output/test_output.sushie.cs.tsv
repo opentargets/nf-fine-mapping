@@ -1,0 +1,4 @@
+SNPIndex	chrom	snp	pos	a0	a1	pi	CSIndex	alpha	c_alpha	pip_all	pip_cs	trait	n_snps	ancestry
+67	1	1_205269147_A_G	205269147	A	G	0.00980392156862745	1	1.0	1.0	1.0	.93	Trait	102	sushie
+29	1	1_205145971_G_A	34943763	G	A	0.00980392156862745	1	1.0	1.0	1.0	.02	Trait	102	sushie
+67	1	1_205269147_A_G	205269147	A	G	0.00980392156862745	2	1.0	1.0	1.0	.95	Trait	102	sushie
