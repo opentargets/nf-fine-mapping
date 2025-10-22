@@ -26,8 +26,8 @@ process SUSHIE {
     val output_prefix
 
     output:
-    path "*.sushie.corr.tsv", emit: corr
-    path "*.sushie.cs.tsv", emit: cs
+    path "*.sushie.corr.tsv",    emit: corr
+    path "*.sushie.cs.tsv",      emit: cs
     path "*.sushie.weights.tsv", emit: weights
 
   shell:
