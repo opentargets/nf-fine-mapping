@@ -1,21 +1,21 @@
 
 workflow {
     test_sumstats = Channel
-        .fromPath('/workspaces/nf-fine-mapping/sushie/data/{EUR,AFR}.gwas')
+        .fromPath("/home/louwenjjr/nf-fine-mapping/data_generation/example_sumstats/leadvariantId=1_205247445_G_A/ldPopulation=nfe/part-00000-34baccd9-028b-4908-9910-95a406f69548.c000.csv")
         .collect()
 
     test_ld = Channel
-        .fromPath('/workspaces/nf-fine-mapping/sushie/data/{EUR,AFR}.ld')
+        .fromPath("/home/louwenjjr/nf-fine-mapping/data_generation/example_sumstats/NFE.ld.bm")
         .collect()
 
-    test_sample_sizes = Channel.value('489 639')
-    output            = Channel.value('test_output')
+    test_sample_sizes = Channel.value('408112')
+    output            = Channel.value('1_205247445_G_A_NFE')
     
     SUSHIE(test_sumstats, test_ld, test_sample_sizes, output)
 }
 
 process SUSHIE {
-    container "docker.io/cameronlloyd/sushie:latest"
+    container "sushie"
 
     input:
     path study_locus_files
@@ -38,6 +38,7 @@ process SUSHIE {
     --ld ${ld_files.join(' ')} \
     --sample-size ${sample_sizes} \
     --output ${output_prefix} \
+    --gwas-header chromosome variantId position referenceAllele alternateAllele zScore \
     $args
   """
 }
