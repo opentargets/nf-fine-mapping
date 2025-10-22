@@ -15,7 +15,7 @@ process SUSHIE {
 
     input:
     val study_locus_files
-    // LD files: with column names (variant ids), variant ids need to correspond to sumstats file
+    // LD files: only column names (variant ids), variant ids need to correspond to sumstats file
     val ld_files
     val sample_sizes
     val output_prefix
