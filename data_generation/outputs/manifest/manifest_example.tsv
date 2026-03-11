@@ -1,0 +1,4 @@
+leadVariantID,sumstatsfilePath,nSamples
+v1,<v1/ldPopulation=afr/file.tsv>,1000
+v1,<v1/ldPopulation=nfe/file.tsv>,1000
+....
