@@ -1,6 +1,9 @@
+.nextflow*
+work/
+data/
+results/
 .DS_Store
-.nf-test.log
-.nf-test/
-
-
-CLAUDE.md
+testing/
+testing*
+*.pyc
+null/
