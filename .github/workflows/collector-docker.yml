@@ -1,4 +1,4 @@
-name: Build and Push Sushie Docker Image
+name: Build and Push Collector Docker Image
 
 on:
     workflow_dispatch:
