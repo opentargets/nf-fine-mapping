@@ -4,86 +4,108 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-This is a monorepo with two distinct components:
+This is a monorepo for multi-ancestry GWAS fine-mapping using SuShiE. Two components:
 
-1. **`pipeline/`** — An nf-core-based Nextflow pipeline (`opentargets/finemapping`) for fine-mapping GWAS loci. Follows nf-core DSL2 conventions. Requires Nextflow `>=24.10.5`.
+1. **Root-level Nextflow pipeline** — `main.nf` + `conf/` + `tests/`. Runs `FINE_MAPPING` workflow orchestrating the full pipeline. Requires Nextflow `>=24.10.5`.
 
-2. **`modules/`** — Standalone Nextflow modules developed independently:
-   - `modules/opentargets/gentropy/` — Module wrapping the [gentropy](https://github.com/opentargets/gentropy) tool for LD preparation (`GENTROPY_LD_PREPARE` process). Includes its own `nextflow.config`, `conf/`, and `tests/`. The `gentropy/` subdirectory is a git submodule pointing to `git@github.com:opentargets/gentropy.git`.
-   - `modules/sushie/` — Module wrapping [SuShiE](https://github.com/mancusolab/sushie) for multi-ancestry fine-mapping.
+2. **`modules/`** — Standalone Nextflow process modules:
+   - `collect/` — Merges per-trait/ancestry parquet directory into a single parquet file
+   - `intersect/` — Finds variants present across ALL ancestries for a trait (SQL `GROUP BY chrom, pos, ref, alt HAVING COUNT(*) = n`)
+   - `transform/` — Reshapes parquet to SuShiE-compatible gzip TSV (extracts alleles via regex, computes zScore = beta/se)
+   - `ld/` — Subsets LD matrices using `subset_ld` for relevant variants
+   - `sushie/` — Runs multi-ancestry fine-mapping
 
-The root `.nf-core.yml` sets `repository_type: modules` with `org_path: opentargets`, which means nf-core tooling treats this repo as a modules repository.
+3. **`tools/collector/`** — Python CLI tool (Python 3.12+, DuckDB, Typer) providing `collect`, `intersect`, and `transform` subcommands. This is built into the `collector:latest` container image used by the first three modules.
+
+The root `.nf-core.yml` sets `repository_type: modules` with `org_path: opentargets`.
 
 ## Running the Pipeline
 
-From `pipeline/`:
-
 ```bash
-# Run with test profile (requires docker or singularity)
-nextflow run main.nf -profile test,docker --outdir results/
+# Run with test profile (uses testdata/ directory)
+nextflow run main.nf -profile test
 
-# Run with custom samplesheet
-nextflow run main.nf -profile docker --input samplesheet.csv --outdir results/
+# Google Cloud profile
+nextflow run main.nf -profile googleCloud
+
+# Use -profile arm on Apple Silicon alongside docker
+nextflow run main.nf -profile test,arm
 ```
 
-Use `-profile arm` on Apple Silicon alongside `docker` to force `linux/amd64` emulation.
-
-## Running Module Tests
-
-From `pipeline/`, using [nf-test](https://www.nf-test.com/):
+## Running Tests
 
 ```bash
-# Run all pipeline tests
+# Run pipeline nf-test (from repo root)
 nf-test test
 
 # Run a specific test file
 nf-test test tests/default.nf.test
-```
-
-From `modules/opentargets/gentropy/`, using nf-test:
-
-```bash
-# Run the gentropy module tests
-nf-test test tests/main.nf.test
-
-# Run a single test by name
-nf-test test tests/main.nf.test --filter "sumstats - tsv"
 
 # Run stub tests (no container needed)
-nf-test test tests/main.nf.test --filter "sumstats - tsv - stub"
+nf-test test tests/default.nf.test --stub
+```
+
+For the Python collector tool:
+
+```bash
+cd tools/collector
+uv run pytest
+uv run pytest tests/collector/test_cli.py::test_collect  # single test
 ```
 
 ## Building Containers
 
-The sushie container is defined in `modules/sushie/Dockerfile` (installs from GitHub via pip).
+The `collector` container (used by collect/intersect/transform modules) is built via GitHub Actions (`collector-docker.yml`). Version is read from `tools/collector/pyproject.toml`. Multi-arch: linux/amd64 and linux/arm64.
 
-The gentropy container is built from the gentropy submodule:
+The `sushie` container is defined in `modules/sushie/Dockerfile` (Python 3.10 + SuShiE v0.19).
 
-```bash
-# From modules/opentargets/gentropy/
-make build-gentropy-image
-# This runs: (cd gentropy && make build-docker)
+## Workflow Architecture
+
+The `FINE_MAPPING` workflow in `main.nf` orchestrates channels through these stages:
+
+```
+manifest.tsv (trait, ancestry, sampleSize, summaryStatisticsPath)
+  → Collect      (per trait+ancestry: merge parquet dir → single parquet)
+  → group_by_trait()
+  → Intersect    (per trait: find common variants across all ancestries)
+  → mix_with_intersection()
+  → Transform    (per trait+ancestry: parquet → gzip TSV for SuShiE)
+  → mix_with_ld()
+  → SubsetLD     (per ancestry: extract relevant LD variants)
+  → annotate_with_ld()
+  → SuShiE       (per trait: multi-ancestry fine-mapping)
 ```
 
-The gentropy module currently pins to `docker.io/library/gentropy:000`. Update the version string in `modules/opentargets/gentropy/main.nf` when bumping the container.
+Channel manipulation helpers (`group_by_trait`, `mix_with_intersection`, `mix_with_ld`, `annotate_with_ld`) are defined at the bottom of `main.nf`. They use `combine()` and `groupTuple()` to join channels on trait or ancestry keys.
 
-## Architecture Notes
+The **`meta` map** carries `trait`, `sampleSize`, `ancestry` (and sometimes `leadVariantId`, `ldPopulation`) through all process input/output tuples.
 
-### Pipeline (`pipeline/`)
+## Configuration
 
-- `main.nf` → entry point, calls `FINEMAPPING` workflow and nf-core init/completion subworkflows
-- `workflows/finemapping.nf` → main workflow (currently scaffolded with FastQC + MultiQC as placeholders)
-- `conf/modules.config` → per-process `ext.args` and `publishDir` overrides
-- `pipeline/modules/nf-core/` → vendored nf-core modules (fastqc, multiqc)
-- `pipeline/subworkflows/` — nf-core utility subworkflows + local pipeline subworkflow
+- `conf/base.config` — Docker enabled by default; sets Python env vars
+- `conf/test.config` — Local executor, resource limits (4 CPUs, 15GB, 1h), paths to `testdata/`
+- `conf/google-batch.config` — Google Cloud Batch profile
 
-### Gentropy Module (`modules/opentargets/gentropy/`)
+Key pipeline parameters: `params.manifest`, `params.ld_reference`, `params.output_dir`, `params.chain`, `params.liftover`, `params.r2`.
 
-- `main.nf` — defines `GENTROPY_LD_PREPARE` process and a test workflow. The process runs `gentropy step=sushie_ld_input` to slice LD matrices for SuShiE input. Metadata (`leadVariantId`, `ldPopulation`) is parsed from the input path pattern `leadvariantId=<id>/ldPopulation=<pop>`.
-- `conf/google-batch.config` — profile for running on Google Cloud Batch
-- `tests/data/GCST90573121.h.tsv` — test GWAS summary statistics file
+## Test Data
 
-### Module Patterns
+`testdata/manifest.tsv` — 4 rows: traits A & B × NFE & AFR ancestries, pointing to parquet directories under `testdata/eur_gwas/` and `testdata/afr_gwas/`.
 
-- Processes follow nf-core conventions: `meta` map in input tuples, `versions.yml` output, `task.ext.args` for extra args, `task.ext.prefix` for output naming
-- Version strings are manually maintained in process scripts (no CLI version flag available from gentropy)
+`testdata/ld_reference.tsv` — LD matrix paths for AFR, AMR, EAS, FIN, NFE ancestries (gnomAD v2.1.1).
+
+## Data Flow Formats
+
+- **Input**: Parquet summary statistics (`variantId`, `beta`, `standardError`, `chromosome`, `position`)
+- **Intermediate**: Parquet (after collect/intersect steps)
+- **SuShiE input**: Gzip TSV — columns: `chromosome variantId position referenceAllele alternateAllele zScore`
+- **SuShiE output**: Published to `params.output_dir/sushie/` (correlation, credible sets, weights, logs)
+
+## Module Conventions
+
+All processes follow nf-core DSL2 patterns:
+- Input tuples: `tuple val(meta), path(...)`
+- Always emit a `versions` channel with `versions.yml`
+- Use `task.ext.args` for extra CLI arguments
+- Include `stub:` block for dry-run testing
+- Process labels map to resource configs in `conf/test.config`

@@ -1,11 +1,11 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl = 2
 
-include { Collector    } from './modules/collector/main.nf'
-include { Intersection } from './modules/intersection/main.nf'
-include { Transform    } from './modules/transform/main.nf'
-include { SuShiE       } from './modules/sushie/main.nf'
-include { SubsetLD     } from './modules/ld/main.nf'
+include { Collect   } from './modules/collect/main.nf'
+include { Intersect } from './modules/intersect/main.nf'
+include { Transform } from './modules/transform/main.nf'
+include { SuShiE    } from './modules/sushie/main.nf'
+include { SubsetLD  } from './modules/ld/main.nf'
 
 def intro() {
     log.info(
@@ -108,11 +108,11 @@ workflow FINE_MAPPING {
     ld_reference_ch = read_ancestries(params.ld_reference)
     // input_ch.view { it -> log.info("Input manifest: ${it}") }
     // ld_reference_ch.view { it -> log.info("LD reference: ${it}") }
-    collected = Collector(input_ch)
+    collected = Collect(input_ch)
     // collected.view { it -> log.info("Collected: ${it}") }
     grouped = group_by_trait(collected)
     // grouped.view { it -> log.info("Grouped: ${it}") }
-    intersection = Intersection(grouped)
+    intersection = Intersect(grouped)
     // intersection.view { it -> log.info("Intersection: ${it}") }
     mixed = mix_with_intersection(intersection, collected)
     // mixed.view { it -> log.info("Mixed: ${it}") }

@@ -21,23 +21,23 @@ process SuShiE {
   ld_files = ld instanceof List ? ld : [ld]
   sample_sizes = sample_sizes instanceof List ? sample_sizes : [sample_sizes]
   ancestries = ancestries instanceof List ? ancestries : [ancestries]
-  ancestries = ancestries.sort()
+  ancestries_sorted = ancestries.sort()
   """
     sushie finemap \
         --summary \
         --gwas ${sumstats.join(' ')} \
         --ld ${ld_files.join(' ')} \
         --sample-size ${sample_sizes.join(' ')} \
-        --output ${trait}-${ancestries.join('_')} \
+        --output ${trait}-${ancestries_sorted.join('_')} \
         --gwas-header chromosome variantId position referenceAllele alternateAllele zScore \
         ${args}
       """
 
   stub:
   """
-    touch "${trait}-${ancestries.join('_')}.sushie.corr.tsv"
-    touch "${trait}-${ancestries.join('_')}.sushie.cs.tsv"
-    touch "${trait}-${ancestries.join('_')}.sushie.weights.tsv"
-    touch "${trait}-${ancestries.join('_')}.log"
+    touch "${trait}-${ancestries_sorted.join('_')}.sushie.corr.tsv"
+    touch "${trait}-${ancestries_sorted.join('_')}.sushie.cs.tsv"
+    touch "${trait}-${ancestries_sorted.join('_')}.sushie.weights.tsv"
+    touch "${trait}-${ancestries_sorted.join('_')}.log"
     """
 }

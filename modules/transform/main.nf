@@ -9,7 +9,7 @@ process Transform {
 
     script:
     """
-    transform \
+    collector transform \
         --sumstat ${sumstats} \
         --intersection ${intersection} \
         --output "transformed_${trait}_${meta.ancestry}.parquet"

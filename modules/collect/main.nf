@@ -1,5 +1,5 @@
-process Collector {
-    label "collector"
+process Collect {
+    label "collect"
 
     input:
     tuple val(meta), path(parquet_directory)
@@ -9,7 +9,7 @@ process Collector {
 
     script:
     """
-    collector \
+    collector collect \
         --input ${parquet_directory} \
         --output "${meta.trait}_${meta.ancestry}.parquet"
     """

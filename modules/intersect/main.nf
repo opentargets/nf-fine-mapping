@@ -1,5 +1,5 @@
-process Intersection {
-    label "intersection"
+process Intersect {
+    label "intersect"
 
     input:
     tuple val(trait), val(meta), path(sumstats)
@@ -11,7 +11,7 @@ process Intersection {
     def sumstat_list = sumstats instanceof List ? sumstats : [sumstats]
     def sumstat_flags = sumstat_list.collect { sumstat -> "--sumstat ${sumstat}" }.join(" ")
     """
-    intersection \
+    collector intersect \
         ${sumstat_flags} \
         --output "intersection_${trait}.parquet"
     """
