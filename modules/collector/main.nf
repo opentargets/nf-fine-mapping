@@ -1,5 +1,5 @@
 process Collector {
-    container "collector"
+    label "collector"
 
     input:
     tuple val(meta), path(parquet_directory)
@@ -12,5 +12,10 @@ process Collector {
     collector \
         --input ${parquet_directory} \
         --output "${meta.trait}_${meta.ancestry}.parquet"
+    """
+
+    stub:
+    """
+    touch "${meta.trait}_${meta.ancestry}.parquet"
     """
 }

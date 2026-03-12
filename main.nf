@@ -1,8 +1,8 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl = 2
 
-include { Collector } from './modules/collector/main.nf'
-// include { Intersection } from './modules/intersection/main.nf'
+include { Collector    } from './modules/collector/main.nf'
+include { Intersection } from './modules/intersection/main.nf'
 // include { SuShiE       } from './modules/sushie/main.nf'
 // include { SubsetLD     } from './modules/ld/main.nf'
 
@@ -34,7 +34,11 @@ def read_manifest(path) {
         .splitCsv(header: true, sep: '\t')
         .map { row ->
             [
-                [trait: row.trait, sampleSize: row.sampleSize, ancestry: row.ancestry],
+                [
+                    trait: row.trait,
+                    sampleSize: row.sampleSize,
+                    ancestry: row.ancestry,
+                ],
                 file(row.summaryStatisticsPath),
             ]
         }
@@ -43,23 +47,40 @@ def read_manifest(path) {
 def group_by_trait(input_ch) {
     return input_ch
         .map { meta, parquet ->
-            [meta.trait, [sampleSize: meta.sampleSize, ancestry: meta.ancestry], file(parquet)]
+            [
+                meta.trait,
+                [
+                    sampleSize: meta.sampleSize,
+                    ancestry: meta.ancestry,
+                ],
+                file(parquet),
+            ]
         }
         .groupTuple()
+}
+
+def mix_with_intersection(intersection_ch, input_ch) {
+    return intersection_ch.map { trait, intersection ->
+        def per_trait_input = input_ch.filter { it -> it[0] == trait }
+        tuple(trait, intersection, per_trait_input.collect { it -> it[2] }.flatten())
+    }
 }
 
 
 workflow FINE_MAPPING {
     input_ch = read_manifest(params.manifest)
     ld_reference_ch = read_ancestries(params.ld_reference)
-    input_ch.view { it -> log.info("Input manifest: ${it}") }
-    ld_reference_ch.view { it -> log.info("LD reference: ${it}") }
+    // input_ch.view { it -> log.info("Input manifest: ${it}") }
+    // ld_reference_ch.view { it -> log.info("LD reference: ${it}") }
     collected = Collector(input_ch)
-    collected.view { it -> log.info("Collected: ${it}") }
+    // collected.view { it -> log.info("Collected: ${it}") }
     grouped = group_by_trait(collected)
-    grouped.view { it -> log.info("Grouped: ${it}") }
+    // grouped.view { it -> log.info("Grouped: ${it}") }
+    intersection = Intersection(grouped)
+    intersection.view { it -> log.info("Intersection: ${it}") }
+    mixed = mix_with_intersection(intersection, grouped)
+    mixed.view { it -> log.info("Mixed: ${it}") }
 }
-// intersection = Intersection(input_ch)
 // variant_intersection_ch = intersection.intersection
 // filtered_sumstats_ch = intersection.filtered_sumstats
 //     subset_ld_ch = SubsetLD(variant_intersection_ch, ld_reference_ch)

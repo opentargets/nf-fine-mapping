@@ -17,3 +17,5 @@ data_generation/bin/.ipynb_checkpoints/
 coverage.xml
 .coverage*
 **/.pytest_cache/
+testdata/output
+testdata/work
