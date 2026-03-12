@@ -4,8 +4,8 @@ nextflow.enable.dsl = 2
 include { Collector    } from './modules/collector/main.nf'
 include { Intersection } from './modules/intersection/main.nf'
 include { Transform    } from './modules/transform/main.nf'
-// include { SuShiE       } from './modules/sushie/main.nf'
-// include { SubsetLD     } from './modules/ld/main.nf'
+include { SuShiE       } from './modules/sushie/main.nf'
+include { SubsetLD     } from './modules/ld/main.nf'
 
 def intro() {
     log.info(
@@ -61,7 +61,7 @@ def group_by_trait(input_ch) {
 }
 
 
-def mix_with_intersection2(intersection_ch, input_ch) {
+def mix_with_intersection(intersection_ch, input_ch) {
     def _input_ch = input_ch.map { meta, sumstat ->
         tuple(
             meta.trait,
@@ -70,10 +70,37 @@ def mix_with_intersection2(intersection_ch, input_ch) {
         )
     }
     return intersection_ch
-        .join(_input_ch, by: 0)
+        .combine(_input_ch, by: 0)
         .map { trait, intersection, meta, sumstat ->
             tuple(trait, meta, sumstat, intersection)
         }
+}
+
+
+def mix_with_ld(transformed_ch, ld_ch) {
+    def _transformed = transformed_ch.map { trait, meta, transformed_sumstat ->
+        tuple(meta.ancestry, trait, transformed_sumstat)
+    }
+    return _transformed
+        .combine(ld_ch, by: 0)
+        .map { ancestry, trait, transformed_sumstat, ld_matrix, ld_index ->
+            tuple([ancestry: ancestry, trait: trait], transformed_sumstat, ld_matrix, ld_index)
+        }
+}
+
+def annotate_with_ld(transformed_ch, ld_ch) {
+    def _transform = transformed_ch.map { trait, meta, transformed_sumstat ->
+        tuple(trait, meta.ancestry, meta.sampleSize, transformed_sumstat)
+    }
+    def _ld = ld_ch.map { meta, ld_subset ->
+        tuple(meta.trait, meta.ancestry, ld_subset)
+    }
+    return _transform
+        .combine(_ld, by: [0, 1])
+        .map { trait, ancestry, sample_size, transformed_sumstat, ld_subset ->
+            tuple(trait, ancestry, sample_size, transformed_sumstat, ld_subset)
+        }
+        .groupTuple(by: 0)
 }
 
 workflow FINE_MAPPING {
@@ -87,15 +114,19 @@ workflow FINE_MAPPING {
     // grouped.view { it -> log.info("Grouped: ${it}") }
     intersection = Intersection(grouped)
     // intersection.view { it -> log.info("Intersection: ${it}") }
-    mixed = mix_with_intersection2(intersection, collected)
+    mixed = mix_with_intersection(intersection, collected)
     // mixed.view { it -> log.info("Mixed: ${it}") }
     transformed = Transform(mixed)
-    transformed.view { it -> log.info("Transformed: ${it}") }
+    // transformed.view { it -> log.info("Transformed: ${it}") }
+    mixed_with_ld = mix_with_ld(transformed, ld_reference_ch)
+    // mixed_with_ld.view { it -> log.info("Mixed with LD: ${it}") }
+    subset_ld = SubsetLD(mixed_with_ld)
+    // subset_ld.view { it -> log.info("Subset LD: ${it}") }
+    ld_annot = annotate_with_ld(transformed, subset_ld)
+    // ld_annot.view { it -> log.info("LD Annot: ${it}") }
+    SuShiE(ld_annot)
 }
-// variant_intersection_ch = intersection.intersection
-// filtered_sumstats_ch = intersection.filtered_sumstats
-//     subset_ld_ch = SubsetLD(variant_intersection_ch, ld_reference_ch)
-//     SuShiE(filtered_sumstats_ch, subset_ld_ch)
+
 
 workflow {
     intro()

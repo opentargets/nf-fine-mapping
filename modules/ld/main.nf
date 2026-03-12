@@ -1,18 +1,27 @@
 process SubsetLD {
-  container "ld"
+  label "ld"
 
   input:
-  path variant_intersection_ch
-  path ld_reference_ch
+  tuple val(meta), path(intersection), val(hail_table), val(block_matrix)
 
   output:
-  path "*.ld.tsv", emit: ld
+  tuple val(meta), path("${meta.trait}_${meta.ancestry}.ld.bgzip"), emit: ld_output
 
   script:
   """
   subset_ld \
-    --variants ${variant_intersection_ch} \
-    --ld-reference ${ld_reference_ch.join(' ')} \
-    --output ${task.workDir}/${task.processName}.ld.tsv
+    --variants ${intersection} \
+    --hail-table ${hail_table} \
+    --block-matrix ${block_matrix} \
+    --chain ${params.chain} \
+    --liftover ${params.liftover} \
+    --r2 ${params.r2} \
+    --output "${meta.trait}_${meta.ancestry}.ld.bgzip" \
+    --
+  """
+
+  stub:
+  """
+  touch "${meta.trait}_${meta.ancestry}.ld.bgzip"
   """
 }

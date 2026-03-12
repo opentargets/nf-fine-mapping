@@ -1,28 +1,43 @@
 process SuShiE {
-    container "sushie"
+  label "sushie"
 
-    input:
-    path study_locus_files
-    // LD files: only column names (variant ids), variant ids need to correspond to sumstats file
-    path ld_files
-    val sample_sizes
-    val output_prefix
+  publishDir "${params.output_dir}/sushie/corr/", mode: 'copy', overwrite: true, pattern: "*.sushie.corr.tsv"
+  publishDir "${params.output_dir}/sushie/credible_sets", mode: 'copy', overwrite: true, pattern: "*.sushie.cs.tsv"
+  publishDir "${params.output_dir}/sushie/weights", mode: 'copy', overwrite: true, pattern: "*.sushie.weights.tsv"
+  publishDir "${params.output_dir}/sushie/logs", mode: 'copy', overwrite: true, pattern: "*.log"
 
-    output:
-    path "*.sushie.corr.tsv", emit: corr
-    path "*.sushie.cs.tsv", emit: cs
-    path "*.sushie.weights.tsv", emit: weights
+  input:
+  tuple val(trait), val(ancestries), val(sample_sizes), path(sumstats), path(ld)
 
-    script:
-    args = task.ext.args ?: ''
-    """
+  output:
+  path "*.sushie.corr.tsv", emit: corr
+  path "*.sushie.cs.tsv", emit: cs
+  path "*.sushie.weights.tsv", emit: weights
+  path "*.log", emit: log
+
+  script:
+  args = task.ext.args ?: ''
+  sumstats = sumstats instanceof List ? sumstats : [sumstats]
+  ld_files = ld instanceof List ? ld : [ld]
+  sample_sizes = sample_sizes instanceof List ? sample_sizes : [sample_sizes]
+  ancestries = ancestries instanceof List ? ancestries : [ancestries]
+  ancestries = ancestries.sort()
+  """
     sushie finemap \
         --summary \
-        --gwas ${study_locus_files.join(' ')} \
+        --gwas ${sumstats.join(' ')} \
         --ld ${ld_files.join(' ')} \
-        --sample-size ${sample_sizes} \
-        --output ${output_prefix} \
+        --sample-size ${sample_sizes.join(' ')} \
+        --output ${trait}-${ancestries.join('_')} \
         --gwas-header chromosome variantId position referenceAllele alternateAllele zScore \
         ${args}
+      """
+
+  stub:
   """
+    touch "${trait}-${ancestries.join('_')}.sushie.corr.tsv"
+    touch "${trait}-${ancestries.join('_')}.sushie.cs.tsv"
+    touch "${trait}-${ancestries.join('_')}.sushie.weights.tsv"
+    touch "${trait}-${ancestries.join('_')}.log"
+    """
 }

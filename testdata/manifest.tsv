@@ -1,5 +1,5 @@
 summaryStatisticsPath	trait	sampleSize	ancestry
-testdata/eur_gwas/studyId=OhbVrpoiVg	A	30000	EUR
+testdata/eur_gwas/studyId=OhbVrpoiVg	A	30000	NFE
 testdata/afr_gwas/studyId=RV5IfLBcbf	A	30000	AFR
-testdata/eur_gwas/studyId=OhbVrpoiVg	B	30000	EUR
+testdata/eur_gwas/studyId=OhbVrpoiVg	B	30000	NFE
 testdata/afr_gwas/studyId=RV5IfLBcbf	B	30000	AFR
