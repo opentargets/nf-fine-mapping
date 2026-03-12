@@ -1,0 +1,58 @@
+[project]
+name = "collector"
+version = "1.0.0"
+description = "Collect parquet files for summary statistics"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["duckdb>=1.5.0", "typer>=0.24.1"]
+license = { file = "LICENCE.md" }
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+collector = "collector:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/collector"]
+
+[tool.coverage.report]
+fail_under = 60
+
+[tool.ruff]
+line-length = 150
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.20",
+    "ipython>=9.10.0",
+    "pytest>=9.0.2",
+    "pytest-cov>=6.0",
+    "ruff>=0.15.2",
+    "ty>=0.0.18",
+    "pydoclint >=0.3.8,<0.9.0",
+    "ipykernel >=6.28.0, <7.3.0",
+    "pytest-sugar >=0.9.5,<1.2.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules --cov=src/ --cov-report=xml --cache-clear"
+pythonpath = ["."]
+testpaths = ["tests/collector", "src/collector"]
+markers = ["step_test", "download_jars_from_web", "no_shared_spark"]
+filterwarnings = [
+    "ignore:.*it is preferred to specify type hints for pandas UDF.*:UserWarning",
+]

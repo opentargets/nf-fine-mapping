@@ -7,3 +7,13 @@ testing/
 testing*
 *.pyc
 null/
+testdata/work
+.ipynb_checkpoints/
+.python-version
+.venv
+data_generation/bin/.ipynb_checkpoints/
+**/__pycache__/
+.coverage
+coverage.xml
+.coverage*
+**/.pytest_cache/

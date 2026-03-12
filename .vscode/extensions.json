@@ -1,5 +1,10 @@
 {
     "recommendations": [
-        "nextflow.nextflow"
-    ]
+        "nextflow.nextflow",
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "redhat.vscode-yaml",
+        "esbenp.prettier-vscode",
+     ],
 }

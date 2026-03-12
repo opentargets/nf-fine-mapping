@@ -1,0 +1,5 @@
+task_id	hash	native_id	name	status	exit	submit	duration	realtime	%cpu	peak_rss	peak_vmem	rchar	wchar
+3	50/fd11b0	71263	FINE_MAPPING:Collector (3)	FAILED	1	2026-03-12 09:20:56.865	1.7s	1.7s	-	-	-	-	-
+1	43/78dde2	71265	FINE_MAPPING:Collector (1)	FAILED	1	2026-03-12 09:20:56.877	1.7s	1.7s	-	-	-	-	-
+2	1c/221c45	71264	FINE_MAPPING:Collector (2)	FAILED	1	2026-03-12 09:20:56.871	1.7s	1.7s	-	-	-	-	-
+4	05/2028d4	71262	FINE_MAPPING:Collector (4)	FAILED	1	2026-03-12 09:20:56.857	1.8s	1.7s	-	-	-	-	-

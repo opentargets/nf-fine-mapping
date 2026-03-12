@@ -1,0 +1,5 @@
+task_id	hash	native_id	name	status	exit	submit	duration	realtime	%cpu	peak_rss	peak_vmem	rchar	wchar
+3	fe/8ed5a0	90239	FINE_MAPPING:Collector (3)	COMPLETED	0	2026-03-12 09:36:20.925	1.4s	570ms	89.1%	3 MB	4.2 MB	2.7 MB	2.3 MB
+1	5a/c1ffeb	90242	FINE_MAPPING:Collector (1)	COMPLETED	0	2026-03-12 09:36:20.945	1.3s	567ms	87.7%	10.8 MB	17 MB	2.7 MB	2.3 MB
+2	4a/da2182	90240	FINE_MAPPING:Collector (2)	COMPLETED	0	2026-03-12 09:36:20.933	1.4s	558ms	88.3%	3 MB	4.2 MB	2.7 MB	2.3 MB
+4	4c/819bf7	90241	FINE_MAPPING:Collector (4)	COMPLETED	0	2026-03-12 09:36:20.939	1.4s	568ms	88.1%	10.8 MB	17 MB	2.7 MB	2.3 MB

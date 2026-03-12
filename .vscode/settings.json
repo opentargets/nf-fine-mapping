@@ -1,3 +1,9 @@
 {
-    "markdown.styles": ["public/vscode_markdown.css"]
+  "editor.formatOnSave": true,
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  }
 }

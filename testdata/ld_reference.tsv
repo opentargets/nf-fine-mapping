@@ -1,0 +1,6 @@
+ancestry	ldMatrix	ldIndex
+AFR	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.AFR.common.adj.ld.bm	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.AFR.common.ld.variant_indices.ht
+AMR	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.AMR.common.adj.ld.bm	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.AMR.common.ld.variant_indices.ht
+EAS	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.EAS.common.adj.ld.bm	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.EAS.common.ld.variant_indices.ht
+FIN	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.FIN.common.adj.ld.bm	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.FIN.common.ld.variant_indices.ht
+NFE	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.NFE.common.adj.ld.bm	gs://gcp-public-data--gnomad/release/2.1.1/ld/gnomad.genomes.r2.1.1.NFE.common.ld.variant_indices.ht
