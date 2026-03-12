@@ -3,6 +3,7 @@ nextflow.enable.dsl = 2
 
 include { Collector    } from './modules/collector/main.nf'
 include { Intersection } from './modules/intersection/main.nf'
+include { Transform    } from './modules/transform/main.nf'
 // include { SuShiE       } from './modules/sushie/main.nf'
 // include { SubsetLD     } from './modules/ld/main.nf'
 
@@ -59,13 +60,21 @@ def group_by_trait(input_ch) {
         .groupTuple()
 }
 
-def mix_with_intersection(intersection_ch, input_ch) {
-    return intersection_ch.map { trait, intersection ->
-        def per_trait_input = input_ch.filter { it -> it[0] == trait }
-        tuple(trait, intersection, per_trait_input.collect { it -> it[2] }.flatten())
-    }
-}
 
+def mix_with_intersection2(intersection_ch, input_ch) {
+    def _input_ch = input_ch.map { meta, sumstat ->
+        tuple(
+            meta.trait,
+            [sampleSize: meta.sampleSize, ancestry: meta.ancestry],
+            sumstat,
+        )
+    }
+    return intersection_ch
+        .join(_input_ch, by: 0)
+        .map { trait, intersection, meta, sumstat ->
+            tuple(trait, meta, sumstat, intersection)
+        }
+}
 
 workflow FINE_MAPPING {
     input_ch = read_manifest(params.manifest)
@@ -77,9 +86,11 @@ workflow FINE_MAPPING {
     grouped = group_by_trait(collected)
     // grouped.view { it -> log.info("Grouped: ${it}") }
     intersection = Intersection(grouped)
-    intersection.view { it -> log.info("Intersection: ${it}") }
-    mixed = mix_with_intersection(intersection, grouped)
-    mixed.view { it -> log.info("Mixed: ${it}") }
+    // intersection.view { it -> log.info("Intersection: ${it}") }
+    mixed = mix_with_intersection2(intersection, collected)
+    // mixed.view { it -> log.info("Mixed: ${it}") }
+    transformed = Transform(mixed)
+    transformed.view { it -> log.info("Transformed: ${it}") }
 }
 // variant_intersection_ch = intersection.intersection
 // filtered_sumstats_ch = intersection.filtered_sumstats
