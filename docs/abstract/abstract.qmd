@@ -1,5 +1,5 @@
 ---
-title: "From single- to multi-ancestry fine-mapping at scale: a Gentropy workflow"
+title: "From single to multi-ancestry fine-mapping at scale: a Gentropy workflow"
 
 author:
   - name: Szymon Szyszkowski
@@ -38,7 +38,7 @@ execute:
 
 Fine-mapping resolves which of the correlated variants at an associated GWAS locus drives a phenotype, assigning each variant a posterior
 inclusion probability and aggregating them into a credible set that captures the true signal at a defined posterior probability. The Open
-Targets Gentropy framework already applies eight ancestry-specific fine-mapping strategies at scale, incorporating the PICS and SuSiE-inf
+Targets Gentropy framework already applies ancestry-specific fine-mapping strategies at scale, incorporating the PICS and SuSiE-inf
 approaches, and continuously fine-maps GWAS across the Open Targets Platform — one study at a time, within a single ancestry.
 The same resource holds many GWAS for the same trait across different ancestries. Grouping GWAS Catalog studies in Open Targets release
 26.06 by shared trait yielded 7,490 trait-sets containing multiple single-ancestry studies. A variant that tags the true signal through
