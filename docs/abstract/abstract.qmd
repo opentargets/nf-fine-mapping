@@ -1,0 +1,89 @@
+---
+title: "Multi-ancestry fine-mapping at scale"
+
+author:
+  - name: Szymon Szyszkowski
+    affiliations:
+      - ref: open-targets
+      - ref: sanger
+    roles:
+      - writing
+  - name: Yakov A. Tsepilov
+    affiliations:
+      - ref: open-targets
+      - ref: sanger
+    roles:
+      - methodology
+
+affiliations:
+  - id: open-targets
+    name: Open Targets
+  - id: sanger
+    name: Wellcome Sanger Institute
+
+format:
+  html:
+    toc: false
+  docx: default
+  pdf: default
+
+execute:
+  echo: false
+  warning: false
+  message: false
+
+bibliography: references.bib
+csl: csl/nature.csl
+link-citations: true
+link-bibliography: true
+---
+
+
+## Abstract
+
+### Background
+
+Genome-wide association studies have allowed researchers to identify millions of single-variant associations to common disease and measurement traits.
+These associations carry substantial value for explaining biological processes. However, associated variants are correlated through linkage disequilibrium.
+An association signal at a locus therefore does not by itself identify which correlated variant influences the phenotype. Bayesian fine-mapping methods
+resolve this by assigning each variant at a locus a posterior inclusion probability — the probability that the variant itself is causal, conditioned on the
+observed association and the local LD structure. The variants at a locus are aggregated into a credible set that captures the true driver of the signal with
+a defined posterior probability [e.g. SuSiE, @wang2020susie]. These methods were originally established for single-ancestry resolution, and already run
+at scale within the Open Targets Platform [@tsepilov2026pleiotropy]: release 26.06 includes 1,453,884 credible sets across 53,239 GWAS Catalog studies
+and 32,137 credible sets across 2,374 UKB-PPP studies, fine-mapped by PICS and SuSiE-inf.
+
+Variants that tag the true signal through linkage disequilibrium, without driving it, show marginally different effects across populations due to
+differences in LD structure — for example, African-ancestry populations carry systematically smaller LD blocks than European-ancestry
+populations [@yuan2024susiex]. A tag variant statistically indistinguishable from the true driver in one ancestry can be distinguishable in another.
+Simulation and empirical work demonstrates that, where the underlying variant is shared between ancestry groups, a trans-ethnic fine-mapping improves
+resolution over a single-ancestry analysis [@vandebunt2015finemapping]. Multi-ancestry fine-mapping methods exploit the differences in LD by integrating data
+from multiple populations [@yuan2024susiex; @gao2024mesusie; @rossen2026multisusie].
+
+The growth of large trans-ethnic biobanks producing GWAS for the same trait across ancestries (e.g. Pan-UKBB [@karczewski2025panukbb]) allows multiple
+ancestries to be leveraged to narrow the credible set and improve fine-mapping accuracy for the underlying variants shared across ancestries. Grouping
+GWAS Catalog studies in release 26.06 by shared trait, 7,490 trait-sets already span two or more ancestries, with as many as five ancestries represented
+in a single set and one trait — body mass index — spanning 9,442 studies. We introduce a solution that allows for scalable fine-mapping of GWAS studies
+across multiple ancestries, using a set of established methods and existing external LD reference panels.
+
+
+### Methods
+
+We are developing a scalable multi-ancestry fine-mapping workflow that integrates GWAS summary statistics, using well-established Gentropy parquet-native
+datasets, with ancestry-matched linkage disequilibrium reference panels from gnomAD [@karczewski2020gnomad] and Pan-UKBB [@karczewski2025panukbb].
+
+The workflow is implemented using Nextflow [@ditommaso2017nextflow] on top of the Open Targets Gentropy framework, and is designed to run in-house at
+biobank scale. Unifying this workflow with Open Targets' existing single-ancestry fine-mapping is left for future work.
+
+The pipeline is structured as a sequence of pluggable stages. A resolver reads the Gentropy study index and, for each trait, determines which combinations of
+studies across ancestries are eligible for multi-ancestry fine-mapping. The pipeline routes each eligible combination to one or more applicable methods. Studies
+assigned to an execution route are then clumped into loci. Per-locus, per-ancestry linkage disequilibrium is retrieved from reference panels through a common
+access layer. Clumped loci and their matched LD are passed through a shared Gentropy input interface. The method itself is agnostic and selectable, spanning MultiSuSiE [@rossen2026multisusie] as proof of concept,
+with future work streamlined to integrate MESuSiE [@gao2024mesusie], SuShiE [@lu2025sushie] and SuSiEx [@yuan2024susiex]. Method output is normalised back through a shared Gentropy output
+interface into the standard credible-set format, so that it can be reused efficiently by Spark-distributed jobs native to Open Targets' post-GWAS analysis, e.g. colocalisation.
+
+This Nextflow multi-ancestry fine-mapping pipeline will allow Open Targets to produce more accurate credible sets at the scale set out above, by
+leveraging cross-population LD structure differences. Built on open-source methods and uniform access to external LD reference panels, it will support
+reuse by other groups working with multi-ancestry GWAS data. Its pluggable architecture will let researchers choose whichever method best fits their
+own baseline fine-mapping assumptions.
+
+
