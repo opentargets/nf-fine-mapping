@@ -1,0 +1,60 @@
+---
+title: "From single to multi-ancestry fine-mapping at scale: a Gentropy workflow"
+
+author:
+  - name: Szymon Szyszkowski
+    affiliations:
+      - ref: open-targets
+      - ref: sanger
+    roles:
+      - writing
+  - name: Yakov A. Tsepilov
+    affiliations:
+      - ref: open-targets
+      - ref: sanger
+    roles:
+      - methodology
+
+affiliations:
+  - id: open-targets
+    name: Open Targets
+  - id: sanger
+    name: Wellcome Sanger Institute
+
+format:
+  html:
+    toc: false
+  docx: default
+  pdf: default
+
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+
+## Abstract
+
+Fine-mapping resolves which of the correlated variants at an associated GWAS locus drives a phenotype, assigning each variant a posterior
+inclusion probability and aggregating them into a credible set that captures the true signal at a defined posterior probability. The Open
+Targets Gentropy framework already applies ancestry-specific fine-mapping strategies at scale, incorporating the PICS and SuSiE-inf
+approaches, and continuously fine-maps GWAS across the Open Targets Platform — one study at a time, within a single ancestry.
+The same resource holds many GWAS for the same trait across different ancestries. Grouping GWAS Catalog studies in Open Targets release
+26.06 by shared trait yielded 7,490 trait-sets containing multiple single-ancestry studies. A variant that tags the true signal through
+linkage disequilibrium, without driving it, shows different effects across populations because LD structure differs; a tag statistically
+indistinguishable from the true driver in one ancestry can be distinguishable in another. Multi-ancestry fine-mapping exploits these
+differences by integrating data across populations, improving resolution for causal variants shared across ancestries. Moving from
+single-study, single-ancestry fine-mapping to a multi-ancestry, multi-trait approach is therefore the logical next step.
+We are developing a scalable multi-ancestry fine-mapping workflow that integrates GWAS summary statistics with ancestry-matched linkage
+disequilibrium reference panels from gnomAD and Pan-UKBB. The workflow is implemented using Nextflow on top of the Open Targets Gentropy
+framework and is designed to run in-house at biobank scale. The pipeline resolves the Gentropy study index; for each trait-set it
+determines which combinations of studies are eligible for multi-ancestry fine-mapping and routes each eligible combination to one or more
+applicable methods. Studies assigned to an execution route are clumped, and loci with their matched LD are passed through a shared
+Gentropy input interface. The method itself is agnostic and selectable, spanning MultiSuSiE as proof of concept, with future work planned
+to integrate other methods. Method output is normalised through a shared Gentropy output interface back into the standard credible-set
+format, so it can be reused by other post-GWAS analysis methods. This workflow will allow Open Targets to produce more accurate credible
+sets at scale. Built on open-source methods and uniform access to external LD reference panels, it will support reuse by other groups
+working with multi-ancestry GWAS data.
+
+
