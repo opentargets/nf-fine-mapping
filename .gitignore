@@ -19,3 +19,7 @@ coverage.xml
 **/.pytest_cache/
 testdata/output/
 testdata/work/
+logs/.nextflow.*
+testdata/output/*
+testdata/work/*
+.omx
