@@ -1,9 +1,12 @@
+include { locus_breaker_clumping } from './modules/locus_breaker.nf'
+include { clumping_report        } from './modules/clumping_report.nf'
 
 
 workflow LOCUS_BREAKER {
-    input:
-        ch_sumstats
+    take:
+    ch_sumstats
 
-    emit:
-        ch_loci
+    main:
+    ch_locus = locus_breaker_clumping(ch_sumstats)
+    ch_locus.map { locus_record -> locus_record[0] } | collect
 }
