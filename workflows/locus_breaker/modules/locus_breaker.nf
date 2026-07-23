@@ -2,17 +2,17 @@ nextflow.enable.types = true
 
 
 process locus_breaker_clumping {
-    tag "${meta.studyId}"
     tag "${meta.route}"
     tag "${meta.traitSet}"
     tag "${meta.ancestry}"
     tag "${meta.runId}"
+    tag "${meta.studyId}"
 
     label "spark"
     label "gentropy"
     label "locus_breaker"
 
-    publishDir "${params.output_dir}", mode: 'copy', pattern: 'locus_breaker_clumped_study_locus/*/*.parquet'
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'locus_breaker_clumped_study_locus/**/*/*.parquet'
 
     input:
     record(
@@ -21,7 +21,7 @@ process locus_breaker_clumping {
     )
 
     stage:
-    env 'HYDRA_ERROR', "true"
+    env 'HYDRA_FULL_ERROR', "true"
 
     output:
     record(
@@ -37,15 +37,15 @@ process locus_breaker_clumping {
         step.session.output_partitions=1 \
         step.summary_statistics_input_path=${summary_statistics_path} \
         step.clumped_study_locus_output_path="locus_breaker_clumped_study_locus/${meta.studyId}" \
-        lbc_baseline_pvalue=1.0e-05 \
-        lbc_distance_cutoff=250000 \
-        lbc_pvalue_threshold=1.0e-08 \
-        lbc_flanking_distance=100000 \
-        large_loci_size=1500000 \
-        wbc_clump_distance=500000 \
-        wbc_pvalue_threshold=1.0e-05 \
-        collect_locus=true \
-        remove_mhc=true \
+        step.lbc_baseline_pvalue=1.0e-05 \
+        step.lbc_distance_cutoff=250000 \
+        step.lbc_pvalue_threshold=1.0e-08 \
+        step.lbc_flanking_distance=100000 \
+        step.large_loci_size=1500000 \
+        step.wbc_clump_distance=500000 \
+        step.wbc_pvalue_threshold=1.0e-05 \
+        step.collect_locus=true \
+        step.remove_mhc=true \
     """
 
     stub:
