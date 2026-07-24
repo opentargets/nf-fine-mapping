@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-from hashlib import md5
-from itertools import combinations, product
 from pathlib import Path
 
 import duckdb
@@ -127,11 +125,6 @@ def _class_stats(con: duckdb.DuckDBPyConnection, overlap_class: str) -> dict[str
     }
 
 
-def _candidate_set_id(study_locus_ids: tuple[str, ...]) -> str:
-    """Return a deterministic fine-mapping set identifier."""
-    return md5("|".join(sorted(study_locus_ids)).encode()).hexdigest()
-
-
 def _connected_components(
     nodes: set[str],
     undirected_edges: dict[str, set[str]],
@@ -155,12 +148,12 @@ def _connected_components(
     return components
 
 
-def _full_candidate_sets(
+def _component_metrics(
     study_ids: list[str],
     eligible_loci: list[tuple[str, str]],
     overlap_edges: set[tuple[str, str]],
-) -> tuple[list[tuple[str, tuple[str, ...]]], dict[str, int]]:
-    """Return deterministic full candidate sets and component-level generation metrics."""
+) -> dict[str, int]:
+    """Return component-level metrics without generating candidate products in Python."""
     study_id_by_locus_id = {study_locus_id: study_id for study_locus_id, study_id in eligible_loci}
     eligible_locus_ids = set(study_id_by_locus_id)
     undirected_edges: dict[str, set[str]] = {study_locus_id: set() for study_locus_id in eligible_locus_ids}
@@ -180,7 +173,6 @@ def _full_candidate_sets(
         if study_id not in study_ids:
             raise ValueError(f"Unexpected studyId in eligible loci: {study_id}")
 
-    candidate_sets: list[tuple[str, tuple[str, ...]]] = []
     for component in components:
         component_loci_by_study_id: dict[str, list[str]] = {study_id: [] for study_id in study_ids}
         for study_locus_id in component:
@@ -194,41 +186,59 @@ def _full_candidate_sets(
             candidate_product_size *= len(component_loci_by_study_id[study_id])
         metrics["maxComponentCandidateProductSize"] = max(metrics["maxComponentCandidateProductSize"], candidate_product_size)
 
-        for candidate_members in product(*(sorted(component_loci_by_study_id[study_id]) for study_id in study_ids)):
-            if all((left, right) in overlap_edges for left, right in combinations(candidate_members, 2)):
-                candidate_sets.append((_candidate_set_id(candidate_members), candidate_members))
-
-    return candidate_sets, metrics
+    return metrics
 
 
-def _create_full_candidate_members_table(
-    con: duckdb.DuckDBPyConnection,
-    candidate_sets: list[tuple[str, tuple[str, ...]]],
-) -> None:
-    """Create a temp table that maps full set IDs to member StudyLocus IDs."""
-    if not candidate_sets:
+def _create_full_candidate_tables_sql(con: duckdb.DuckDBPyConnection, study_ids: list[str]) -> None:
+    """Create full candidate sets and members with an exact N-study SQL join."""
+    if not study_ids:
         con.execute(
             """
+            CREATE TEMP TABLE full_candidate_sets (
+                fineMappingLocusSetId VARCHAR,
+                memberIds VARCHAR[]
+            );
             CREATE TEMP TABLE full_candidate_members (
                 fineMappingLocusSetId VARCHAR,
                 studyLocusId VARCHAR
-            )
+            );
             """
         )
         return
 
-    values_sql = ",\n        ".join(
-        f"({_quote_sql_string(fine_mapping_locus_set_id)}, {_quote_sql_string(study_locus_id)})"
-        for fine_mapping_locus_set_id, members in candidate_sets
-        for study_locus_id in members
-    )
+    aliases = [f"s{index}" for index in range(len(study_ids))]
+    member_expression = "list_value(" + ", ".join(f"{alias}.studyLocusId" for alias in aliases) + ")"
+    joins = [f"eligible_full_loci AS {aliases[0]}"]
+    for index, (alias, study_id) in enumerate(zip(aliases[1:], study_ids[1:], strict=True), start=1):
+        overlap_conditions = " AND ".join(
+            f"EXISTS ("
+            f"SELECT 1 FROM overlap_edges AS e{index}_{previous} "
+            f"WHERE e{index}_{previous}.studyLocusId1 = {aliases[previous]}.studyLocusId "
+            f"AND e{index}_{previous}.studyLocusId2 = {alias}.studyLocusId"
+            f")"
+            for previous in range(index)
+        )
+        joins.append(
+            f"INNER JOIN eligible_full_loci AS {alias} "
+            f"ON {alias}.studyId = {_quote_sql_string(study_id)} "
+            f"AND {overlap_conditions}"
+        )
+
+    first_study_filter = f"{aliases[0]}.studyId = {_quote_sql_string(study_ids[0])}"
     con.execute(
         f"""
+        CREATE TEMP TABLE full_candidate_sets AS
+        SELECT
+            md5(array_to_string(list_sort({member_expression}), '|')) AS fineMappingLocusSetId,
+            {member_expression} AS memberIds
+        FROM {' '.join(joins)}
+        WHERE {first_study_filter};
+
         CREATE TEMP TABLE full_candidate_members AS
-        SELECT *
-        FROM (VALUES
-            {values_sql}
-        ) AS t(fineMappingLocusSetId, studyLocusId)
+        SELECT
+            fineMappingLocusSetId,
+            unnest(memberIds) AS studyLocusId
+        FROM full_candidate_sets
         """
     )
 
@@ -250,11 +260,11 @@ def _copy_full_loci(con: duckdb.DuckDBPyConnection, output: Path) -> None:
 
 def _full_stats(
     con: duckdb.DuckDBPyConnection,
-    candidate_sets: list[tuple[str, tuple[str, ...]]],
     component_metrics: dict[str, int],
 ) -> dict[str, object]:
     """Return row-count statistics for full candidate sets."""
-    if not candidate_sets:
+    candidate_set_count = con.execute("SELECT count(*) FROM full_candidate_sets").fetchone()[0]
+    if not candidate_set_count:
         return {
             "fineMappingSetCount": 0,
             "rowCount": 0,
@@ -275,7 +285,7 @@ def _full_stats(
     ).fetchall()
     by_study_id = {study_id: row_count for study_id, row_count in rows}
     return {
-        "fineMappingSetCount": len(candidate_sets),
+        "fineMappingSetCount": candidate_set_count,
         "rowCount": sum(by_study_id.values()),
         "isEmpty": False,
         "studyIdsWithRows": list(by_study_id),
@@ -374,11 +384,18 @@ def run_collect_finemapping_loci(config: CollectFineMappingLociConfig) -> None:
 
         overlap_edge_count = con.execute("SELECT count(*) FROM overlap_edges").fetchone()[0]
         eligible_full_overlap_locus_count = con.execute("SELECT count(*) FROM classified_loci WHERE overlapClass = 'full'").fetchone()[0]
-        eligible_loci = con.execute(
+        con.execute(
             """
+            CREATE TEMP TABLE eligible_full_loci AS
             SELECT studyLocusId, studyId
             FROM classified_loci
             WHERE overlapClass = 'full'
+            """
+        )
+        eligible_loci = con.execute(
+            """
+            SELECT studyLocusId, studyId
+            FROM eligible_full_loci
             ORDER BY studyId, studyLocusId
             """
         ).fetchall()
@@ -391,13 +408,13 @@ def run_collect_finemapping_loci(config: CollectFineMappingLociConfig) -> None:
                 """
             ).fetchall()
         }
-        candidate_sets, component_metrics = _full_candidate_sets(study_ids, eligible_loci, overlap_edges)
-        _create_full_candidate_members_table(con, candidate_sets)
-        full_stats = _full_stats(con, candidate_sets, component_metrics)
+        component_metrics = _component_metrics(study_ids, eligible_loci, overlap_edges)
+        _create_full_candidate_tables_sql(con, study_ids)
+        full_stats = _full_stats(con, component_metrics)
         partial_stats = _class_stats(con, "partial")
         non_overlap_stats = _class_stats(con, "non_overlap")
 
-        if candidate_sets:
+        if full_stats["fineMappingSetCount"]:
             _copy_full_loci(con, config.full_output)
         _copy_classified_loci(con, config.partial_output, "partial", "partial-overlapping studyLocus")
         _copy_classified_loci(con, config.non_overlap_output, "non_overlap", "non-overlapping studyLocus")
