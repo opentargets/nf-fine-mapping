@@ -106,6 +106,16 @@ LOCUS_STRUCT_SCHEMA = StructSchema(
     )
 )
 
+COLLECTED_LOCUS_STRUCT_SCHEMA = StructSchema(
+    fields=(
+        SchemaField(name="variantId", duckdb_type="VARCHAR"),
+        SchemaField(name="pValueMantissa", duckdb_type="FLOAT"),
+        SchemaField(name="pValueExponent", duckdb_type="INTEGER"),
+        SchemaField(name="beta", duckdb_type="DOUBLE"),
+        SchemaField(name="standardError", duckdb_type="DOUBLE"),
+    )
+)
+
 STUDY_LOCUS_SCHEMA = DatasetSchema(
     fields=(
         DatasetField(name="studyLocusId", duckdb_type="VARCHAR", nullable=False),
@@ -123,5 +133,18 @@ STUDY_LOCUS_SCHEMA = DatasetSchema(
         DatasetField(name="locusStart", duckdb_type="INTEGER"),
         DatasetField(name="locusEnd", duckdb_type="INTEGER"),
         DatasetField(name="locus", duckdb_type=ListSchema(item_schema=LOCUS_STRUCT_SCHEMA)),
+    )
+)
+
+COLLECTED_LOCUS_SCHEMA = DatasetSchema(
+    fields=(
+        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR"),
+        DatasetField(name="studyLocusId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="studyId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="chromosome", duckdb_type="VARCHAR"),
+        DatasetField(name="locusStart", duckdb_type="INTEGER"),
+        DatasetField(name="locusEnd", duckdb_type="INTEGER"),
+        DatasetField(name="qualityControls", duckdb_type="VARCHAR[]"),
+        DatasetField(name="locus", duckdb_type=ListSchema(item_schema=COLLECTED_LOCUS_STRUCT_SCHEMA)),
     )
 )

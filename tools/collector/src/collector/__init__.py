@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
 
 app = typer.Typer()
@@ -115,6 +116,31 @@ def locus_breaker(
         remove_mhc=remove_mhc,
     )
     run_locus_breaker(input, output, config)
+
+
+@app.command(name="collect_finemapping_loci")
+def collect_finemapping_loci(
+    input: Annotated[
+        list[Path],
+        typer.Option("--input", help="Input flat StudyLocus Parquet file or directory dataset. Can be provided multiple times."),
+    ],
+    full_output: Annotated[Path, typer.Option("--full_output", help="Optional full-overlap output parquet path.")],
+    partial_output: Annotated[Path, typer.Option("--partial_output", help="Required partial-overlap output parquet path.")],
+    non_overlap_output: Annotated[Path, typer.Option("--non_overlap_output", help="Required non-overlap output parquet path.")],
+    stats_output: Annotated[Path, typer.Option("--stats_output", help="Required JSON statistics output path.")],
+):
+    """Collect StudyLocus datasets into fine-mapping overlap classes."""
+    config = CollectFineMappingLociConfig(
+        input_paths=tuple(input),
+        full_output=full_output,
+        partial_output=partial_output,
+        non_overlap_output=non_overlap_output,
+        stats_output=stats_output,
+    )
+    try:
+        run_collect_finemapping_loci(config)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
 
 
 @app.command()

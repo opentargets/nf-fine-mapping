@@ -3,10 +3,12 @@
 nextflow.enable.dsl = 2
 nextflow.enable.types = true
 
-include { LOCUS_BREAKER  } from './workflows/locus_breaker/main.nf'
+include { LOCUS_BREAKER    } from './workflows/locus_breaker/main.nf'
+include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'
 
 params {
     manifest: String
+    manifest_base_dir: String
     output_dir: String
     route: String
 }
@@ -39,8 +41,9 @@ def intro() -> Void {
     )
 }
 
-def manifest_row_to_record(row: List<String>) -> Map {
+def manifest_row_to_record(row: List<String>, manifest_base_dir: String) -> Map {
     def traitSet: List<String> = row[5].tokenize(',')
+    def summary_statistics_path = row[3].startsWith('/') ? row[3] : "${manifest_base_dir}/${row[3]}"
 
     def meta = [
         runId: row[0],
@@ -52,7 +55,7 @@ def manifest_row_to_record(row: List<String>) -> Map {
     ]
 
     return [
-        summary_statistics_path: file(row[3]),
+        summary_statistics_path: file(summary_statistics_path),
         meta: meta,
     ]
 }
@@ -67,7 +70,7 @@ def read_manifest(path: String) -> Channel<Map> {
             )
         }
         .map { row ->
-            manifest_row_to_record(row as List<String>)
+            manifest_row_to_record(row as List<String>, params.manifest_base_dir)
         }
 
     log.info("Manifest file read successfully: ${path}")
@@ -96,7 +99,7 @@ workflow {
             )
         }
         .map { row ->
-            manifest_row_to_record(row as List<String>)
+            manifest_row_to_record(row as List<String>, params.manifest_base_dir)
         }
 
     log.info("Manifest file read successfully: ${params.manifest}")
@@ -105,13 +108,20 @@ workflow {
         row.meta.route == params.route
     }
 
-    locus_breaker_out = LOCUS_BREAKER(filtered_ch)
-    locus_out = locus_breaker_out.ch_locus
-    locus_out2 = locus_breaker_out.ch_locus2
+    locus_out = LOCUS_BREAKER(filtered_ch)
+
+    locus_collection_out = LOCUS_COLLECTION(locus_out)
+    full_overlap_loci = locus_collection_out.ch_full_overlap_loci
+    partial_overlap_loci = locus_collection_out.ch_partial_overlap_loci
+    non_overlap_loci = locus_collection_out.ch_non_overlap_loci
+    collect_loci_stats = locus_collection_out.ch_collect_loci_stats
 
     publish:
-    loci  = locus_out
-    loci2 = locus_out2
+    loci                 = locus_out
+    full_overlap_loci    = full_overlap_loci
+    partial_overlap_loci = partial_overlap_loci
+    non_overlap_loci     = non_overlap_loci
+    collect_loci_stats   = collect_loci_stats
 
     onComplete:
     log.info('Pipeline complete!')
@@ -123,8 +133,20 @@ output {
         path 'locus_breaker_clumped_study_locus'
         mode 'copy'
     }
-    loci2 {
-        path 'gentropy_locus_breaker_clumped_study_locus'
+    full_overlap_loci {
+        path 'collected_loci/full_overlaps'
+        mode 'copy'
+    }
+    partial_overlap_loci {
+        path 'collected_loci/partial_overlaps'
+        mode 'copy'
+    }
+    non_overlap_loci {
+        path 'collected_loci/non_overlaps'
+        mode 'copy'
+    }
+    collect_loci_stats {
+        path 'collected_loci/stats'
         mode 'copy'
     }
 }
