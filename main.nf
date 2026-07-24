@@ -3,7 +3,6 @@
 nextflow.enable.dsl = 2
 nextflow.enable.types = true
 
-include { MetaRecord ; ManifestRecord ; LocusRecord } from './types.nf'
 include { LOCUS_BREAKER  } from './workflows/locus_breaker/main.nf'
 
 params {
@@ -40,26 +39,26 @@ def intro() -> Void {
     )
 }
 
-def manifest_row_to_record(row: List<String>) -> ManifestRecord {
+def manifest_row_to_record(row: List<String>) -> Map {
     def traitSet: List<String> = row[5].tokenize(',')
 
-    def meta = record(
+    def meta = [
         runId: row[0],
         studyId: row[1],
         route: row[2],
         ancestry: row[4],
         traitSet: traitSet,
         sampleSize: row[6].toInteger(),
-    ) as MetaRecord
+    ]
 
-    return record(
+    return [
         summary_statistics_path: file(row[3]),
         meta: meta,
-    ) as ManifestRecord
+    ]
 }
 
 
-def read_manifest(path: String) -> Channel<ManifestRecord> {
+def read_manifest(path: String) -> Channel<Map> {
     def manifest_channel = channel.fromPath(path)
         .flatMap { manifest ->
             manifest.splitCsv(
