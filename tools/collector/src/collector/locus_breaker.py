@@ -116,9 +116,8 @@ def _pvalue_filter_sql(pvalue: float) -> str:
     )
 
 
-def _candidate_select_sql(input_path: Path, pvalue_threshold: float) -> str:
+def _candidate_select_sql(source: str, pvalue_threshold: float) -> str:
     """Return sorted WBC candidate SQL after Gentropy-compatible p-value filtering."""
-    source = _read_parquet_sql(input_path)
     filter_sql = _pvalue_filter_sql(pvalue_threshold)
     return f"""
 SELECT
@@ -140,11 +139,11 @@ ORDER BY studyId, chromosome, position, variantId
 
 def _wbc_lead_rows(
     con: duckdb.DuckDBPyConnection,
-    input_path: Path,
+    source: str,
     config: LocusBreakerConfig,
 ) -> list[dict[str, object]]:
     """Return WBC lead rows using Gentropy's cluster and greedy pruning semantics."""
-    rows = con.execute(_candidate_select_sql(input_path, config.wbc_pvalue_threshold)).fetchall()
+    rows = con.execute(_candidate_select_sql(source, config.wbc_pvalue_threshold)).fetchall()
     candidates = [dict(zip(WBC_SOURCE_COLUMNS, row, strict=True)) for row in rows]
     if not candidates:
         return []
@@ -298,11 +297,10 @@ SELECT * FROM replacement_loci
 """
 
 
-def lbc_core_sql(input_path: Path, config: LocusBreakerConfig) -> str:
+def lbc_core_sql(source: str, config: LocusBreakerConfig) -> str:
     """Return SQL implementing Gentropy's locus-breaker clumping core."""
     baseline_filter = _pvalue_filter_sql(config.lbc_baseline_pvalue)
     neglog_pvalue_cutoff = -log10(config.lbc_pvalue_threshold)
-    source = _read_parquet_sql(input_path)
     flank = config.lbc_flanking_distance
 
     return f"""
@@ -429,12 +427,11 @@ CAST(
 """
 
 
-def final_loci_sql(input_path: Path, config: LocusBreakerConfig) -> str:
+def final_loci_sql(source: str, config: LocusBreakerConfig) -> str:
     """Return SQL for the final flat output, optionally collecting locus arrays."""
     if not config.collect_locus:
         return f"SELECT {TOP_LEVEL_SELECT_SQL} FROM mhc_filtered_loci"
 
-    source = _read_parquet_sql(input_path)
     locus_type = STUDY_LOCUS_SCHEMA.fields[-1].sql_type()
     locus_struct = _locus_struct_sql("s")
     return f"""
@@ -505,18 +502,24 @@ def run_locus_breaker(input_path: Path, output_path: Path, config: LocusBreakerC
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with duckdb.connect() as con:
-        con.execute("CREATE TEMP TABLE lbc AS " + lbc_core_sql(input_path, config))
+        con.execute(
+            "CREATE TEMP TABLE source_sumstats AS "
+            "SELECT * FROM "
+            + _read_parquet_sql(input_path)
+        )
+        source = "source_sumstats"
+        con.execute("CREATE TEMP TABLE lbc AS " + lbc_core_sql(source, config))
         large_loci_count = con.execute(
             f"SELECT COUNT(*) FROM lbc WHERE locusEnd - locusStart > {config.large_loci_size}"
         ).fetchone()[0]
         if large_loci_count > 0:
-            _create_wbc_leads_table(con, _wbc_lead_rows(con, input_path, config))
+            _create_wbc_leads_table(con, _wbc_lead_rows(con, source, config))
             con.execute("CREATE TEMP TABLE processed_loci AS " + processed_locus_breaker_sql(config))
         else:
             con.execute("CREATE TEMP TABLE processed_loci AS SELECT * FROM lbc")
 
         con.execute("CREATE TEMP TABLE mhc_filtered_loci AS " + mhc_filtered_loci_sql(config))
-        con.execute("CREATE TEMP TABLE final_loci AS " + final_loci_sql(input_path, config))
+        con.execute("CREATE TEMP TABLE final_loci AS " + final_loci_sql(source, config))
 
         final_count = con.execute("SELECT COUNT(*) FROM final_loci").fetchone()[0]
         if final_count == 0:
