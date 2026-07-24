@@ -4,7 +4,12 @@ version = "1.0.0"
 description = "Collect parquet files for summary statistics"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["duckdb>=1.5.0", "typer>=0.24.1"]
+dependencies = [
+    "duckdb>=1.5.0",
+    "polars>=1.43.0",
+    "pydantic>=2.13.4",
+    "typer>=0.24.1",
+]
 license = { file = "LICENCE.md" }
 
 classifiers = [

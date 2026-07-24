@@ -87,6 +87,56 @@ def transform_input(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def locus_breaker_input(tmp_path: Path) -> Path:
+    """Flat summary-statistics parquet with columns required by locus_breaker."""
+    path = tmp_path / "locus_breaker_sumstats.parquet"
+
+    con = duckdb.connect()
+    try:
+        con.execute(
+            f"""
+            COPY (
+                SELECT * FROM (VALUES
+                    ('GCST_TEST', '1_100_A_C', '1', 100, 0.1, 1000, 1.0::FLOAT, -9, 0.1::FLOAT, 0.05),
+                    ('GCST_TEST', '1_150_A_C', '1', 150, 0.2, 1000, 5.0::FLOAT, -6, 0.2::FLOAT, 0.06)
+                ) AS t(
+                    studyId,
+                    variantId,
+                    chromosome,
+                    position,
+                    beta,
+                    sampleSize,
+                    pValueMantissa,
+                    pValueExponent,
+                    effectAlleleFrequencyFromSource,
+                    standardError
+                )
+            ) TO '{path}' (FORMAT 'parquet')
+            """
+        )
+    finally:
+        con.close()
+
+    return path
+
+
+@pytest.fixture
+def locus_breaker_input_dir(locus_breaker_input: Path, tmp_path: Path) -> Path:
+    """Directory dataset with one valid locus_breaker parquet part."""
+    input_dir = tmp_path / "locus_breaker_input_dir"
+    input_dir.mkdir()
+    output_part = input_dir / "part-00000.parquet"
+
+    con = duckdb.connect()
+    try:
+        con.execute(f"COPY (SELECT * FROM read_parquet('{locus_breaker_input}')) TO '{output_part}' (FORMAT 'parquet')")
+    finally:
+        con.close()
+
+    return input_dir
+
+
 # ---------------------------------------------------------------------------
 # cli (collect) command tests
 # ---------------------------------------------------------------------------
@@ -238,3 +288,130 @@ def test_transform_invalid_input_extension(tmp_path: Path):
 def test_transform_output_dir_must_exist(transform_input: Path):
     result = runner.invoke(app, ["transform", "--input", str(transform_input), "--output", "/nonexistent/out.tsv.gz"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# locus_breaker command tests
+# ---------------------------------------------------------------------------
+
+
+def test_locus_breaker_accepts_issue_one_options(locus_breaker_input: Path, tmp_path: Path):
+    output = tmp_path / "study_locus.parquet"
+    result = runner.invoke(
+        app,
+        [
+            "locus_breaker",
+            "--input",
+            str(locus_breaker_input),
+            "--output",
+            str(output),
+            "--lbc_baseline_pvalue",
+            "1e-5",
+            "--lbc_distance_cutoff",
+            "250000",
+            "--lbc_pvalue_threshold",
+            "1e-8",
+            "--lbc_flanking_distance",
+            "100000",
+            "--large_loci_size",
+            "1500000",
+            "--wbc_clump_distance",
+            "500000",
+            "--wbc_pvalue_threshold",
+            "1e-5",
+            "--no_collect_locus",
+            "--no_remove_mhc",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+    delta_result = runner.invoke(app, ["locus_breaker", "--input", str(locus_breaker_input), "--output", str(output), "--output_delta", "x"])
+    assert delta_result.exit_code != 0
+    write_mode_result = runner.invoke(
+        app,
+        ["locus_breaker", "--input", str(locus_breaker_input), "--output", str(output), "--write_mode", "overwrite"],
+    )
+    assert write_mode_result.exit_code != 0
+
+
+def test_locus_breaker_accepts_single_file_and_writes_flat_schema(locus_breaker_input: Path, tmp_path: Path):
+    from collector.schema import LOCUS_STRUCT_SCHEMA, STUDY_LOCUS_SCHEMA
+
+    output = tmp_path / "study_locus.parquet"
+    result = runner.invoke(app, ["locus_breaker", "--input", str(locus_breaker_input), "--output", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+    con = duckdb.connect()
+    try:
+        rows = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{output}')").fetchall()
+    finally:
+        con.close()
+
+    columns = [row[0] for row in rows]
+    types = {row[0]: row[1] for row in rows}
+    assert columns == list(STUDY_LOCUS_SCHEMA.column_names)
+    assert types["studyLocusId"] == "VARCHAR"
+    assert types["position"] == "INTEGER"
+    assert types["pValueMantissa"] == "FLOAT"
+    assert types["qualityControls"] == "VARCHAR[]"
+    assert types["locus"].startswith("STRUCT(")
+    assert types["locus"].endswith("[]")
+    for field in LOCUS_STRUCT_SCHEMA.field_names:
+        assert field.lower() in types["locus"].lower()
+
+
+def test_locus_breaker_accepts_directory_input_and_creates_output_parents(locus_breaker_input_dir: Path, tmp_path: Path):
+    output = tmp_path / "nested" / "study_locus.parquet"
+    result = runner.invoke(app, ["locus_breaker", "--input", str(locus_breaker_input_dir), "--output", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_locus_breaker_rejects_non_parquet_output(locus_breaker_input: Path, tmp_path: Path):
+    result = runner.invoke(app, ["locus_breaker", "--input", str(locus_breaker_input), "--output", str(tmp_path / "study_locus.txt")])
+
+    assert result.exit_code != 0
+
+
+def test_locus_breaker_overwrites_existing_output(locus_breaker_input: Path, tmp_path: Path):
+    output = tmp_path / "study_locus.parquet"
+    output.write_text("not parquet")
+
+    result = runner.invoke(app, ["locus_breaker", "--input", str(locus_breaker_input), "--output", str(output), "--no_collect_locus"])
+
+    assert result.exit_code == 0, result.output
+    con = duckdb.connect()
+    try:
+        count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{output}')").fetchone()
+    finally:
+        con.close()
+    assert count == (1,)
+
+
+def test_locus_breaker_schema_contract_uses_pydantic_models():
+    from pydantic import BaseModel
+
+    from collector.locus_breaker import LocusBreakerConfig
+    from collector.schema import STUDY_LOCUS_SCHEMA, DatasetSchema, StructSchema
+
+    assert issubclass(LocusBreakerConfig, BaseModel)
+    assert isinstance(STUDY_LOCUS_SCHEMA, DatasetSchema)
+    assert isinstance(STUDY_LOCUS_SCHEMA.fields[-1].duckdb_type.item_schema, StructSchema)
+    assert STUDY_LOCUS_SCHEMA.column_names[0] == "studyLocusId"
+    assert STUDY_LOCUS_SCHEMA.fields[-1].duckdb_type.item_schema.field_names == (
+        "is95CredibleSet",
+        "is99CredibleSet",
+        "logBF",
+        "posteriorProbability",
+        "variantId",
+        "pValueMantissa",
+        "pValueExponent",
+        "beta",
+        "standardError",
+        "r2Overall",
+    )
