@@ -37,9 +37,7 @@ def sql_literal(value: object) -> str:
 
 def write_sumstats(path: Path, rows: list[tuple[object, ...]]) -> None:
     """Write rows with the locus_breaker input schema to parquet."""
-    values = ",\n                    ".join(
-        "(" + ", ".join(sql_literal(value) for value in row) + ")" for row in rows
-    )
+    values = ",\n                    ".join("(" + ", ".join(sql_literal(value) for value in row) + ")" for row in rows)
     columns = ",\n                    ".join(SUMSTAT_COLUMNS)
 
     con = duckdb.connect()
@@ -234,9 +232,7 @@ def test_lbc_study_locus_id_matches_gentropy_md5_concat_semantics(tmp_path: Path
     )
 
     rows = read_lbc_rows(output_path)
-    assert rows[0][0] == md5("GCST0000011_1000_A_C".encode()).hexdigest()
-
-
+    assert rows[0][0] == md5(b"GCST0000011_1000_A_C").hexdigest()
 
 
 def test_wbc_is_skipped_when_lbc_produces_no_loci(tmp_path: Path):
@@ -421,7 +417,6 @@ def test_wbc_candidates_are_filtered_by_mantissa_exponent_threshold(tmp_path: Pa
 
     rows = read_lbc_rows(output_path)
     assert [row[2] for row in rows] == ["1_100_A_C", "1_300_A_C"]
-
 
 
 def test_mhc_exclusion_happens_after_large_locus_replacement(tmp_path: Path):

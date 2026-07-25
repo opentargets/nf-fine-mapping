@@ -185,9 +185,7 @@ def normalize_locus_entry(entry: Any, *, source: str) -> dict[str, Any]:
 
     if source == "collector":
         non_null_extra = {
-            field: normalize_scalar(entry.get(field))
-            for field in COLLECTOR_NULL_LOCUS_FIELDS
-            if normalize_scalar(entry.get(field)) is not None
+            field: normalize_scalar(entry.get(field)) for field in COLLECTOR_NULL_LOCUS_FIELDS if normalize_scalar(entry.get(field)) is not None
         }
         if non_null_extra:
             normalized["__unexpected_non_null_collector_fields"] = non_null_extra
@@ -244,10 +242,7 @@ def normalized_rows(rows: Iterable[dict[str, Any]], *, source: str) -> list[dict
 
 
 def comparable_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {key: value for key, value in row.items() if key not in {"chromosome_sort_group", "chromosome_sort_number"}}
-        for row in rows
-    ]
+    return [{key: value for key, value in row.items() if key not in {"chromosome_sort_group", "chromosome_sort_number"}} for row in rows]
 
 
 def values_equal(left: Any, right: Any, *, float_abs_tolerance: float) -> bool:

@@ -142,14 +142,14 @@ def test_nf_test_pipeline_verifies_collector_and_gentropy_step_wiring():
     nf_test_nextflow_config = NF_TEST_NEXTFLOW_CONFIG.read_text()
 
     assert "conf/test-gentropy-local.config" in nf_test_config
-    assert "options \"-stub-run\"" in nf_test_pipeline
+    assert 'options "-stub-run"' in nf_test_pipeline
     assert "runs collector locus breaker and locus collection on chr1 test data" in nf_test_pipeline
     assert "runs gentropy locus breaker and locus collection on chr1 test data" in nf_test_pipeline
     assert 'output_dir = "$outputDir"' in nf_test_pipeline
     assert 'locus_breaker_method = "gentropy"' in nf_test_pipeline
     assert 'manifest = new File("testdata/manifest.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest_base_dir = new File(".").canonicalPath' in nf_test_pipeline
-    assert 'workflow.trace.succeeded().size() == 16' in nf_test_pipeline
+    assert "workflow.trace.succeeded().size() == 16" in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4' in nf_test_pipeline
@@ -168,8 +168,8 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'locus_breaker_method = "gentropy"' in locus_breaker_test
     assert "input[0] = channel.of(" in locus_breaker_test
     assert "input[0] = channel.of(" in locus_collection_test
-    assert '${projectDir}/testdata/sumstats/GCST90002351' in locus_breaker_test
-    assert '${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet' in locus_collection_test
+    assert "${projectDir}/testdata/sumstats/GCST90002351" in locus_breaker_test
+    assert "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet" in locus_collection_test
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1' in locus_collection_test
@@ -182,10 +182,10 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'row[2] == "3.3.0-dev.64"' in locus_breaker_test
     assert 'topics "versions"' in locus_collection_test
     assert 'topics.versions[0][0].startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI")' in locus_collection_test
-    assert 'workflow.out.ch_full_overlap_loci.size() == 0' in locus_collection_test
-    assert 'workflow.out.ch_partial_overlap_loci.size() == 1' in locus_collection_test
-    assert 'workflow.out.ch_non_overlap_loci.size() == 1' in locus_collection_test
-    assert 'workflow.out.ch_collect_loci_stats.size() == 1' in locus_collection_test
+    assert "workflow.out.ch_full_overlap_loci.size() == 0" in locus_collection_test
+    assert "workflow.out.ch_partial_overlap_loci.size() == 1" in locus_collection_test
+    assert "workflow.out.ch_non_overlap_loci.size() == 1" in locus_collection_test
+    assert "workflow.out.ch_collect_loci_stats.size() == 1" in locus_collection_test
     assert 'meta.studyId } == ["STUDY_A", "STUDY_B", "STUDY_C"]' in locus_collection_test
 
 

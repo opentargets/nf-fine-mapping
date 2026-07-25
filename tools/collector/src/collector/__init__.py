@@ -19,10 +19,14 @@ def collect(
     input: Annotated[Path, typer.Option(help="Input directory containing parquet files")],
     output: Annotated[Path, typer.Option(help="Path to the output parquet file")],
 ):
-    assert input.exists(), "Input directory is required"
-    assert output.parent.exists(), "Output directory is required"
-    assert input.is_dir(), "Input should be a directory"
-    assert output.suffix == ".parquet", "Output file should have a .parquet extension"
+    if not input.exists():
+        raise AssertionError("Input directory is required")
+    if not output.parent.exists():
+        raise AssertionError("Output directory is required")
+    if not input.is_dir():
+        raise AssertionError("Input should be a directory")
+    if output.suffix != ".parquet":
+        raise AssertionError("Output file should have a .parquet extension")
 
     import duckdb
 
@@ -36,11 +40,16 @@ def intersection(
     output: Annotated[Path, typer.Option(help="Path to the output parquet file")],
 ):
     for path in input:
-        assert path.exists(), f"Input file {path} does not exist"
-        assert path.is_file(), f"Input {path} should be a file"
-        assert path.suffix == ".parquet", f"Input file {path} should have a .parquet extension"
-        assert output.parent.exists(), "Output directory is required"
-        assert output.suffix == ".parquet", "Output file should have a .parquet extension"
+        if not path.exists():
+            raise AssertionError(f"Input file {path} does not exist")
+        if not path.is_file():
+            raise AssertionError(f"Input {path} should be a file")
+        if path.suffix != ".parquet":
+            raise AssertionError(f"Input file {path} should have a .parquet extension")
+    if not output.parent.exists():
+        raise AssertionError("Output directory is required")
+    if output.suffix != ".parquet":
+        raise AssertionError("Output file should have a .parquet extension")
 
     import duckdb
 
@@ -63,10 +72,14 @@ def transform(
     input: Annotated[Path, typer.Option(help="Input parquet file")],
     output: Annotated[Path, typer.Option(help="Path to the output parquet file")],
 ):
-    assert input.exists(), "Input file is required"
-    assert output.parent.exists(), "Output directory is required"
-    assert input.is_file(), "Input should be a file"
-    assert input.suffix == ".parquet", "Input file should have a .parquet extension"
+    if not input.exists():
+        raise AssertionError("Input file is required")
+    if not output.parent.exists():
+        raise AssertionError("Output directory is required")
+    if not input.is_file():
+        raise AssertionError("Input should be a file")
+    if input.suffix != ".parquet":
+        raise AssertionError("Input file should have a .parquet extension")
 
     import duckdb
 
@@ -184,11 +197,11 @@ def clumping_report(
         for path in paths:
             result = con.execute(
                 f"""
-                SELECT 
+                SELECT
                     {LocusReportFields.STUDY_ID.value},
-                    count(*) as {LocusReportFields.N_LOCUS.value}, 
+                    count(*) as {LocusReportFields.N_LOCUS.value},
                     mean(len({StudyLocusFields.LOCUS.value})) as {LocusReportFields.MEAN_LOCUS_SIZE.value},
-                    max(len({StudyLocusFields.LOCUS.value})) as {LocusReportFields.MAX_LOCUS_SIZE.value}, 
+                    max(len({StudyLocusFields.LOCUS.value})) as {LocusReportFields.MAX_LOCUS_SIZE.value},
                     min(len({StudyLocusFields.LOCUS.value})) as {LocusReportFields.MIN_LOCUS_SIZE.value}
                 FROM read_parquet('{path}')
                 GROUP BY {LocusReportFields.STUDY_ID.value}

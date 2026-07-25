@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from math import floor, log10
 from pathlib import Path
+from typing import cast
 
 import duckdb
 from pydantic import BaseModel, ConfigDict, Field
 
-from collector.schema import STUDY_LOCUS_SCHEMA
+from collector.schema import STUDY_LOCUS_SCHEMA, ListSchema
 
 MHC_CHROMOSOME = "6"
 MHC_START = 25_726_063
@@ -99,21 +100,13 @@ def _read_parquet_sql(input_path: Path) -> str:
 
 def _study_locus_id_sql(study_id: str = "studyId", variant_id: str = "variantId") -> str:
     """Return Gentropy-compatible studyLocusId SQL expression."""
-    return (
-        "md5("
-        f"coalesce(cast({study_id} AS VARCHAR), 'None') || "
-        f"coalesce(cast({variant_id} AS VARCHAR), 'None')"
-        ")"
-    )
+    return f"md5(coalesce(cast({study_id} AS VARCHAR), 'None') || coalesce(cast({variant_id} AS VARCHAR), 'None'))"
 
 
 def _pvalue_filter_sql(pvalue: float) -> str:
     """Return Gentropy-compatible p-value mantissa/exponent filter SQL."""
     mantissa, exponent = split_pvalue(pvalue)
-    return (
-        f"(pValueExponent < {exponent} OR "
-        f"(pValueExponent = {exponent} AND pValueMantissa <= {mantissa}))"
-    )
+    return f"(pValueExponent < {exponent} OR (pValueExponent = {exponent} AND pValueMantissa <= {mantissa}))"
 
 
 def _candidate_select_sql(source: str, pvalue_threshold: float) -> str:
@@ -156,11 +149,7 @@ def _wbc_lead_rows(
     for candidate in candidates:
         group = (candidate["studyId"], candidate["chromosome"])
         position = int(candidate["position"])
-        starts_new_cluster = (
-            current_group != group
-            or previous_position is None
-            or position - previous_position > config.wbc_clump_distance
-        )
+        starts_new_cluster = current_group != group or previous_position is None or position - previous_position > config.wbc_clump_distance
         if starts_new_cluster:
             if current_cluster:
                 clusters.append(current_cluster)
@@ -185,11 +174,8 @@ def _wbc_lead_rows(
         )
         selected_positions: list[int] = []
         for candidate in ordered_cluster:
-            position = int(candidate["position"])
-            if any(
-                abs(lead_position - position) < config.wbc_clump_distance
-                for lead_position in selected_positions
-            ):
+            position = int(cast(int, candidate["position"]))
+            if any(abs(lead_position - position) < config.wbc_clump_distance for lead_position in selected_positions):
                 continue
             selected_positions.append(position)
             leads.append(candidate)
@@ -235,10 +221,7 @@ def _create_wbc_leads_table(con: duckdb.DuckDBPyConnection, leads: list[dict[str
         )
         return
 
-    values_sql = ",\n        ".join(
-        "(" + ", ".join(_wbc_sql_literal(column, row[column]) for column in WBC_SOURCE_COLUMNS) + ")"
-        for row in leads
-    )
+    values_sql = ",\n        ".join("(" + ", ".join(_wbc_sql_literal(column, row[column]) for column in WBC_SOURCE_COLUMNS) + ")" for row in leads)
     columns_sql = ", ".join(WBC_SOURCE_COLUMNS)
     con.execute(
         f"""
@@ -267,7 +250,7 @@ small_loci AS (
 ),
 replacement_loci AS (
     SELECT
-        {_study_locus_id_sql('w.studyId', 'w.variantId')} AS studyLocusId,
+        {_study_locus_id_sql("w.studyId", "w.variantId")} AS studyLocusId,
         cast(w.studyId AS VARCHAR) AS studyId,
         cast(w.variantId AS VARCHAR) AS variantId,
         cast(w.chromosome AS VARCHAR) AS chromosome,
@@ -408,7 +391,8 @@ WHERE NOT (
 
 def _locus_struct_sql(alias: str = "s") -> str:
     """Return the nested locus struct expression in agreed field order."""
-    locus_struct_type = STUDY_LOCUS_SCHEMA.fields[-1].duckdb_type.item_schema.sql_type()
+    locus_schema = cast(ListSchema, STUDY_LOCUS_SCHEMA.fields[-1].duckdb_type)
+    locus_struct_type = locus_schema.item_schema.sql_type()
     return f"""
 CAST(
     struct_pack(
@@ -502,16 +486,13 @@ def run_locus_breaker(input_path: Path, output_path: Path, config: LocusBreakerC
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with duckdb.connect() as con:
-        con.execute(
-            "CREATE TEMP TABLE source_sumstats AS "
-            "SELECT * FROM "
-            + _read_parquet_sql(input_path)
-        )
+        con.execute("CREATE TEMP TABLE source_sumstats AS SELECT * FROM " + _read_parquet_sql(input_path))
         source = "source_sumstats"
         con.execute("CREATE TEMP TABLE lbc AS " + lbc_core_sql(source, config))
-        large_loci_count = con.execute(
-            f"SELECT COUNT(*) FROM lbc WHERE locusEnd - locusStart > {config.large_loci_size}"
-        ).fetchone()[0]
+        large_loci_count_row = con.execute(f"SELECT COUNT(*) FROM lbc WHERE locusEnd - locusStart > {config.large_loci_size}").fetchone()
+        if large_loci_count_row is None:
+            raise RuntimeError("DuckDB returned no large-loci count")
+        large_loci_count = large_loci_count_row[0]
         if large_loci_count > 0:
             _create_wbc_leads_table(con, _wbc_lead_rows(con, source, config))
             con.execute("CREATE TEMP TABLE processed_loci AS " + processed_locus_breaker_sql(config))
@@ -521,7 +502,10 @@ def run_locus_breaker(input_path: Path, output_path: Path, config: LocusBreakerC
         con.execute("CREATE TEMP TABLE mhc_filtered_loci AS " + mhc_filtered_loci_sql(config))
         con.execute("CREATE TEMP TABLE final_loci AS " + final_loci_sql(source, config))
 
-        final_count = con.execute("SELECT COUNT(*) FROM final_loci").fetchone()[0]
+        final_count_row = con.execute("SELECT COUNT(*) FROM final_loci").fetchone()
+        if final_count_row is None:
+            raise RuntimeError("DuckDB returned no final-loci count")
+        final_count = final_count_row[0]
         if final_count == 0:
             raise ValueError("LocusBreaker produced no study loci")
 
@@ -529,7 +513,6 @@ def run_locus_breaker(input_path: Path, output_path: Path, config: LocusBreakerC
             output_path.unlink()
 
         con.execute(
-            "COPY ("
-            + f"SELECT {TOP_LEVEL_SELECT_SQL} FROM final_loci ORDER BY {OUTPUT_ORDER_SQL}"
-            + f") TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)"
+            f"COPY (SELECT {TOP_LEVEL_SELECT_SQL} FROM final_loci ORDER BY {OUTPUT_ORDER_SQL}) "
+            f"TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)"
         )

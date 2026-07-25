@@ -10,7 +10,9 @@ null/
 testdata/work
 .ipynb_checkpoints/
 .python-version
+!tools/collector/.python-version
 .venv
+docs/_build/
 data_generation/bin/.ipynb_checkpoints/
 **/__pycache__/
 .coverage

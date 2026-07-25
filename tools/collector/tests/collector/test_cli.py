@@ -282,9 +282,9 @@ def test_cli_merges_parquets(collect_input: Path, tmp_path: Path):
     con = duckdb.connect()
     count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{output}')").fetchone()
     if count is None:
-        assert False, "Output parquet file is empty or malformed"
+        raise AssertionError("Output parquet file is empty or malformed")
     con.close()
-    # 2 files × 2 rows each = 4 rows
+    # 2 files x 2 rows each = 4 rows
     assert count[0] == 4
 
 
@@ -343,7 +343,7 @@ def test_intersection_single_file(intersection_inputs: list[Path], tmp_path: Pat
     con = duckdb.connect()
     count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{output}')").fetchone()
     if count is None:
-        assert False, "Output parquet file is empty or malformed"
+        raise AssertionError("Output parquet file is empty or malformed")
     con.close()
     assert count[0] == 3  # 2 shared + 1 only_in_first
 
@@ -593,14 +593,8 @@ def test_collect_finemapping_loci_accepts_inputs_creates_dirs_and_removes_stale_
 
     con = duckdb.connect()
     try:
-        partial_columns = [
-            row[0]
-            for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{partial_output}')").fetchall()
-        ]
-        non_overlap_columns = [
-            row[0]
-            for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{non_overlap_output}')").fetchall()
-        ]
+        partial_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{partial_output}')").fetchall()]
+        non_overlap_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{non_overlap_output}')").fetchall()]
     finally:
         con.close()
 
@@ -647,9 +641,7 @@ def test_collect_finemapping_loci_accepts_directory_input(study_locus_inputs: li
 
     con = duckdb.connect()
     try:
-        con.execute(
-            f"COPY (SELECT * FROM read_parquet('{study_locus_inputs[0]}')) TO '{input_dir / 'part-0.parquet'}' (FORMAT 'parquet')"
-        )
+        con.execute(f"COPY (SELECT * FROM read_parquet('{study_locus_inputs[0]}')) TO '{input_dir / 'part-0.parquet'}' (FORMAT 'parquet')")
     finally:
         con.close()
 

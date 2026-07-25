@@ -1,6 +1,23 @@
-# Collector
+# collector
 
 This is a tool to collect parquet files for summary statistics. It is used to collect parquet files from the input manifest and store them in a structured way for downstream analysis. The tool is implemented in Python and uses DuckDB for data processing. The tool is designed to be used in a Nextflow pipeline, but can also be used standalone.
+
+## Development
+
+The package uses `uv` for dependency management and supports the following
+local checks:
+
+| Command | Description |
+| --- | --- |
+| `make dev` | Install development dependencies. |
+| `make lint` | Run Ruff formatting/linting and `ty` type checks. |
+| `make test` | Run the Python test suite. |
+| `make build` | Build the collector container image. |
+| `make clean` | Remove local development artifacts. |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
+The full pipeline documentation can be built from the repository root with
+`make docs`.
 
 ## Compare LocusBreaker outputs
 
