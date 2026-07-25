@@ -24,22 +24,36 @@ IDIC workflow implements the **summary statistics resolution** fine-mappong appr
 
 The workflow allows for running following fine-mapping methods via execution routes (subworkflows)
 
+## Documentation
+
+The full pipeline documentation covers execution profiles, locus processing,
+workflow contracts, fine-mapping routes, and the collector API. Build it with:
+
+```bash
+make docs
+```
+
+The generated site is available at `docs/_build/html/index.html`.
 
 ## Summary Statistics Clumping
 
-TBA
+Summary statistics are converted into Gentropy-compatible study-locus
+datasets. The default collector implementation uses DuckDB; the Gentropy
+implementation remains available for parity checks.
 
 ## Unified LD interface
 
-TBA
+Fine-mapping routes consume an ancestry-aware LD interface so that LD storage
+and retrieval remain independent from locus processing.
 
 ## Available fine-mapping routes
 
-TBA
+Routes assemble candidate loci, summary statistics, LD inputs, and
+method-specific parameters for the selected fine-mapping method.
 
 ### multiSuSiE
 
-TBA
-
+MultiSuSiE consumes fully overlapping multi-study locus sets produced by the
+locus-collection workflow.
 
 
