@@ -268,6 +268,53 @@ def _collect_finemapping_loci_args(input_paths: list[Path], output_dir: Path) ->
     return args, outputs
 
 
+def _write_collected_locus_file(
+    tmp_path: Path,
+    study_id: str,
+    rows: list[tuple[str, str, list[tuple[str, float | None, float | None]]]],
+) -> Path:
+    """Write a collected-locus parquet file with nested locus variants."""
+    from collector.schema import COLLECTED_LOCUS_SCHEMA
+
+    path = tmp_path / f"{study_id}_collected.parquet"
+    locus_type = COLLECTED_LOCUS_SCHEMA.fields[-1].sql_type()
+    row_sql = []
+    for fine_mapping_locus_set_id, study_locus_id, variants in rows:
+        variants_sql = ", ".join(
+            f"""
+            struct_pack(
+                variantId := '{variant_id}',
+                pValueMantissa := 1.0::FLOAT,
+                pValueExponent := -9::INTEGER,
+                beta := {beta if beta is not None else "NULL"}::DOUBLE,
+                standardError := {standard_error if standard_error is not None else "NULL"}::DOUBLE
+            )
+            """
+            for variant_id, beta, standard_error in variants
+        )
+        row_sql.append(
+            f"""
+            SELECT
+                '{fine_mapping_locus_set_id}' AS fineMappingLocusSetId,
+                '{study_locus_id}' AS studyLocusId,
+                '{study_id}' AS studyId,
+                '1' AS chromosome,
+                100::INTEGER AS locusStart,
+                200::INTEGER AS locusEnd,
+                ['overlapping set']::VARCHAR[] AS qualityControls,
+                [{variants_sql}]::{locus_type} AS locus
+            """
+        )
+
+    con = duckdb.connect()
+    try:
+        con.execute(f"COPY ({' UNION ALL '.join(row_sql)}) TO '{path}' (FORMAT 'parquet')")
+    finally:
+        con.close()
+
+    return path
+
+
 # ---------------------------------------------------------------------------
 # cli (collect) command tests
 # ---------------------------------------------------------------------------
@@ -1073,3 +1120,197 @@ def test_collect_finemapping_loci_does_not_generate_cross_component_full_sets(tm
     assert stats["fullOverlap"]["componentCount"] == 2
     assert stats["fullOverlap"]["maxComponentLocusCount"] == 3
     assert stats["fullOverlap"]["maxComponentCandidateProductSize"] == 1
+
+
+# ---------------------------------------------------------------------------
+# study_locus_ld_annotation command tests
+# ---------------------------------------------------------------------------
+
+
+def test_study_locus_ld_annotation_writes_flattened_loci_and_ld_pair_contracts(tmp_path: Path):
+    from collector.schema import FINE_MAPPING_LOCI_SCHEMA, LD_PAIRS_SCHEMA
+
+    input_path = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        rows=[
+            ("set_a", "sl_1", [("1_100_A_C", 0.5, 0.1), ("1_120_G_T", 0.2, 0.0)]),
+            ("set_b", "sl_2", [("1_200_C_A", -0.4, None)]),
+        ],
+    )
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(json.dumps({"studyId": "STUDY_A", "ancestry": "nfe", "sampleSize": 1234}))
+    output_dir = tmp_path / "ld_annotation"
+
+    result = runner.invoke(
+        app,
+        [
+            "study_locus_ld_annotation",
+            "--input",
+            str(input_path),
+            "--metadata_json",
+            str(metadata_path),
+            "--output_dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    fine_mapping_output = output_dir / "fine_mapping_loci.parquet"
+    ld_pairs_output = output_dir / "ld_pairs.parquet"
+    assert fine_mapping_output.exists()
+    assert ld_pairs_output.exists()
+
+    con = duckdb.connect()
+    try:
+        fine_mapping_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{fine_mapping_output}')").fetchall()]
+        ld_pairs_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{ld_pairs_output}')").fetchall()]
+        fine_mapping_rows = con.execute(
+            f"""
+            SELECT fineMappingLocusSetId, studyLocusId, studyId, ancestry, sampleSize, variantId, beta, standardError, z
+            FROM read_parquet('{fine_mapping_output}')
+            ORDER BY fineMappingLocusSetId, studyLocusId, variantId
+            """
+        ).fetchall()
+        ld_pair_rows = con.execute(
+            f"""
+            SELECT ancestry, variantIdI, variantIdJ, r
+            FROM read_parquet('{ld_pairs_output}')
+            ORDER BY ancestry, variantIdI, variantIdJ
+            """
+        ).fetchall()
+    finally:
+        con.close()
+
+    assert fine_mapping_columns == list(FINE_MAPPING_LOCI_SCHEMA.column_names)
+    assert ld_pairs_columns == list(LD_PAIRS_SCHEMA.column_names)
+    assert fine_mapping_rows == [
+        ("set_a", "sl_1", "STUDY_A", "nfe", 1234, "1_100_A_C", 0.5, 0.1, 5.0),
+        ("set_a", "sl_1", "STUDY_A", "nfe", 1234, "1_120_G_T", 0.2, 0.0, None),
+        ("set_b", "sl_2", "STUDY_A", "nfe", 1234, "1_200_C_A", -0.4, None, None),
+    ]
+    assert ld_pair_rows == [
+        ("nfe", "1_100_A_C", "1_100_A_C", 1.0),
+        ("nfe", "1_100_A_C", "1_120_G_T", 0.0),
+        ("nfe", "1_100_A_C", "1_200_C_A", 0.0),
+        ("nfe", "1_120_G_T", "1_100_A_C", 0.0),
+        ("nfe", "1_120_G_T", "1_120_G_T", 1.0),
+        ("nfe", "1_120_G_T", "1_200_C_A", 0.0),
+        ("nfe", "1_200_C_A", "1_100_A_C", 0.0),
+        ("nfe", "1_200_C_A", "1_120_G_T", 0.0),
+        ("nfe", "1_200_C_A", "1_200_C_A", 1.0),
+    ]
+
+
+def test_study_locus_ld_annotation_joins_metadata_per_study_id(tmp_path: Path):
+    study_a_input = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        rows=[("set_a", "sl_a", [("1_100_A_C", 0.5, 0.1)])],
+    )
+    study_b_input = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_B",
+        rows=[("set_a", "sl_b", [("1_120_G_T", -0.2, 0.05)])],
+    )
+    input_path = tmp_path / "combined_collected.parquet"
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            [
+                {"studyId": "STUDY_A", "ancestry": "eur", "sampleSize": 1000},
+                {"studyId": "STUDY_B", "ancestry": "afr", "sampleSize": 2000},
+            ]
+        )
+    )
+    output_dir = tmp_path / "ld_annotation"
+
+    con = duckdb.connect()
+    try:
+        con.execute(
+            f"""
+            COPY (
+                SELECT *
+                FROM read_parquet(['{study_a_input}', '{study_b_input}'], union_by_name = true)
+            ) TO '{input_path}' (FORMAT 'parquet')
+            """
+        )
+    finally:
+        con.close()
+
+    result = runner.invoke(
+        app,
+        [
+            "study_locus_ld_annotation",
+            "--input",
+            str(input_path),
+            "--metadata_json",
+            str(metadata_path),
+            "--output_dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    fine_mapping_output = output_dir / "fine_mapping_loci.parquet"
+    ld_pairs_output = output_dir / "ld_pairs.parquet"
+
+    con = duckdb.connect()
+    try:
+        fine_mapping_rows = con.execute(
+            f"""
+            SELECT studyLocusId, studyId, ancestry, sampleSize, variantId, z
+            FROM read_parquet('{fine_mapping_output}')
+            ORDER BY studyId
+            """
+        ).fetchall()
+        ld_pair_rows = con.execute(
+            f"""
+            SELECT ancestry, variantIdI, variantIdJ, r
+            FROM read_parquet('{ld_pairs_output}')
+            ORDER BY ancestry, variantIdI, variantIdJ
+            """
+        ).fetchall()
+    finally:
+        con.close()
+
+    assert fine_mapping_rows == [
+        ("sl_a", "STUDY_A", "eur", 1000, "1_100_A_C", 5.0),
+        ("sl_b", "STUDY_B", "afr", 2000, "1_120_G_T", -4.0),
+    ]
+    assert ld_pair_rows == [
+        ("afr", "1_100_A_C", "1_100_A_C", 1.0),
+        ("afr", "1_100_A_C", "1_120_G_T", 0.0),
+        ("afr", "1_120_G_T", "1_100_A_C", 0.0),
+        ("afr", "1_120_G_T", "1_120_G_T", 1.0),
+        ("eur", "1_100_A_C", "1_100_A_C", 1.0),
+        ("eur", "1_100_A_C", "1_120_G_T", 0.0),
+        ("eur", "1_120_G_T", "1_100_A_C", 0.0),
+        ("eur", "1_120_G_T", "1_120_G_T", 1.0),
+    ]
+
+
+def test_study_locus_ld_annotation_rejects_metadata_study_id_mismatch(tmp_path: Path):
+    input_path = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        rows=[("set_a", "sl_a", [("1_100_A_C", 0.5, 0.1)])],
+    )
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(json.dumps([{"studyId": "STUDY_B", "ancestry": "afr", "sampleSize": 2000}]))
+
+    result = runner.invoke(
+        app,
+        [
+            "study_locus_ld_annotation",
+            "--input",
+            str(input_path),
+            "--metadata_json",
+            str(metadata_path),
+            "--output_dir",
+            str(tmp_path / "ld_annotation"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "studyId values must exactly match" in result.output

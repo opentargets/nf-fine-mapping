@@ -148,3 +148,26 @@ COLLECTED_LOCUS_SCHEMA = DatasetSchema(
         DatasetField(name="locus", duckdb_type=ListSchema(item_schema=COLLECTED_LOCUS_STRUCT_SCHEMA)),
     )
 )
+
+FINE_MAPPING_LOCI_SCHEMA = DatasetSchema(
+    fields=(
+        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="studyLocusId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="studyId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="ancestry", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="sampleSize", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="variantId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="beta", duckdb_type="DOUBLE"),
+        DatasetField(name="standardError", duckdb_type="DOUBLE"),
+        DatasetField(name="z", duckdb_type="DOUBLE"),
+    )
+)
+
+LD_PAIRS_SCHEMA = DatasetSchema(
+    fields=(
+        DatasetField(name="ancestry", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="variantIdI", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="variantIdJ", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="r", duckdb_type="DOUBLE", nullable=False),
+    )
+)

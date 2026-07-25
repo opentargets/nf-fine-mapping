@@ -10,6 +10,7 @@ import typer
 
 from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
+from collector.study_locus_ld_annotation import StudyLocusLDAnnotationConfig, run_study_locus_ld_annotation
 
 app = typer.Typer()
 
@@ -153,6 +154,24 @@ def collect_finemapping_loci(
     try:
         run_collect_finemapping_loci(config)
     except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@app.command(name="study_locus_ld_annotation")
+def study_locus_ld_annotation(
+    input: Annotated[Path, typer.Option("--input", help="Input collected full-overlap StudyLocus Parquet file or directory dataset.")],
+    metadata_json: Annotated[Path, typer.Option("--metadata_json", help="Run metadata JSON file with studyId, ancestry, and sampleSize.")],
+    output_dir: Annotated[Path, typer.Option("--output_dir", help="Directory where fine_mapping_loci.parquet and ld_pairs.parquet will be written.")],
+):
+    """Write flattened fine-mapping loci and deterministic local LD pairs."""
+    config = StudyLocusLDAnnotationConfig(
+        input_path=input,
+        metadata_json=metadata_json,
+        output_dir=output_dir,
+    )
+    try:
+        run_study_locus_ld_annotation(config)
+    except (FileNotFoundError, IsADirectoryError, NotADirectoryError, TypeError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
 
