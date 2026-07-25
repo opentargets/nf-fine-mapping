@@ -1,4 +1,4 @@
-"""Generate deterministic local LD-annotation placeholders from collected loci."""
+"""Annotate collected loci with long-format LD pairs."""
 
 from __future__ import annotations
 
@@ -6,20 +6,32 @@ import json
 from pathlib import Path
 
 import duckdb
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 FINE_MAPPING_LOCI_FILENAME = "fine_mapping_loci.parquet"
 LD_PAIRS_FILENAME = "ld_pairs.parquet"
 
 
 class StudyLocusLDAnnotationMetadata(BaseModel):
-    """Run metadata required for deterministic LD-annotation output."""
+    """Run metadata required for LD-annotation output."""
 
     model_config = ConfigDict(frozen=True)
 
     study_id: str = Field(alias="studyId")
     ancestry: str
     sample_size: int = Field(alias="sampleSize")
+
+    @field_validator("ancestry")
+    @classmethod
+    def normalize_ancestry(cls, value: str) -> str:
+        """Normalize pipeline ancestry aliases to PanUKBB LD labels."""
+        lowered_value = value.lower()
+        if lowered_value in {"nfe", "eur"}:
+            return "EUR"
+        upper_value = value.upper()
+        if upper_value in {"AFR", "CSA"}:
+            return upper_value
+        raise ValueError(f"Unsupported PanUKBB ancestry: {value}")
 
 
 class StudyLocusLDAnnotationConfig(BaseModel):
@@ -29,6 +41,8 @@ class StudyLocusLDAnnotationConfig(BaseModel):
 
     input_path: Path
     metadata_json: Path
+    ld_index_path: Path
+    ld_pairs_input_path: Path
     output_dir: Path
 
 
@@ -82,13 +96,17 @@ def _prepare_output_paths(output_dir: Path) -> tuple[Path, Path]:
 
 
 def run_study_locus_ld_annotation(config: StudyLocusLDAnnotationConfig) -> None:
-    """Write flattened fine-mapping loci and placeholder LD pairs."""
+    """Write flattened fine-mapping loci and filtered long-format LD pairs."""
     if not config.input_path.exists():
         raise FileNotFoundError(f"Input path does not exist: {config.input_path}")
     if not config.metadata_json.exists():
         raise FileNotFoundError(f"Metadata JSON path does not exist: {config.metadata_json}")
     if config.metadata_json.suffix != ".json":
         raise ValueError("Metadata file should have a .json extension")
+    if not config.ld_index_path.exists():
+        raise FileNotFoundError(f"LD index path does not exist: {config.ld_index_path}")
+    if not config.ld_pairs_input_path.exists():
+        raise FileNotFoundError(f"LD pairs input path does not exist: {config.ld_pairs_input_path}")
 
     metadata = _load_metadata(config.metadata_json)
     fine_mapping_output, ld_pairs_output = _prepare_output_paths(config.output_dir)
@@ -109,6 +127,26 @@ def run_study_locus_ld_annotation(config: StudyLocusLDAnnotationConfig) -> None:
             CREATE TEMP TABLE input_loci AS
             SELECT *
             FROM {_read_parquet_sql(config.input_path)}
+            """
+        )
+        con.execute(
+            f"""
+            CREATE TEMP TABLE ld_index AS
+            SELECT DISTINCT
+                CAST(variantId AS VARCHAR) AS variantId,
+                CAST(population AS VARCHAR) AS ancestry
+            FROM {_read_parquet_sql(config.ld_index_path)}
+            """
+        )
+        con.execute(
+            f"""
+            CREATE TEMP TABLE source_ld_pairs AS
+            SELECT
+                CAST(ancestry AS VARCHAR) AS ancestry,
+                CAST(variantIdI AS VARCHAR) AS variantIdI,
+                CAST(variantIdJ AS VARCHAR) AS variantIdJ,
+                CAST(r AS DOUBLE) AS r
+            FROM {_read_parquet_sql(config.ld_pairs_input_path)}
             """
         )
         metadata_mismatch = con.execute(
@@ -178,25 +216,51 @@ def run_study_locus_ld_annotation(config: StudyLocusLDAnnotationConfig) -> None:
         con.execute(
             f"""
             COPY (
-                WITH distinct_ancestries AS (
-                    SELECT DISTINCT ancestry
-                    FROM flattened_loci
+                WITH requested_ld_variants AS (
+                    SELECT DISTINCT
+                        requested_ancestries.ancestry,
+                        requested_variants.variantId
+                    FROM (
+                        SELECT DISTINCT ancestry
+                        FROM flattened_loci
+                    ) AS requested_ancestries
+                    CROSS JOIN (
+                        SELECT DISTINCT variantId
+                        FROM flattened_loci
+                    ) AS requested_variants
+                    INNER JOIN ld_index
+                        ON requested_ancestries.ancestry = ld_index.ancestry
+                        AND requested_variants.variantId = ld_index.variantId
                 ),
-                distinct_variants AS (
-                    SELECT DISTINCT variantId
-                    FROM flattened_loci
+                symmetric_ld_pairs AS (
+                    SELECT ancestry, variantIdI, variantIdJ, r
+                    FROM source_ld_pairs
+                    UNION ALL
+                    SELECT ancestry, variantIdJ AS variantIdI, variantIdI AS variantIdJ, r
+                    FROM source_ld_pairs
+                    WHERE variantIdI != variantIdJ
+                ),
+                unique_ld_pairs AS (
+                    SELECT
+                        ancestry,
+                        variantIdI,
+                        variantIdJ,
+                        any_value(r) AS r
+                    FROM symmetric_ld_pairs
+                    GROUP BY ancestry, variantIdI, variantIdJ
                 )
                 SELECT
-                    distinct_ancestries.ancestry AS ancestry,
-                    left_variants.variantId AS variantIdI,
-                    right_variants.variantId AS variantIdJ,
-                    CASE
-                        WHEN left_variants.variantId = right_variants.variantId THEN 1.0::DOUBLE
-                        ELSE 0.0::DOUBLE
-                    END AS r
-                FROM distinct_ancestries
-                CROSS JOIN distinct_variants AS left_variants
-                CROSS JOIN distinct_variants AS right_variants
+                    unique_ld_pairs.ancestry AS ancestry,
+                    unique_ld_pairs.variantIdI AS variantIdI,
+                    unique_ld_pairs.variantIdJ AS variantIdJ,
+                    unique_ld_pairs.r AS r
+                FROM unique_ld_pairs
+                INNER JOIN requested_ld_variants AS left_variants
+                    ON unique_ld_pairs.ancestry = left_variants.ancestry
+                    AND unique_ld_pairs.variantIdI = left_variants.variantId
+                INNER JOIN requested_ld_variants AS right_variants
+                    ON unique_ld_pairs.ancestry = right_variants.ancestry
+                    AND unique_ld_pairs.variantIdJ = right_variants.variantId
                 ORDER BY ancestry, variantIdI, variantIdJ
             ) TO {_quote_sql_string(ld_pairs_output.as_posix())} (FORMAT PARQUET)
             """

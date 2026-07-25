@@ -1127,6 +1127,48 @@ def test_collect_finemapping_loci_does_not_generate_cross_component_full_sets(tm
 # ---------------------------------------------------------------------------
 
 
+def _write_ld_index_file(tmp_path: Path, rows: list[tuple[str, str]]) -> Path:
+    """Write a minimal prepared LD variant index fixture."""
+    path = tmp_path / f"ld_index_{hashlib.md5(json.dumps(rows).encode()).hexdigest()}.parquet"
+    values_sql = ", ".join(f"('{variant_id}', '{population}')" for variant_id, population in rows)
+
+    con = duckdb.connect()
+    try:
+        con.execute(
+            f"""
+            COPY (
+                SELECT *
+                FROM (VALUES {values_sql}) AS t(variantId, population)
+            ) TO '{path}' (FORMAT 'parquet')
+            """
+        )
+    finally:
+        con.close()
+
+    return path
+
+
+def _write_ld_pairs_file(tmp_path: Path, rows: list[tuple[str, str, str, float]]) -> Path:
+    """Write a signed long-format LD-pair fixture."""
+    path = tmp_path / f"ld_pairs_{hashlib.md5(json.dumps(rows).encode()).hexdigest()}.parquet"
+    values_sql = ", ".join(f"('{ancestry}', '{variant_i}', '{variant_j}', {r}::DOUBLE)" for ancestry, variant_i, variant_j, r in rows)
+
+    con = duckdb.connect()
+    try:
+        con.execute(
+            f"""
+            COPY (
+                SELECT *
+                FROM (VALUES {values_sql}) AS t(ancestry, variantIdI, variantIdJ, r)
+            ) TO '{path}' (FORMAT 'parquet')
+            """
+        )
+    finally:
+        con.close()
+
+    return path
+
+
 def test_study_locus_ld_annotation_writes_flattened_loci_and_ld_pair_contracts(tmp_path: Path):
     from collector.schema import FINE_MAPPING_LOCI_SCHEMA, LD_PAIRS_SCHEMA
 
@@ -1140,6 +1182,22 @@ def test_study_locus_ld_annotation_writes_flattened_loci_and_ld_pair_contracts(t
     )
     metadata_path = tmp_path / "metadata.json"
     metadata_path.write_text(json.dumps({"studyId": "STUDY_A", "ancestry": "nfe", "sampleSize": 1234}))
+    ld_index_path = _write_ld_index_file(
+        tmp_path,
+        [
+            ("1_100_A_C", "EUR"),
+            ("1_120_G_T", "EUR"),
+        ],
+    )
+    ld_pairs_input_path = _write_ld_pairs_file(
+        tmp_path,
+        [
+            ("EUR", "1_100_A_C", "1_100_A_C", 1.0),
+            ("EUR", "1_100_A_C", "1_120_G_T", -0.42),
+            ("EUR", "1_120_G_T", "1_120_G_T", 1.0),
+            ("AFR", "1_100_A_C", "1_120_G_T", 0.99),
+        ],
+    )
     output_dir = tmp_path / "ld_annotation"
 
     result = runner.invoke(
@@ -1150,6 +1208,10 @@ def test_study_locus_ld_annotation_writes_flattened_loci_and_ld_pair_contracts(t
             str(input_path),
             "--metadata_json",
             str(metadata_path),
+            "--ld_index",
+            str(ld_index_path),
+            "--ld_pairs_input",
+            str(ld_pairs_input_path),
             "--output_dir",
             str(output_dir),
         ],
@@ -1185,20 +1247,15 @@ def test_study_locus_ld_annotation_writes_flattened_loci_and_ld_pair_contracts(t
     assert fine_mapping_columns == list(FINE_MAPPING_LOCI_SCHEMA.column_names)
     assert ld_pairs_columns == list(LD_PAIRS_SCHEMA.column_names)
     assert fine_mapping_rows == [
-        ("set_a", "sl_1", "STUDY_A", "nfe", 1234, "1_100_A_C", 0.5, 0.1, 5.0),
-        ("set_a", "sl_1", "STUDY_A", "nfe", 1234, "1_120_G_T", 0.2, 0.0, None),
-        ("set_b", "sl_2", "STUDY_A", "nfe", 1234, "1_200_C_A", -0.4, None, None),
+        ("set_a", "sl_1", "STUDY_A", "EUR", 1234, "1_100_A_C", 0.5, 0.1, 5.0),
+        ("set_a", "sl_1", "STUDY_A", "EUR", 1234, "1_120_G_T", 0.2, 0.0, None),
+        ("set_b", "sl_2", "STUDY_A", "EUR", 1234, "1_200_C_A", -0.4, None, None),
     ]
     assert ld_pair_rows == [
-        ("nfe", "1_100_A_C", "1_100_A_C", 1.0),
-        ("nfe", "1_100_A_C", "1_120_G_T", 0.0),
-        ("nfe", "1_100_A_C", "1_200_C_A", 0.0),
-        ("nfe", "1_120_G_T", "1_100_A_C", 0.0),
-        ("nfe", "1_120_G_T", "1_120_G_T", 1.0),
-        ("nfe", "1_120_G_T", "1_200_C_A", 0.0),
-        ("nfe", "1_200_C_A", "1_100_A_C", 0.0),
-        ("nfe", "1_200_C_A", "1_120_G_T", 0.0),
-        ("nfe", "1_200_C_A", "1_200_C_A", 1.0),
+        ("EUR", "1_100_A_C", "1_100_A_C", 1.0),
+        ("EUR", "1_100_A_C", "1_120_G_T", -0.42),
+        ("EUR", "1_120_G_T", "1_100_A_C", -0.42),
+        ("EUR", "1_120_G_T", "1_120_G_T", 1.0),
     ]
 
 
@@ -1223,6 +1280,26 @@ def test_study_locus_ld_annotation_joins_metadata_per_study_id(tmp_path: Path):
             ]
         )
     )
+    ld_index_path = _write_ld_index_file(
+        tmp_path,
+        [
+            ("1_100_A_C", "EUR"),
+            ("1_120_G_T", "EUR"),
+            ("1_100_A_C", "AFR"),
+            ("1_120_G_T", "AFR"),
+        ],
+    )
+    ld_pairs_input_path = _write_ld_pairs_file(
+        tmp_path,
+        [
+            ("EUR", "1_100_A_C", "1_100_A_C", 1.0),
+            ("EUR", "1_100_A_C", "1_120_G_T", 0.25),
+            ("EUR", "1_120_G_T", "1_120_G_T", 1.0),
+            ("AFR", "1_100_A_C", "1_100_A_C", 1.0),
+            ("AFR", "1_100_A_C", "1_120_G_T", -0.5),
+            ("AFR", "1_120_G_T", "1_120_G_T", 1.0),
+        ],
+    )
     output_dir = tmp_path / "ld_annotation"
 
     con = duckdb.connect()
@@ -1246,6 +1323,10 @@ def test_study_locus_ld_annotation_joins_metadata_per_study_id(tmp_path: Path):
             str(input_path),
             "--metadata_json",
             str(metadata_path),
+            "--ld_index",
+            str(ld_index_path),
+            "--ld_pairs_input",
+            str(ld_pairs_input_path),
             "--output_dir",
             str(output_dir),
         ],
@@ -1275,18 +1356,18 @@ def test_study_locus_ld_annotation_joins_metadata_per_study_id(tmp_path: Path):
         con.close()
 
     assert fine_mapping_rows == [
-        ("sl_a", "STUDY_A", "eur", 1000, "1_100_A_C", 5.0),
-        ("sl_b", "STUDY_B", "afr", 2000, "1_120_G_T", -4.0),
+        ("sl_a", "STUDY_A", "EUR", 1000, "1_100_A_C", 5.0),
+        ("sl_b", "STUDY_B", "AFR", 2000, "1_120_G_T", -4.0),
     ]
     assert ld_pair_rows == [
-        ("afr", "1_100_A_C", "1_100_A_C", 1.0),
-        ("afr", "1_100_A_C", "1_120_G_T", 0.0),
-        ("afr", "1_120_G_T", "1_100_A_C", 0.0),
-        ("afr", "1_120_G_T", "1_120_G_T", 1.0),
-        ("eur", "1_100_A_C", "1_100_A_C", 1.0),
-        ("eur", "1_100_A_C", "1_120_G_T", 0.0),
-        ("eur", "1_120_G_T", "1_100_A_C", 0.0),
-        ("eur", "1_120_G_T", "1_120_G_T", 1.0),
+        ("AFR", "1_100_A_C", "1_100_A_C", 1.0),
+        ("AFR", "1_100_A_C", "1_120_G_T", -0.5),
+        ("AFR", "1_120_G_T", "1_100_A_C", -0.5),
+        ("AFR", "1_120_G_T", "1_120_G_T", 1.0),
+        ("EUR", "1_100_A_C", "1_100_A_C", 1.0),
+        ("EUR", "1_100_A_C", "1_120_G_T", 0.25),
+        ("EUR", "1_120_G_T", "1_100_A_C", 0.25),
+        ("EUR", "1_120_G_T", "1_120_G_T", 1.0),
     ]
 
 
@@ -1298,6 +1379,8 @@ def test_study_locus_ld_annotation_rejects_metadata_study_id_mismatch(tmp_path: 
     )
     metadata_path = tmp_path / "metadata.json"
     metadata_path.write_text(json.dumps([{"studyId": "STUDY_B", "ancestry": "afr", "sampleSize": 2000}]))
+    ld_index_path = _write_ld_index_file(tmp_path, [("1_100_A_C", "AFR")])
+    ld_pairs_input_path = _write_ld_pairs_file(tmp_path, [("AFR", "1_100_A_C", "1_100_A_C", 1.0)])
 
     result = runner.invoke(
         app,
@@ -1307,6 +1390,10 @@ def test_study_locus_ld_annotation_rejects_metadata_study_id_mismatch(tmp_path: 
             str(input_path),
             "--metadata_json",
             str(metadata_path),
+            "--ld_index",
+            str(ld_index_path),
+            "--ld_pairs_input",
+            str(ld_pairs_input_path),
             "--output_dir",
             str(tmp_path / "ld_annotation"),
         ],

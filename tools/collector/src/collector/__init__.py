@@ -161,12 +161,16 @@ def collect_finemapping_loci(
 def study_locus_ld_annotation(
     input: Annotated[Path, typer.Option("--input", help="Input collected full-overlap StudyLocus Parquet file or directory dataset.")],
     metadata_json: Annotated[Path, typer.Option("--metadata_json", help="Run metadata JSON file with studyId, ancestry, and sampleSize.")],
+    ld_index: Annotated[Path, typer.Option("--ld_index", help="Prepared PanUKBB LD variant index parquet file or directory dataset.")],
+    ld_pairs_input: Annotated[Path, typer.Option("--ld_pairs_input", help="Signed long-format LD pairs parquet file or directory dataset.")],
     output_dir: Annotated[Path, typer.Option("--output_dir", help="Directory where fine_mapping_loci.parquet and ld_pairs.parquet will be written.")],
 ):
-    """Write flattened fine-mapping loci and deterministic local LD pairs."""
+    """Write flattened fine-mapping loci and real long-format LD pairs."""
     config = StudyLocusLDAnnotationConfig(
         input_path=input,
         metadata_json=metadata_json,
+        ld_index_path=ld_index,
+        ld_pairs_input_path=ld_pairs_input,
         output_dir=output_dir,
     )
     try:
