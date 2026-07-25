@@ -31,3 +31,4 @@ testdata/work_full/*
 .omx
 .nf-test
 .nf-test.log
+.worktrees/
