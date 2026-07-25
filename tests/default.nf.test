@@ -1,34 +1,58 @@
 nextflow_pipeline {
 
-    name "Test pipeline"
+    name "Test pipeline step wiring"
     script "../main.nf"
     tag "pipeline"
+    tag "stub"
+    options "-stub-run"
 
-    test("-profile test") {
+    test("runs collector locus breaker and locus collection on chr1 test data") {
+        tag "collector"
 
         when {
             params {
-                outdir = "$outputDir"
+                manifest = new File("testdata/manifest.tsv").canonicalPath
+                manifest_base_dir = new File(".").canonicalPath
+                output_dir = "$outputDir"
             }
         }
 
         then {
-            // stable_name: All files + folders in ${params.outdir}/ with a stable name
-            def stable_name = getAllFilesFromDir(params.outdir, relative: true, includeDir: true, ignore: ['pipeline_info/*.{html,json,txt}'])
-            // stable_path: All files in ${params.outdir}/ with stable content
-            def stable_path = getAllFilesFromDir(params.outdir, ignoreFile: 'tests/.nftignore')
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+
             assertAll(
-                { assert workflow.success},
-                { assert snapshot(
-                    // Number of successful tasks
-                    workflow.trace.succeeded().size(),
-                    // pipeline versions.yml file for multiqc from which Nextflow version is removed because we test pipelines on multiple Nextflow versions
-                    removeNextflowVersion("$outputDir/pipeline_info/finemapping_software_mqc_versions.yml"),
-                    // All stable path name, with a relative path
-                    stable_name,
-                    // All files with stable contents
-                    stable_path
-                ).match() }
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 16 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 0 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 }
+            )
+        }
+    }
+
+    test("runs gentropy locus breaker and locus collection on chr1 test data") {
+        tag "gentropy"
+
+        when {
+            params {
+                manifest = new File("testdata/manifest.tsv").canonicalPath
+                manifest_base_dir = new File(".").canonicalPath
+                output_dir = "$outputDir"
+                locus_breaker_method = "gentropy"
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 16 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 0 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 }
             )
         }
     }

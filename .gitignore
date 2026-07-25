@@ -10,7 +10,9 @@ null/
 testdata/work
 .ipynb_checkpoints/
 .python-version
+!tools/collector/.python-version
 .venv
+docs/_build/
 data_generation/bin/.ipynb_checkpoints/
 **/__pycache__/
 .coverage
@@ -19,3 +21,13 @@ coverage.xml
 **/.pytest_cache/
 testdata/output/
 testdata/work/
+testdata/output_full/
+testdata/work_full/
+logs/.nextflow.*
+testdata/output/*
+testdata/work/*
+testdata/output_full/*
+testdata/work_full/*
+.omx
+.nf-test
+.nf-test.log

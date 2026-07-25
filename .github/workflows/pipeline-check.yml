@@ -1,0 +1,68 @@
+name: Check Nextflow pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "*.nf"
+      - "*.config"
+      - "conf/**"
+      - "modules/**"
+      - "workflows/**"
+      - "tests/**"
+      - "testdata/**"
+      - ".nf-test/**"
+      - "nf-test.config"
+      - ".github/workflows/pipeline-check.yml"
+      - "Makefile"
+
+jobs:
+  nf-test:
+    name: nf-test pipeline suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Nextflow
+        uses: nf-core/setup-nextflow@v1
+        with:
+          version: latest-stable
+
+      - name: Install nf-test
+        run: |
+          wget -qO- https://get.nf-test.com | bash
+          sudo mv nf-test /usr/local/bin/nf-test
+
+      - name: Run pipeline tests
+        run: nf-test test --ci
+
+  nextflow-lint:
+    name: Nextflow lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Nextflow
+        uses: nf-core/setup-nextflow@v1
+        with:
+          version: latest-stable
+
+      - name: Lint Nextflow code
+        run: nextflow lint main.nf

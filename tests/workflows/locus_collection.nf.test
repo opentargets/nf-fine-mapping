@@ -1,0 +1,84 @@
+nextflow_workflow {
+
+    name "Test LOCUS_COLLECTION workflow"
+    script "../../workflows/locus_collection/main.nf"
+    workflow "LOCUS_COLLECTION"
+    tag "workflow"
+    tag "locus_collection"
+    tag "stub"
+    topics "versions"
+    options "-stub-run"
+
+    test("groups study locus paths by runId and emits collected locus channels") {
+        when {
+            params {
+                output_dir = "$outputDir"
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        meta: [
+                            runId: "RUN_A",
+                            studyId: "STUDY_A",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 100,
+                        ],
+                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"),
+                    ],
+                    [
+                        meta: [
+                            runId: "RUN_A",
+                            studyId: "STUDY_B",
+                            route: "multi_susie_route",
+                            ancestry: "eas",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 200,
+                        ],
+                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"),
+                    ],
+                    [
+                        meta: [
+                            runId: "RUN_A",
+                            studyId: "STUDY_C",
+                            route: "multi_susie_route",
+                            ancestry: "afr",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 300,
+                        ],
+                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90475531/chr1.parquet"),
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
+                { assert workflow.out.ch_full_overlap_loci.size() == 0 },
+                { assert workflow.out.ch_partial_overlap_loci.size() == 1 },
+                { assert workflow.out.ch_non_overlap_loci.size() == 1 },
+                { assert workflow.out.ch_collect_loci_stats.size() == 1 },
+                { assert workflow.out.ch_partial_overlap_loci[0].runId == "RUN_A" },
+                { assert workflow.out.ch_non_overlap_loci[0].runId == "RUN_A" },
+                { assert workflow.out.ch_collect_loci_stats[0].runId == "RUN_A" },
+                { assert workflow.out.ch_partial_overlap_loci[0].metas.collect { meta -> meta.studyId } == ["STUDY_A", "STUDY_B", "STUDY_C"] },
+                { assert workflow.out.ch_partial_overlap_loci[0].collected_locus_path.toString().endsWith("RUN_A.parquet") },
+                { assert workflow.out.ch_non_overlap_loci[0].collected_locus_path.toString().endsWith("RUN_A.parquet") },
+                { assert workflow.out.ch_collect_loci_stats[0].stats_path.toString().endsWith("RUN_A.json") },
+                { assert topics.versions.size() == 1 },
+                { assert topics.versions[0][0].startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") },
+                { assert topics.versions[0][1] == "collector" },
+                { assert topics.versions[0][2] == "1.0.0" }
+            )
+        }
+    }
+}

@@ -1,135 +1,152 @@
 #!/usr/bin/env nextflow
+
 nextflow.enable.dsl = 2
+nextflow.enable.types = true
 
-include { Collect   } from './modules/collect/main.nf'
-include { Intersect } from './modules/intersect/main.nf'
-include { Transform } from './modules/transform/main.nf'
-include { SuShiE    } from './modules/sushie/main.nf'
-include { SubsetLD  } from './modules/ld/main.nf'
+include { LOCUS_BREAKER    } from './workflows/locus_breaker/main.nf'
+include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'
 
-def intro() {
+params {
+    manifest: String
+    manifest_base_dir: String
+    output_dir: String
+    route: String
+}
+
+def intro() -> Void {
+    def RESET = '\u001B[0m'
+    def BOLD = '\u001B[1m'
+    def CYAN = '\u001B[36m'
+    def GREEN = '\u001B[32m'
+
     log.info(
         """
-        Multi Ancestry Fine Mapping Pipeline
+        ${CYAN}${BOLD}
+        IDIC Infinite Diversity in Infinite Combinations
+         __   _______   __    ______
+        |  | |       \\ |  |  /      |
+        |  | |  .--.  ||  | |  ,----'
+        |  | |  |  |  ||  | |  |
+        |  | |  '--'  ||  | |  `----.
+        |__| |_______/ |__|  \\______|
+        ${RESET}
 
-        Parameters:
+        ${BOLD}Here is your fancy configuration:${RESET}
 
-        ld_reference:       ${params.ld_reference}
-        output directory:   ${params.output_dir}
-        manifest:           ${params.manifest}
-        chain:              ${params.chain}
-        liftover:           ${params.liftover}
+        ${GREEN}output:${RESET}   ${params.output_dir}
+        ${GREEN}manifest:${RESET} ${params.manifest}
+        ${GREEN}route:${RESET}    ${params.route}
 
-    """.stripIndent()
+        """.stripIndent()
     )
 }
 
-def read_ancestries(path) {
-    return channel.fromPath(path)
-        .splitCsv(header: true, sep: '\t')
-        .map { row -> tuple(row.ancestry, row.ldMatrix, row.ldIndex) }
+def manifest_row_to_record(row: List<String>, manifest_base_dir: String) -> Map {
+    def traitSet: List<String> = row[5].tokenize(',')
+    def summary_statistics_path = row[3].startsWith('/') ? row[3] : "${manifest_base_dir}/${row[3]}"
+
+    def meta = [
+        runId: row[0],
+        studyId: row[1],
+        route: row[2],
+        ancestry: row[4],
+        traitSet: traitSet,
+        sampleSize: row[6].toInteger(),
+    ]
+
+    return [
+        summary_statistics_path: file(summary_statistics_path),
+        meta: meta,
+    ]
 }
 
-def read_manifest(path) {
-    return channel.fromPath(path)
-        .splitCsv(header: true, sep: '\t')
+
+def read_manifest(path: String) -> Channel<Map> {
+    def manifest_channel = channel.fromPath(path)
+        .flatMap { manifest ->
+            manifest.splitCsv(
+                sep: '\t',
+                skip: 1,
+            )
+        }
         .map { row ->
-            [
-                [
-                    trait: row.trait,
-                    sampleSize: row.sampleSize,
-                    ancestry: row.ancestry,
-                ],
-                file(row.summaryStatisticsPath),
-            ]
+            manifest_row_to_record(row as List<String>, params.manifest_base_dir)
         }
-}
 
-def group_by_trait(input_ch) {
-    return input_ch
-        .map { meta, parquet ->
-            [
-                meta.trait,
-                [
-                    sampleSize: meta.sampleSize,
-                    ancestry: meta.ancestry,
-                ],
-                file(parquet),
-            ]
-        }
-        .groupTuple()
+    log.info("Manifest file read successfully: ${path}")
+
+    return manifest_channel
 }
 
 
-def mix_with_intersection(intersection_ch, input_ch) {
-    def _input_ch = input_ch.map { meta, sumstat ->
-        tuple(
-            meta.trait,
-            [sampleSize: meta.sampleSize, ancestry: meta.ancestry],
-            sumstat,
-        )
+def filter_manifest_by_route(manifest_channel, route: String) {
+    return manifest_channel.filter { row ->
+        row.meta.route == route.toString()
     }
-    return intersection_ch
-        .combine(_input_ch, by: 0)
-        .map { trait, intersection, meta, sumstat ->
-            tuple(trait, meta, sumstat, intersection)
-        }
 }
 
-
-def mix_with_ld(transformed_ch, ld_ch) {
-    def _transformed = transformed_ch.map { trait, meta, transformed_sumstat ->
-        tuple(meta.ancestry, trait, transformed_sumstat)
-    }
-    return _transformed
-        .combine(ld_ch, by: 0)
-        .map { ancestry, trait, transformed_sumstat, ld_matrix, ld_index ->
-            tuple([ancestry: ancestry, trait: trait], transformed_sumstat, ld_matrix, ld_index)
-        }
-}
-
-def annotate_with_ld(transformed_ch, ld_ch) {
-    def _transform = transformed_ch.map { trait, meta, transformed_sumstat ->
-        tuple(trait, meta.ancestry, meta.sampleSize, transformed_sumstat)
-    }
-    def _ld = ld_ch.map { meta, ld_subset ->
-        tuple(meta.trait, meta.ancestry, ld_subset)
-    }
-    return _transform
-        .combine(_ld, by: [0, 1])
-        .map { trait, ancestry, sample_size, transformed_sumstat, ld_subset ->
-            tuple(trait, ancestry, sample_size, transformed_sumstat, ld_subset)
-        }
-        .groupTuple(by: 0)
-}
-
-workflow FINE_MAPPING {
-    input_ch = read_manifest(params.manifest)
-    ld_reference_ch = read_ancestries(params.ld_reference)
-    // input_ch.view { it -> log.info("Input manifest: ${it}") }
-    // ld_reference_ch.view { it -> log.info("LD reference: ${it}") }
-    collected = Collect(input_ch)
-    // collected.view { it -> log.info("Collected: ${it}") }
-    grouped = group_by_trait(collected)
-    // grouped.view { it -> log.info("Grouped: ${it}") }
-    intersection = Intersect(grouped)
-    // intersection.view { it -> log.info("Intersection: ${it}") }
-    mixed = mix_with_intersection(intersection, collected)
-    // mixed.view { it -> log.info("Mixed: ${it}") }
-    transformed = Transform(mixed)
-    // transformed.view { it -> log.info("Transformed: ${it}") }
-    mixed_with_ld = mix_with_ld(transformed, ld_reference_ch)
-    // mixed_with_ld.view { it -> log.info("Mixed with LD: ${it}") }
-    subset_ld = SubsetLD(mixed_with_ld)
-    // subset_ld.view { it -> log.info("Subset LD: ${it}") }
-    ld_annot = annotate_with_ld(transformed, subset_ld)
-    // ld_annot.view { it -> log.info("LD Annot: ${it}") }
-    SuShiE(ld_annot)
-}
 
 
 workflow {
+
+    main:
     intro()
-    FINE_MAPPING()
-    workflow.onComplete { log.info("Pipeline complete!") }
+    input_ch = channel.fromPath(params.manifest)
+        .flatMap { manifest ->
+            manifest.splitCsv(
+                sep: '	',
+                skip: 1,
+            )
+        }
+        .map { row ->
+            manifest_row_to_record(row as List<String>, params.manifest_base_dir)
+        }
+
+    log.info("Manifest file read successfully: ${params.manifest}")
+
+    filtered_ch = input_ch.filter { row ->
+        row.meta.route == params.route
+    }
+
+    locus_out = LOCUS_BREAKER(filtered_ch)
+
+    locus_collection_out = LOCUS_COLLECTION(locus_out)
+    full_overlap_loci = locus_collection_out.ch_full_overlap_loci
+    partial_overlap_loci = locus_collection_out.ch_partial_overlap_loci
+    non_overlap_loci = locus_collection_out.ch_non_overlap_loci
+    collect_loci_stats = locus_collection_out.ch_collect_loci_stats
+
+    publish:
+    loci                 = locus_out
+    full_overlap_loci    = full_overlap_loci
+    partial_overlap_loci = partial_overlap_loci
+    non_overlap_loci     = non_overlap_loci
+    collect_loci_stats   = collect_loci_stats
+
+    onComplete:
+    log.info('Pipeline complete!')
+}
+
+
+output {
+    loci {
+        path 'locus_breaker_clumped_study_locus'
+        mode 'copy'
+    }
+    full_overlap_loci {
+        path 'collected_loci/full_overlaps'
+        mode 'copy'
+    }
+    partial_overlap_loci {
+        path 'collected_loci/partial_overlaps'
+        mode 'copy'
+    }
+    non_overlap_loci {
+        path 'collected_loci/non_overlaps'
+        mode 'copy'
+    }
+    collect_loci_stats {
+        path 'collected_loci/stats'
+        mode 'copy'
+    }
 }

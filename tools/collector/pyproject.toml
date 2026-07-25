@@ -4,7 +4,12 @@ version = "1.0.0"
 description = "Collect parquet files for summary statistics"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["duckdb>=1.5.0", "typer>=0.24.1"]
+dependencies = [
+    "duckdb>=1.5.0",
+    "polars>=1.43.0",
+    "pydantic>=2.13.4",
+    "typer>=0.24.1",
+]
 license = { file = "LICENCE.md" }
 
 classifiers = [
@@ -31,9 +36,46 @@ fail_under = 60
 
 [tool.ruff]
 line-length = 150
+target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = [
+    "E",    # pycodestyle
+    "W",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "S",    # flake8-bandit
+    "BLE",  # flake8-blind-except
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "PIE",  # flake8-pie
+    "PT",   # flake8-pytest-style
+    "TID",  # flake8-tidy-imports
+    "T20",  # flake8-print
+    "ISC",  # flake8-implicit-str-concat
+    "COM",  # flake8-commas
+    "RUF",  # ruff-specific
+    "PERF", # perflint
+    "TRY",  # tryceratops
+]
+
+ignore = [
+    "COM812", # trailing commas conflict with the formatter
+    "TRY003", # long exception messages are acceptable for CLI errors
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/**" = ["S608"] # DuckDB SQL uses quoted, validated local paths and fixed identifiers.
+"scripts/**" = ["S608", "T20"] # Comparison scripts intentionally print reports and use quoted paths.
+"tests/**" = ["S101", "S324", "S608"] # Tests intentionally use asserts, MD5 fixtures, and quoted SQL.
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
 
 [dependency-groups]
 dev = [
@@ -46,6 +88,8 @@ dev = [
     "pydoclint >=0.3.8,<0.9.0",
     "ipykernel >=6.28.0, <7.3.0",
     "pytest-sugar >=0.9.5,<1.2.0",
+    "sphinx>=8.2.3",
+    "pydata-sphinx-theme>=0.20.0",
 ]
 
 [tool.pytest.ini_options]

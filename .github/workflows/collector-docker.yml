@@ -2,16 +2,10 @@ name: Build and Push Collector Docker Image
 
 on:
     workflow_dispatch:
-    push:
-        branches:
-            - main
-        paths:
-            - "tools/collector/Dockerfile"
-            - "tools/collector/pyproject.toml"
 
 jobs:
     build-and-push:
-        name: Build sushie image (amd64 + arm64)
+        name: Build collector image (amd64 + arm64)
         runs-on: ubuntu-22.04
 
         permissions:
@@ -26,7 +20,9 @@ jobs:
 
             - name: Read version
               id: version
-              run: echo "TAG=$(cat tools/collector/pyproject.toml | grep version | awk -F'=' '{print $2}' | tr -d ' ')" >> $GITHUB_OUTPUT
+              run: |
+                  VERSION=$(python -c 'import tomllib; print(tomllib.load(open("tools/collector/pyproject.toml", "rb"))["project"]["version"])')
+                  echo "TAG=${VERSION}" >> "$GITHUB_OUTPUT"
 
             - name: Set up QEMU
               uses: docker/setup-qemu-action@v3
