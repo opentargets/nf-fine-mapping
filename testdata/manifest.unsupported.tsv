@@ -1,0 +1,4 @@
+runId	studyId	route	summarystatsLocation	majorAncestry	traitFromSourceMappedIds	effectiveSampleSize
+RUN_INVALID	GCST90018748	multi_susie_route	testdata/sumstats/GCST90018748	eas	['EFO_0004833']	82810
+RUN_INVALID	GCST90278666	multi_susie_route	testdata/sumstats/GCST90278666	amr	['EFO_0004309']	241238
+RUN_SUPPORTED	GCST90475531	multi_susie_route	testdata/sumstats/GCST90475531	nfe	['EFO_0004833']	74049

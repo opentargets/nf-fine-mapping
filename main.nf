@@ -12,6 +12,7 @@ params {
     manifest_base_dir: String
     output_dir: String
     route: String
+    ld_references: List = []
 }
 
 def intro() -> Void {
@@ -62,7 +63,7 @@ def manifest_row_to_record(row: List<String>, manifest_base_dir: String) -> Map 
 }
 
 
-def read_manifest(path: String) -> Channel<Map> {
+def read_manifest(path: String) {
     def manifest_channel = channel.fromPath(path)
         .flatMap { manifest ->
             manifest.splitCsv(
@@ -87,29 +88,115 @@ def filter_manifest_by_route(manifest_channel, route: String) {
 }
 
 
+def registered_ld_reference_ancestries(ld_references) -> Set<String> {
+    if (ld_references == null || !(ld_references instanceof List) || ld_references.isEmpty()) {
+        error "Manifest ancestry validation requires non-empty params.ld_references."
+    }
+
+    def ancestry_labels = ld_references.collect { entry ->
+        if (!(entry instanceof Map) || !entry.containsKey('ancestry')) {
+            error "Manifest ancestry validation requires each params.ld_references entry to define ancestry."
+        }
+
+        def ancestry = entry.ancestry
+        if (ancestry == null || ancestry.toString().isEmpty()) {
+            error "Manifest ancestry validation requires each params.ld_references entry to define a non-empty ancestry label."
+        }
+
+        ancestry.toString()
+    }
+
+    def duplicate_ancestries = ancestry_labels
+        .countBy { ancestry -> ancestry }
+        .findAll { _ancestry, count -> count > 1 }
+        .keySet()
+        .toList()
+        .sort()
+
+    if (duplicate_ancestries) {
+        error "Duplicate ld_references ancestry labels: ${duplicate_ancestries.join(', ')}"
+    }
+
+    return ancestry_labels as Set<String>
+}
+
+
+def manifest_validation_status_record(row: Map) -> Map {
+    return [
+        runId: row.meta.runId,
+        path: row.summary_statistics_path.toString(),
+        validationStage: 'MANIFEST',
+        reason: 'UNREGISTERED_ANCESTRY',
+    ]
+}
+
+
+process MANIFEST_VALIDATION_REPORT {
+    tag "${runId}"
+
+    input:
+    tuple(runId: String, status_records: List<String>)
+
+    output:
+    status = file("validation/manifest/*.jsonl")
+
+    script:
+    def prefix = task.ext.prefix ?: runId
+    def status_lines = status_records.collect { record -> "'${record}'" }.join(' ')
+    """
+    mkdir -p validation/manifest
+    printf '%s\\n' ${status_lines} > validation/manifest/${prefix}.jsonl
+    """
+
+    stub:
+    def prefix = task.ext.prefix ?: runId
+    def status_lines = status_records.collect { record -> "'${record}'" }.join(' ')
+    """
+    mkdir -p validation/manifest
+    printf '%s\\n' ${status_lines} > validation/manifest/${prefix}.jsonl
+    """
+}
+
+
+workflow MANIFEST_VALIDATION {
+    take:
+    manifest_rows
+
+    main:
+    def registered_ancestries = registered_ld_reference_ancestries(params.ld_references)
+    manifest_validation_rows_ch = manifest_rows.branch { row ->
+        supported: registered_ancestries.contains(row.meta.ancestry)
+        unsupported: !registered_ancestries.contains(row.meta.ancestry)
+    }
+
+    supported_manifest_rows = manifest_validation_rows_ch.supported
+    unsupported_manifest_status_input_ch = manifest_validation_rows_ch.unsupported
+        .map { row ->
+            tuple(row.meta.runId, groovy.json.JsonOutput.toJson(manifest_validation_status_record(row)))
+        }
+        .groupTuple(by: 0)
+
+    MANIFEST_VALIDATION_REPORT(unsupported_manifest_status_input_ch)
+    manifest_validation_status = MANIFEST_VALIDATION_REPORT.out.status
+
+    emit:
+    supported_manifest_rows = supported_manifest_rows
+    manifest_validation_status = manifest_validation_status
+}
+
+
 
 workflow {
 
     main:
     intro()
-    input_ch = channel.fromPath(params.manifest)
-        .flatMap { manifest ->
-            manifest.splitCsv(
-                sep: '	',
-                skip: 1,
-            )
-        }
-        .map { row ->
-            manifest_row_to_record(row as List<String>, params.manifest_base_dir)
-        }
+    manifest_ch = read_manifest(params.manifest)
+    filtered_ch = filter_manifest_by_route(manifest_ch, params.route)
+    manifest_validation_out = MANIFEST_VALIDATION(filtered_ch)
+    supported_manifest_ch = manifest_validation_out.supported_manifest_rows
+    manifest_validation_status = manifest_validation_out.manifest_validation_status
 
-    log.info("Manifest file read successfully: ${params.manifest}")
-
-    filtered_ch = input_ch.filter { row ->
-        row.meta.route == params.route
-    }
-
-    locus_breaker_out = LOCUS_BREAKER(filtered_ch)
+    locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)
     locus_out = locus_breaker_out.ch_locus
     locus_breaker_status = locus_breaker_out.ch_status
 
@@ -124,12 +211,13 @@ workflow {
     ld_pairs = locus_annotation_out.ch_ld_pairs
 
     publish:
+    manifest_validation_status = manifest_validation_status
+    locus_breaker_status   = locus_breaker_status
     loci                 = locus_out
     full_overlap_loci    = full_overlap_loci
     partial_overlap_loci = partial_overlap_loci
     non_overlap_loci     = non_overlap_loci
     collect_loci_stats   = collect_loci_stats
-    locus_breaker_status = locus_breaker_status
     locus_annotation     = locus_annotation
     fine_mapping_loci    = fine_mapping_loci
     ld_pairs             = ld_pairs
@@ -140,6 +228,10 @@ workflow {
 
 
 output {
+    manifest_validation_status {
+        path 'validation/manifest'
+        mode 'copy'
+    }
     loci {
         path 'locus_breaker_clumped_study_locus'
         mode 'copy'
