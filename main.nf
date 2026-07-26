@@ -131,6 +131,42 @@ def manifest_validation_status_record(row: Map) -> Map {
 }
 
 
+def invalid_run_ids_from_status_channels(status_channels) {
+    def active_status_channels = status_channels.findAll { status_channel -> status_channel != null }
+    if (!active_status_channels) {
+        return channel.value([] as Set<String>)
+    }
+
+    def combined_status_channels = active_status_channels.tail().inject(active_status_channels.head()) { mixed_status_channel, status_channel ->
+        mixed_status_channel.mix(status_channel)
+    }
+
+    def parsed_status_records = combined_status_channels.flatMap { status_path ->
+        status_path.readLines()
+            .findAll { line -> line }
+            .collect { line -> new groovy.json.JsonSlurper().parseText(line) as Map }
+    }
+
+    def collect_invalid_run_ids = parsed_status_records
+        .map { status_record -> status_record.runId.toString() }
+        .unique()
+        .collect()
+        .map { invalid_run_ids -> invalid_run_ids as Set<String> }
+
+    return collect_invalid_run_ids
+}
+
+
+def filter_rows_by_invalid_run_ids(rows, invalid_run_ids, extract_run_id) {
+    return rows
+        .combine(invalid_run_ids)
+        .filter { row, collected_invalid_run_ids ->
+            !collected_invalid_run_ids.contains(extract_run_id.call(row).toString())
+        }
+        .map { row, _collected_invalid_run_ids -> row }
+}
+
+
 process MANIFEST_VALIDATION_REPORT {
     tag "${runId}"
 
@@ -193,19 +229,55 @@ workflow {
     manifest_ch = read_manifest(params.manifest)
     filtered_ch = filter_manifest_by_route(manifest_ch, params.route)
     manifest_validation_out = MANIFEST_VALIDATION(filtered_ch)
-    supported_manifest_ch = manifest_validation_out.supported_manifest_rows
     manifest_validation_status = manifest_validation_out.manifest_validation_status
+    manifest_invalid_run_ids = invalid_run_ids_from_status_channels([manifest_validation_status])
+    supported_manifest_ch = filter_rows_by_invalid_run_ids(
+        manifest_validation_out.supported_manifest_rows,
+        manifest_invalid_run_ids,
+        { manifest_row -> manifest_row.meta.runId },
+    )
 
     locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)
-    locus_out = locus_breaker_out.ch_locus
     locus_breaker_status = locus_breaker_out.ch_status
+    locus_invalid_run_ids = invalid_run_ids_from_status_channels([manifest_validation_status, locus_breaker_status])
+    locus_out = filter_rows_by_invalid_run_ids(
+        locus_breaker_out.ch_locus,
+        locus_invalid_run_ids,
+        { locus_row -> locus_row.meta.runId },
+    )
 
     locus_collection_out = LOCUS_COLLECTION(locus_out)
-    full_overlap_loci = locus_collection_out.ch_full_overlap_loci
-    partial_overlap_loci = locus_collection_out.ch_partial_overlap_loci
-    non_overlap_loci = locus_collection_out.ch_non_overlap_loci
-    collect_loci_stats = locus_collection_out.ch_collect_loci_stats
     locus_collection_status = locus_collection_out.ch_locus_collection_status
+    collection_invalid_run_ids = invalid_run_ids_from_status_channels([
+        manifest_validation_status,
+        locus_breaker_status,
+        locus_collection_status,
+    ])
+    published_locus_out = filter_rows_by_invalid_run_ids(
+        locus_out,
+        collection_invalid_run_ids,
+        { locus_row -> locus_row.meta.runId },
+    )
+    full_overlap_loci = filter_rows_by_invalid_run_ids(
+        locus_collection_out.ch_full_overlap_loci,
+        collection_invalid_run_ids,
+        { collected_locus_row -> collected_locus_row.runId },
+    )
+    partial_overlap_loci = filter_rows_by_invalid_run_ids(
+        locus_collection_out.ch_partial_overlap_loci,
+        collection_invalid_run_ids,
+        { collected_locus_row -> collected_locus_row.runId },
+    )
+    non_overlap_loci = filter_rows_by_invalid_run_ids(
+        locus_collection_out.ch_non_overlap_loci,
+        collection_invalid_run_ids,
+        { collected_locus_row -> collected_locus_row.runId },
+    )
+    collect_loci_stats = filter_rows_by_invalid_run_ids(
+        locus_collection_out.ch_collect_loci_stats,
+        collection_invalid_run_ids,
+        { collected_locus_row -> collected_locus_row.runId },
+    )
     locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
     locus_annotation = locus_annotation_out.ch_locus_annotation
     fine_mapping_loci = locus_annotation_out.ch_fine_mapping_loci
@@ -215,7 +287,7 @@ workflow {
     manifest_validation_status = manifest_validation_status
     locus_breaker_status   = locus_breaker_status
     locus_collection_status = locus_collection_status
-    loci                 = locus_out
+    loci                 = published_locus_out
     full_overlap_loci    = full_overlap_loci
     partial_overlap_loci = partial_overlap_loci
     non_overlap_loci     = non_overlap_loci
