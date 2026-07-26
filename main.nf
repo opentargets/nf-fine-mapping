@@ -196,7 +196,9 @@ workflow {
     supported_manifest_ch = manifest_validation_out.supported_manifest_rows
     manifest_validation_status = manifest_validation_out.manifest_validation_status
 
-    locus_out = LOCUS_BREAKER(supported_manifest_ch)
+    locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)
+    locus_out = locus_breaker_out.ch_locus
+    locus_breaker_status = locus_breaker_out.ch_status
 
     locus_collection_out = LOCUS_COLLECTION(locus_out)
     full_overlap_loci = locus_collection_out.ch_full_overlap_loci
@@ -210,6 +212,7 @@ workflow {
 
     publish:
     manifest_validation_status = manifest_validation_status
+    locus_breaker_status   = locus_breaker_status
     loci                 = locus_out
     full_overlap_loci    = full_overlap_loci
     partial_overlap_loci = partial_overlap_loci
@@ -247,6 +250,10 @@ output {
     }
     collect_loci_stats {
         path 'collected_loci/stats'
+        mode 'copy'
+    }
+    locus_breaker_status {
+        path 'status/locus_breaker'
         mode 'copy'
     }
     locus_annotation {

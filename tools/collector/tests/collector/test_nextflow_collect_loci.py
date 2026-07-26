@@ -112,10 +112,10 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'" in workflow
     assert "locus_collection_out = LOCUS_COLLECTION(locus_out)" in workflow
     assert "locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)" in workflow
-    assert "manifest_validation_rows_ch = filtered_ch.branch" in workflow
-    assert "supported_manifest_ch = manifest_validation_rows_ch.supported" in workflow
-    assert "unsupported_manifest_status_input_ch = manifest_validation_rows_ch.unsupported" in workflow
-    assert "locus_out = LOCUS_BREAKER(supported_manifest_ch)" in workflow
+    assert "manifest_validation_out = MANIFEST_VALIDATION(filtered_ch)" in workflow
+    assert "locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)" in workflow
+    assert "locus_out = locus_breaker_out.ch_locus" in workflow
+    assert "locus_breaker_status = locus_breaker_out.ch_status" in workflow
     assert "locus_out2" not in workflow
     assert "loci2" not in workflow
     assert "full_overlap_loci = locus_collection_out.ch_full_overlap_loci" in workflow
@@ -157,7 +157,7 @@ def test_main_workflow_validates_manifest_ancestry_against_exact_ld_references()
     assert "ld_references = [" in test_config
     assert "ld_references = [" in gentropy_config
     assert "ld_references = [" in full_config
-    assert "manifest.unsupported.tsv" in nf_test_pipeline
+    assert (REPO_ROOT / "tests" / "workflows" / "manifest_validation.nf.test").exists()
 
 
 def test_full_data_profile_uses_separate_manifest_work_and_output_locations():

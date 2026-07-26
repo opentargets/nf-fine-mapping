@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 
 from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
+from collector.empty_status import ValidationStage, emit_empty_status
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
 from collector.study_locus_ld_annotation import StudyLocusLDAnnotationConfig, run_study_locus_ld_annotation
 
@@ -96,6 +97,28 @@ def transform(
             ) TO '{output}' (FORMAT csv, DELIMITER '\t', HEADER true, COMPRESSION gzip)
             """
         )
+
+
+@app.command(name="empty_status")
+def empty_status(
+    run_id: Annotated[str, typer.Option("--run_id", help="Pipeline run identifier for the status record.")],
+    path: Annotated[Path, typer.Option("--path", help="Input parquet file or partitioned parquet directory.")],
+    validation_stage: Annotated[
+        ValidationStage,
+        typer.Option("--validation_stage", help="Validation stage producing the empty-dataset status."),
+    ],
+    logical_path: Annotated[
+        str | None,
+        typer.Option("--logical_path", help="Logical dataset path to emit in the status record instead of the staged path."),
+    ] = None,
+):
+    """Emit a JSONL status record when the input parquet dataset is logically empty."""
+    try:
+        status = emit_empty_status(run_id=run_id, path=path, logical_path=logical_path, validation_stage=validation_stage)
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    if status is not None:
+        typer.echo(status)
 
 
 @app.command(name="locus_breaker")

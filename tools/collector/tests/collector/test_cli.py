@@ -268,6 +268,29 @@ def _collect_finemapping_loci_args(input_paths: list[Path], output_dir: Path) ->
     return args, outputs
 
 
+def _write_simple_parquet(path: Path, *, rows: list[tuple[int]] | None = None) -> Path:
+    """Write a one-column parquet file for CLI tests."""
+    values = rows if rows is not None else [(1,), (2,)]
+    value_sql = ", ".join(f"({value[0]})" for value in values)
+    query = f"SELECT * FROM (VALUES {value_sql}) AS t(value)" if values else "SELECT 1 AS value WHERE FALSE"
+
+    con = duckdb.connect()
+    try:
+        con.execute(f"COPY ({query}) TO '{path}' (FORMAT 'parquet')")
+    finally:
+        con.close()
+
+    return path
+
+
+def _write_partitioned_parquet_dataset(base_dir: Path, *, rows: list[int]) -> Path:
+    """Write a nested parquet directory dataset for status-check tests."""
+    partition_dir = base_dir / "studyId=STUDY_A"
+    partition_dir.mkdir(parents=True)
+    _write_simple_parquet(partition_dir / "part-00000.parquet", rows=[(value,) for value in rows])
+    return base_dir
+
+
 def _write_collected_locus_file(
     tmp_path: Path,
     study_id: str,
@@ -466,6 +489,152 @@ def test_transform_invalid_input_extension(tmp_path: Path):
 def test_transform_output_dir_must_exist(transform_input: Path):
     result = runner.invoke(app, ["transform", "--input", str(transform_input), "--output", "/nonexistent/out.tsv.gz"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# empty_status command tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("validation_stage", ["MANIFEST", "LOCUS_BREAKER", "LOCUS_COLLECTION"])
+def test_empty_status_emits_jsonl_for_empty_flat_parquet(tmp_path: Path, validation_stage: str):
+    input_path = _write_simple_parquet(tmp_path / "empty.parquet", rows=[])
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(input_path),
+            "--validation_stage",
+            validation_stage,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.endswith("\n")
+    assert len(result.stdout.strip().splitlines()) == 1
+    assert json.loads(result.stdout) == {
+        "runId": "run-123",
+        "path": str(input_path),
+        "validationStage": validation_stage,
+        "reason": "EMPTY_DATASET",
+    }
+
+
+def test_empty_status_emits_no_output_for_non_empty_flat_parquet(tmp_path: Path):
+    input_path = _write_simple_parquet(tmp_path / "non_empty.parquet")
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(input_path),
+            "--validation_stage",
+            "MANIFEST",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+
+
+def test_empty_status_counts_rows_from_partitioned_directory_metadata(tmp_path: Path):
+    input_path = _write_partitioned_parquet_dataset(tmp_path / "partitioned", rows=[])
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(input_path),
+            "--validation_stage",
+            "LOCUS_COLLECTION",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "runId": "run-123",
+        "path": str(input_path),
+        "validationStage": "LOCUS_COLLECTION",
+        "reason": "EMPTY_DATASET",
+    }
+
+
+def test_empty_status_reports_logical_path_instead_of_staged_path(tmp_path: Path):
+    input_path = _write_simple_parquet(tmp_path / "empty.parquet", rows=[])
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(input_path),
+            "--logical_path",
+            "locus_breaker_clumped_study_locus/GCST90002351.parquet",
+            "--validation_stage",
+            "LOCUS_BREAKER",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "runId": "run-123",
+        "path": "locus_breaker_clumped_study_locus/GCST90002351.parquet",
+        "validationStage": "LOCUS_BREAKER",
+        "reason": "EMPTY_DATASET",
+    }
+
+
+def test_empty_status_fails_for_missing_path(tmp_path: Path):
+    missing_path = tmp_path / "missing.parquet"
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(missing_path),
+            "--validation_stage",
+            "MANIFEST",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "does not exist" in result.output
+
+
+def test_empty_status_fails_for_unreadable_parquet(tmp_path: Path):
+    input_path = tmp_path / "broken.parquet"
+    input_path.write_text("not parquet", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(input_path),
+            "--validation_stage",
+            "LOCUS_BREAKER",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Unable to inspect parquet metadata" in result.output
 
 
 # ---------------------------------------------------------------------------
