@@ -266,8 +266,16 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'row[2] == "3.3.0-dev.64"' in locus_breaker_test
     assert 'topics "versions"' in locus_collection_test
     assert 'topics "versions"' in locus_annotation_test
-    assert 'topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") }' in locus_collection_test
-    assert 'topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") }' in locus_collection_test
+    assert (
+        'topics.versions.collect { row -> row[0] }.any { value -> '
+        'value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") }'
+        in locus_collection_test
+    )
+    assert (
+        'topics.versions.collect { row -> row[0] }.any { value -> '
+        'value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") }'
+        in locus_collection_test
+    )
     assert 'topics.versions[0][0].startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION")' in locus_annotation_test
     assert "workflow.out.ch_full_overlap_loci.size() == 1" in locus_collection_test
     assert "workflow.out.ch_partial_overlap_loci.size() == 1" in locus_collection_test
