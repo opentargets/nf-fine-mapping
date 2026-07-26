@@ -241,7 +241,7 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1' in locus_collection_test
     assert 'task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 1' in locus_annotation_test
-    assert "workflow.out[0].size() == 2" in locus_breaker_test
+    assert "workflow.out.ch_locus.size() == 2" in locus_breaker_test
     assert 'topics "versions"' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER")' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING")' in locus_breaker_test
