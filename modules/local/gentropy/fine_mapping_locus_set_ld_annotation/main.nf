@@ -1,0 +1,83 @@
+nextflow.enable.dsl = 2
+
+
+process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
+    tag "${runId}"
+
+    label "gentropy"
+    label "ld_annotation"
+
+    input:
+    tuple val(runId), val(metas), path(fine_mapping_locus_set_path), path(ld_variant_index_paths), val(ld_block_matrix_paths), val(ancestries)
+
+    output:
+    tuple val(runId), path(fine_mapping_locus_set_path), path("gentropy_ld_annotation/*/multi_ancestry_pairwise_ld"), path("gentropy_ld_annotation/*/stats.jsonl"), emit: annotation
+    tuple val(runId), path("gentropy_ld_annotation/*/stats.jsonl"), emit: stats
+
+    script:
+    def args = task.ext.args ?: ''
+    def prefix = task.ext.prefix ?: runId
+    def gentropy_spark_uri = params.gentropy_spark_uri ?: 'local[*]'
+    def gentropy_spark_conf = params.gentropy_ld_annotation_spark_conf ?: params.gentropy_spark_conf ?: '{}'
+    def metadata_lines = metas.collect { meta ->
+        groovy.json.JsonOutput.toJson([
+            studyId: meta.studyId,
+            ancestry: meta.ancestry,
+            sampleSize: meta.sampleSize,
+        ])
+    }.join('\n')
+    def registry = (0..<ancestries.size()).collect { index ->
+        [
+            ancestry: ancestries[index],
+            // Nextflow stages Path inputs into the task work directory.  The
+            // container cannot see the host-side absolute path from params,
+            // so Gentropy must receive the staged basename.
+            vi_path: ld_variant_index_paths[index].getName(),
+            bm_path: ld_block_matrix_paths[index],
+        ]
+    }
+    def registry_override = "[${registry.collect { entry ->
+        "{ancestry:${entry.ancestry},vi_path:${entry.vi_path},bm_path:${entry.bm_path}}"
+    }.join(',')}]"
+    def bm_schemes = ld_block_matrix_paths.collect { path ->
+        path.toString().split(':', 2)[0].toLowerCase()
+    } as Set
+    def connector_args = []
+    if (bm_schemes.intersect(['s3', 's3a'])) {
+        connector_args += [
+            'step.session.add_s3_connector=true',
+            '+step.session.s3_configuration.anonymous=true',
+            '+step.session.s3_configuration.s3_host_url=s3.us-east-1.amazonaws.com',
+        ]
+    }
+    if (bm_schemes.contains('gs') || bm_schemes.contains('gcs')) {
+        connector_args << 'step.session.add_gcs_connector=true'
+    }
+    """
+    mkdir -p gentropy_ld_annotation/${prefix}
+
+    printf '%s\\n' '${metadata_lines}' > metadata.jsonl
+
+    gentropy step=fine_mapping_locus_set_ld_annotation \\
+        'step.session.spark_uri="${gentropy_spark_uri}"' \\
+        '+step.session.extended_spark_conf=${gentropy_spark_conf}' \\
+        step.session.write_mode=overwrite \\
+        step.session.start_hail=true \\
+        step.session.output_partitions=1 \\
+        step.fine_mapping_locus_set_input_path="'${fine_mapping_locus_set_path}'" \\
+        step.fine_mapping_study_metadata_jsonl_input_path=metadata.jsonl \\
+        step.multi_ancestry_pairwise_ld_output_path="'gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld'" \\
+        step.stats_output_path="'gentropy_ld_annotation/${prefix}/stats.jsonl'" \\
+        step.ld_registry='${registry_override}' \\
+        ${connector_args.join(' \\\n        ')} \\
+        ${args}
+    """
+
+    stub:
+    def prefix = task.ext.prefix ?: runId
+    """
+    mkdir -p gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld
+    touch gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld/_SUCCESS
+    touch gentropy_ld_annotation/${prefix}/stats.jsonl
+    """
+}

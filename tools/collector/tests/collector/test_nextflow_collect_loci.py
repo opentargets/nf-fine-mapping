@@ -10,7 +10,8 @@ COLLECTOR_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "collector" /
 GENTROPY_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "locus_breaker_clumping" / "main.nf"
 COLLECT_FINEMAPPING_LOCI_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "collect_finemapping_loci" / "main.nf"
 EMPTY_STATUS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "empty_status" / "main.nf"
-STUDY_LOCUS_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "study_locus_ld_annotation" / "main.nf"
+GENTROPY_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "fine_mapping_locus_set_ld_annotation" / "main.nf"
+LD_PAIR_STATS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "ld_pair_stats" / "main.nf"
 MAIN_WORKFLOW = REPO_ROOT / "main.nf"
 NEXTFLOW_CONFIG = REPO_ROOT / "nextflow.config"
 NF_TEST_CONFIG = REPO_ROOT / "nf-test.config"
@@ -47,7 +48,6 @@ def test_locus_breaker_workflow_does_not_collect_loci():
     assert "gentropy step=locus_breaker_clumping" in gentropy_module
     assert "collector locus_breaker" in collector_module
     assert 'tuple("${task.process}", "collector", "1.0.0") >> "versions"' in collector_module
-    assert 'tuple("${task.process}", "gentropy", "3.3.0-dev.64") >> "versions"' in gentropy_module
     assert "process COLLECTOR_LOCUS_BREAKER" not in workflow
     assert "process GENTROPY_LOCUS_BREAKER_CLUMPING" not in workflow
     assert "process collect_finemapping_loci" not in workflow
@@ -94,28 +94,41 @@ def test_locus_collection_workflow_wires_collect_finemapping_loci_after_clumping
     assert ".filter { status_path -> status_path != null }" in workflow
 
 
-def test_locus_annotation_workflow_wires_study_locus_ld_annotation_after_full_overlaps():
+def test_locus_annotation_workflow_wires_gentropy_ld_annotation_after_full_overlaps():
     workflow = LOCUS_ANNOTATION_WORKFLOW.read_text()
-    module = STUDY_LOCUS_LD_ANNOTATION_MODULE.read_text()
+    module = GENTROPY_LD_ANNOTATION_MODULE.read_text()
+    status_module = LD_PAIR_STATS_MODULE.read_text()
 
     assert "workflow LOCUS_ANNOTATION" in workflow
-    assert "include { STUDY_LOCUS_LD_ANNOTATION }" in workflow
-    assert "STUDY_LOCUS_LD_ANNOTATION(ch_study_locus_ld_annotation_input)" in workflow
-    assert "params.ld_index" in workflow
-    assert "params.ld_pairs_input" in workflow
+    assert "include { GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION }" in workflow
+    assert "GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION(ch_gentropy_ld_annotation_input)" in workflow
+    assert "params.ld_registry" in workflow
     assert "record(" in workflow
-    assert "fine_mapping_loci_path" in workflow
-    assert "ld_pairs_path" in workflow
-    assert "process STUDY_LOCUS_LD_ANNOTATION" in module
-    assert "tuple(runId: String, metas: List, collected_locus_path: Path, ld_index_path: Path, ld_pairs_input_path: Path)" in module
-    assert "collector study_locus_ld_annotation" in module
-    assert "--input ${collected_locus_path}" in module
-    assert "--metadata_json metadata.json" in module
-    assert "--ld_index ${ld_index_path}" in module
-    assert "--ld_pairs_input ${ld_pairs_input_path}" in module
-    assert "--output_dir locus_annotation/${prefix}" in module
-    assert 'annotation = tuple(runId, file("locus_annotation/*/fine_mapping_loci.parquet"), file("locus_annotation/*/ld_pairs.parquet"))' in module
-    assert 'tuple("${task.process}", "collector", "1.0.0") >> "versions"' in module
+    assert "fine_mapping_locus_set_path" in workflow
+    assert "multi_ancestry_pairwise_ld_path" in workflow
+    assert "stats_path" in workflow
+    assert "process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION" in module
+    assert 'label "ld_annotation"' in module
+    assert "path(fine_mapping_locus_set_path), path(ld_variant_index_paths)" in module
+    assert "step=fine_mapping_locus_set_ld_annotation" in module
+    assert 'step.fine_mapping_locus_set_input_path="\'${fine_mapping_locus_set_path}\'"' in module
+    assert "step.fine_mapping_study_metadata_jsonl_input_path=metadata.jsonl" in module
+    assert "printf '%s\\\\n' '${metadata_lines}' > metadata.jsonl" in module
+    assert "step.ld_registry='${registry_override}'" in module
+    assert "vi_path: ld_variant_index_paths[index].getName()" in module
+    assert 'step.multi_ancestry_pairwise_ld_output_path="\'gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld\'"' in module
+    assert 'step.stats_output_path="\'gentropy_ld_annotation/${prefix}/stats.jsonl\'"' in module
+    assert "step.session.start_hail=true" in module
+    assert "step.session.spark_uri" in module
+    assert "step.session.extended_spark_conf" in module
+    assert "params.gentropy_ld_annotation_spark_conf" in module
+    assert "bm_schemes.intersect(['s3', 's3a'])" in module
+    assert "+step.session.s3_configuration.s3_host_url=s3.us-east-1.amazonaws.com" in module
+    assert "step.session.output_partitions=1" in module
+    assert 'path("gentropy_ld_annotation/*/multi_ancestry_pairwise_ld")' in module
+    assert 'path("gentropy_ld_annotation/*/stats.jsonl")' in module
+    assert "process COLLECTOR_CHECK_LD_PAIR_STATS" in status_module
+    assert "collector check_ld_pair_stats" in status_module
 
 
 def test_main_workflow_publishes_collect_finemapping_loci_outputs():
@@ -133,22 +146,22 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "non_overlap_loci = filter_rows_by_invalid_run_ids(" in workflow
     assert "collect_loci_stats = filter_rows_by_invalid_run_ids(" in workflow
     assert "locus_collection_status = locus_collection_out.ch_locus_collection_status" in workflow
-    assert "fine_mapping_loci = locus_annotation_out.ch_fine_mapping_loci" in workflow
-    assert "ld_pairs = locus_annotation_out.ch_ld_pairs" in workflow
+    assert "fine_mapping_locus_sets = locus_annotation.map" in workflow
+    assert "multi_ancestry_pairwise_ld = locus_annotation.map" in workflow
     assert "full_overlap_loci    = full_overlap_loci" in workflow
     assert "partial_overlap_loci = partial_overlap_loci" in workflow
     assert "non_overlap_loci     = non_overlap_loci" in workflow
     assert "collect_loci_stats   = collect_loci_stats" in workflow
     assert "locus_collection_status = locus_collection_status" in workflow
-    assert "fine_mapping_loci    = fine_mapping_loci" in workflow
-    assert "ld_pairs             = ld_pairs" in workflow
+    assert "fine_mapping_locus_sets = fine_mapping_locus_sets" in workflow
+    assert "multi_ancestry_pairwise_ld = multi_ancestry_pairwise_ld" in workflow
     assert "collected_loci/full_overlaps" in workflow
     assert "collected_loci/partial_overlaps" in workflow
     assert "collected_loci/non_overlaps" in workflow
     assert "collected_loci/stats" in workflow
     assert "status/locus_collection" in workflow
-    assert "locus_annotation/fine_mapping_loci" in workflow
-    assert "locus_annotation/ld_pairs" in workflow
+    assert "locus_annotation/fine_mapping_locus_sets" in workflow
+    assert "locus_annotation/multi_ancestry_pairwise_ld" in workflow
     assert "validation/manifest" in workflow
 
 
@@ -210,7 +223,22 @@ def test_chr1_gentropy_local_profile_uses_gentropy_locus_breaker():
     assert 'gentropy_spark_uri   = "local[2]"' in gentropy_config
     assert "spark.driver.memory:8g" in gentropy_config
     assert "spark.executor.memory:8g" in gentropy_config
-    assert "ghcr.io/opentargets/gentropy:3.3.0-dev.64" in gentropy_config
+    assert "gentropy:3.4.0-dev.1-ld-pair-extraction-v2" in gentropy_config
+
+
+def test_real_profiles_use_local_variant_indexes_and_remote_panukbb_block_matrices():
+    chr1_config = (REPO_ROOT / "conf" / "test.config").read_text()
+    full_config = (REPO_ROOT / "conf" / "full-test.config").read_text()
+
+    for config in (chr1_config, full_config):
+        assert "ld_registry = [" in config
+        assert "pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm" in config
+        assert "pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm" in config
+        assert "pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm" in config
+        assert "ld_references" not in config
+
+    assert "data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet" in chr1_config
+    assert "data/reference/panukbb/full_test/UKBB.CSA.aligned.parquet" in full_config
 
 
 def test_nf_test_pipeline_verifies_collector_and_gentropy_step_wiring():
@@ -226,7 +254,7 @@ def test_nf_test_pipeline_verifies_collector_and_gentropy_step_wiring():
     assert 'locus_breaker_method = "gentropy"' in nf_test_pipeline
     assert 'manifest = new File("testdata/manifest.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest_base_dir = new File(".").canonicalPath' in nf_test_pipeline
-    assert "workflow.trace.succeeded().size() == 36" in nf_test_pipeline
+    assert "workflow.trace.succeeded().size() == 40" in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4' in nf_test_pipeline
@@ -256,14 +284,14 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1' in locus_collection_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1' in locus_collection_test
-    assert 'task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 1' in locus_annotation_test
+    assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 1' in locus_annotation_test
     assert "workflow.out.ch_locus.size() == 2" in locus_breaker_test
     assert 'topics "versions"' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER")' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING")' in locus_breaker_test
     assert 'row[1] == "collector"' in locus_breaker_test
     assert 'row[1] == "gentropy"' in locus_breaker_test
-    assert 'row[2] == "3.3.0-dev.64"' in locus_breaker_test
+    assert 'row[2] == "3.4.0-dev.1-ld-pair-extraction-v2"' in locus_breaker_test
     assert 'topics "versions"' in locus_collection_test
     assert 'topics "versions"' in locus_annotation_test
     assert (
@@ -276,7 +304,7 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
         'value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") }'
         in locus_collection_test
     )
-    assert 'topics.versions[0][0].startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION")' in locus_annotation_test
+    assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION")' in locus_annotation_test
     assert "workflow.out.ch_full_overlap_loci.size() == 1" in locus_collection_test
     assert "workflow.out.ch_partial_overlap_loci.size() == 1" in locus_collection_test
     assert "workflow.out.ch_non_overlap_loci.size() == 1" in locus_collection_test
@@ -300,30 +328,30 @@ def test_local_modules_support_process_ext_args():
     collector_locus_breaker = COLLECTOR_LOCUS_BREAKER_MODULE.read_text()
     gentropy_locus_breaker = GENTROPY_LOCUS_BREAKER_MODULE.read_text()
     collect_finemapping_loci = COLLECT_FINEMAPPING_LOCI_MODULE.read_text()
-    study_locus_ld_annotation = STUDY_LOCUS_LD_ANNOTATION_MODULE.read_text()
+    gentropy_ld_annotation = GENTROPY_LD_ANNOTATION_MODULE.read_text()
 
     assert "def args = task.ext.args ?: ''" in collector_locus_breaker
     assert "def args = task.ext.args ?: ''" in gentropy_locus_breaker
     assert "def args = task.ext.args ?: ''" in collect_finemapping_loci
-    assert "def args = task.ext.args ?: ''" in study_locus_ld_annotation
+    assert "def args = task.ext.args ?: ''" in gentropy_ld_annotation
     assert "        ${args}" in collector_locus_breaker
     assert "        ${args}" in gentropy_locus_breaker
     assert "        ${args}" in collect_finemapping_loci
-    assert "        ${args}" in study_locus_ld_annotation
+    assert "        ${args}" in gentropy_ld_annotation
 
 
 def test_local_modules_support_process_ext_prefix():
     collector_locus_breaker = COLLECTOR_LOCUS_BREAKER_MODULE.read_text()
     gentropy_locus_breaker = GENTROPY_LOCUS_BREAKER_MODULE.read_text()
     collect_finemapping_loci = COLLECT_FINEMAPPING_LOCI_MODULE.read_text()
-    study_locus_ld_annotation = STUDY_LOCUS_LD_ANNOTATION_MODULE.read_text()
+    gentropy_ld_annotation = GENTROPY_LD_ANNOTATION_MODULE.read_text()
 
     assert "def prefix = task.ext.prefix ?: meta.studyId" in collector_locus_breaker
     assert "def prefix = task.ext.prefix ?: meta.studyId" in gentropy_locus_breaker
     assert "def prefix = task.ext.prefix ?: runId" in collect_finemapping_loci
-    assert "def prefix = task.ext.prefix ?: runId" in study_locus_ld_annotation
+    assert "def prefix = task.ext.prefix ?: runId" in gentropy_ld_annotation
     assert "${prefix}.parquet" in collector_locus_breaker
     assert "${prefix}" in gentropy_locus_breaker
     assert "${prefix}.parquet" in collect_finemapping_loci
     assert "${prefix}.json" in collect_finemapping_loci
-    assert "locus_annotation/${prefix}" in study_locus_ld_annotation
+    assert "gentropy_ld_annotation/${prefix}" in gentropy_ld_annotation

@@ -13,7 +13,7 @@ nextflow_workflow {
     test("passes through supported rows without emitting status") {
         when {
             params {
-                ld_references = [
+                ld_registry = [
                     [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
                     [ancestry: "eas", vi_path: "vi://eas", bm_path: "bm://eas"],
                 ]
@@ -63,7 +63,7 @@ nextflow_workflow {
     test("emits one JSONL status file per invalid run and preserves supported rows") {
         when {
             params {
-                ld_references = [
+                ld_registry = [
                     [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
                 ]
             }
@@ -135,10 +135,10 @@ nextflow_workflow {
         }
     }
 
-    test("fails when ld_references is missing") {
+    test("fails when ld_registry is missing") {
         when {
             params {
-                ld_references = null
+                ld_registry = null
             }
             workflow {
                 """
@@ -168,16 +168,16 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.failed },
                 { assert workflow.exitStatus != 0 },
-                { assert output.contains("ld_references") },
+                { assert output.contains("ld_registry") },
                 { assert workflow.trace.tasks().size() == 0 }
             )
         }
     }
 
-    test("fails when ld_references is empty") {
+    test("fails when ld_registry is empty") {
         when {
             params {
-                ld_references = []
+                ld_registry = []
             }
             workflow {
                 """
@@ -207,16 +207,16 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.failed },
                 { assert workflow.exitStatus != 0 },
-                { assert output.contains("ld_references") },
+                { assert output.contains("ld_registry") },
                 { assert workflow.trace.tasks().size() == 0 }
             )
         }
     }
 
-    test("fails when ld_references contains duplicate ancestry labels") {
+    test("fails when ld_registry contains duplicate ancestry labels") {
         when {
             params {
-                ld_references = [
+                ld_registry = [
                     [ancestry: "nfe", vi_path: "vi://nfe-1", bm_path: "bm://nfe-1"],
                     [ancestry: "nfe", vi_path: "vi://nfe-2", bm_path: "bm://nfe-2"],
                 ]
@@ -249,7 +249,7 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.failed },
                 { assert workflow.exitStatus != 0 },
-                { assert output.contains("Duplicate ld_references ancestry labels") },
+                { assert output.contains("Duplicate ld_registry ancestry labels") },
                 { assert workflow.trace.tasks().size() == 0 }
             )
         }

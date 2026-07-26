@@ -12,7 +12,7 @@ params {
     manifest_base_dir: String
     output_dir: String
     route: String
-    ld_references: List = []
+    ld_registry: List = []
 }
 
 def intro() -> Void {
@@ -88,19 +88,19 @@ def filter_manifest_by_route(manifest_channel, route: String) {
 }
 
 
-def registered_ld_reference_ancestries(ld_references) -> Set<String> {
-    if (ld_references == null || !(ld_references instanceof List) || ld_references.isEmpty()) {
-        error "Manifest ancestry validation requires non-empty params.ld_references."
+def registered_ld_registry_ancestries(ld_registry) -> Set<String> {
+    if (ld_registry == null || !(ld_registry instanceof List) || ld_registry.isEmpty()) {
+        error "Manifest ancestry validation requires non-empty params.ld_registry."
     }
 
-    def ancestry_labels = ld_references.collect { entry ->
+    def ancestry_labels = ld_registry.collect { entry ->
         if (!(entry instanceof Map) || !entry.containsKey('ancestry')) {
-            error "Manifest ancestry validation requires each params.ld_references entry to define ancestry."
+            error "Manifest ancestry validation requires each params.ld_registry entry to define ancestry."
         }
 
         def ancestry = entry.ancestry
         if (ancestry == null || ancestry.toString().isEmpty()) {
-            error "Manifest ancestry validation requires each params.ld_references entry to define a non-empty ancestry label."
+            error "Manifest ancestry validation requires each params.ld_registry entry to define a non-empty ancestry label."
         }
 
         ancestry.toString()
@@ -114,7 +114,7 @@ def registered_ld_reference_ancestries(ld_references) -> Set<String> {
         .sort()
 
     if (duplicate_ancestries) {
-        error "Duplicate ld_references ancestry labels: ${duplicate_ancestries.join(', ')}"
+        error "Duplicate ld_registry ancestry labels: ${duplicate_ancestries.join(', ')}"
     }
 
     return ancestry_labels as Set<String>
@@ -142,6 +142,9 @@ def invalid_run_ids_from_status_channels(status_channels) {
     }
 
     def parsed_status_records = combined_status_channels.flatMap { status_path ->
+        if (status_path == null) {
+            return []
+        }
         status_path.readLines()
             .findAll { line -> line }
             .collect { line -> new groovy.json.JsonSlurper().parseText(line) as Map }
@@ -199,7 +202,9 @@ workflow MANIFEST_VALIDATION {
     manifest_rows
 
     main:
-    def registered_ancestries = registered_ld_reference_ancestries(params.ld_references)
+    def registered_ancestries = registered_ld_registry_ancestries(
+        params.ld_registry
+    )
     manifest_validation_rows_ch = manifest_rows.branch { row ->
         supported: registered_ancestries.contains(row.meta.ancestry)
         unsupported: !registered_ancestries.contains(row.meta.ancestry)
@@ -279,22 +284,36 @@ workflow {
         { collected_locus_row -> collected_locus_row.runId },
     )
     locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
-    locus_annotation = locus_annotation_out.ch_locus_annotation
-    fine_mapping_loci = locus_annotation_out.ch_fine_mapping_loci
-    ld_pairs = locus_annotation_out.ch_ld_pairs
+    locus_annotation_status = locus_annotation_out.ch_ld_pair_stats_status
+    annotation_invalid_run_ids = invalid_run_ids_from_status_channels([
+        manifest_validation_status,
+        locus_breaker_status,
+        locus_collection_status,
+        locus_annotation_status,
+    ])
+    locus_annotation = filter_rows_by_invalid_run_ids(
+        locus_annotation_out.ch_locus_annotation,
+        annotation_invalid_run_ids,
+        { annotation_row -> annotation_row.runId },
+    )
+    fine_mapping_locus_sets = locus_annotation.map { annotation_row -> annotation_row.fine_mapping_locus_set_path }
+    multi_ancestry_pairwise_ld = locus_annotation.map { annotation_row -> annotation_row.multi_ancestry_pairwise_ld_path }
+    ld_pair_stats = locus_annotation.map { annotation_row -> annotation_row.stats_path }
 
     publish:
     manifest_validation_status = manifest_validation_status
     locus_breaker_status   = locus_breaker_status
     locus_collection_status = locus_collection_status
+    locus_annotation_status = locus_annotation_status
     loci                 = published_locus_out
     full_overlap_loci    = full_overlap_loci
     partial_overlap_loci = partial_overlap_loci
     non_overlap_loci     = non_overlap_loci
     collect_loci_stats   = collect_loci_stats
     locus_annotation     = locus_annotation
-    fine_mapping_loci    = fine_mapping_loci
-    ld_pairs             = ld_pairs
+    fine_mapping_locus_sets = fine_mapping_locus_sets
+    multi_ancestry_pairwise_ld = multi_ancestry_pairwise_ld
+    ld_pair_stats         = ld_pair_stats
 
     onComplete:
     log.info('Pipeline complete!')
@@ -334,16 +353,24 @@ output {
         path 'status/locus_collection'
         mode 'copy'
     }
+    locus_annotation_status {
+        path 'status/locus_annotation'
+        mode 'copy'
+    }
     locus_annotation {
         path 'locus_annotation'
         mode 'copy'
     }
-    fine_mapping_loci {
-        path 'locus_annotation/fine_mapping_loci'
+    fine_mapping_locus_sets {
+        path 'locus_annotation/fine_mapping_locus_sets'
         mode 'copy'
     }
-    ld_pairs {
-        path 'locus_annotation/ld_pairs'
+    multi_ancestry_pairwise_ld {
+        path 'locus_annotation/multi_ancestry_pairwise_ld'
+        mode 'copy'
+    }
+    ld_pair_stats {
+        path 'locus_annotation/stats'
         mode 'copy'
     }
 }

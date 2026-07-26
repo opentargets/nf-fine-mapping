@@ -127,7 +127,7 @@ nextflow_workflow {
                 { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2 },
                 { assert topics.versions.count { row -> row[1] == "gentropy" } == 2 },
                 { assert topics.versions.count { row -> row[1] == "collector" } == 2 },
-                { assert topics.versions.count { row -> row[2] == "3.3.0-dev.64" } == 2 },
+                { assert topics.versions.count { row -> row[2] == "3.4.0-dev.1-ld-pair-extraction-v2" } == 2 },
                 { assert topics.versions.count { row -> row[2] == "1.0.0" } == 2 }
             )
         }

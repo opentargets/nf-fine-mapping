@@ -10,8 +10,8 @@ import typer
 
 from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.empty_status import ValidationStage, emit_empty_status
+from collector.ld_pair_stats import emit_empty_ld_pair_status
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
-from collector.study_locus_ld_annotation import StudyLocusLDAnnotationConfig, run_study_locus_ld_annotation
 
 app = typer.Typer()
 
@@ -121,6 +121,20 @@ def empty_status(
         typer.echo(status)
 
 
+@app.command(name="check_ld_pair_stats")
+def check_ld_pair_stats(
+    run_id: Annotated[str, typer.Option("--run_id", help="Pipeline run identifier for the status record.")],
+    path: Annotated[Path, typer.Option("--path", help="Gentropy LD pair statistics JSONL path.")],
+):
+    """Emit one status record when any ancestry has zero LD pairs."""
+    try:
+        status = emit_empty_ld_pair_status(run_id=run_id, path=path)
+    except (FileNotFoundError, OSError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    if status is not None:
+        typer.echo(status)
+
+
 @app.command(name="locus_breaker")
 def locus_breaker(
     input: Annotated[Path, typer.Option("--input", help="Input flat summary-statistics Parquet file or directory dataset.")],
@@ -177,28 +191,6 @@ def collect_finemapping_loci(
     try:
         run_collect_finemapping_loci(config)
     except ValueError as error:
-        raise typer.BadParameter(str(error)) from error
-
-
-@app.command(name="study_locus_ld_annotation")
-def study_locus_ld_annotation(
-    input: Annotated[Path, typer.Option("--input", help="Input collected full-overlap StudyLocus Parquet file or directory dataset.")],
-    metadata_json: Annotated[Path, typer.Option("--metadata_json", help="Run metadata JSON file with studyId, ancestry, and sampleSize.")],
-    ld_index: Annotated[Path, typer.Option("--ld_index", help="Prepared PanUKBB LD variant index parquet file or directory dataset.")],
-    ld_pairs_input: Annotated[Path, typer.Option("--ld_pairs_input", help="Signed long-format LD pairs parquet file or directory dataset.")],
-    output_dir: Annotated[Path, typer.Option("--output_dir", help="Directory where fine_mapping_loci.parquet and ld_pairs.parquet will be written.")],
-):
-    """Write flattened fine-mapping loci and real long-format LD pairs."""
-    config = StudyLocusLDAnnotationConfig(
-        input_path=input,
-        metadata_json=metadata_json,
-        ld_index_path=ld_index,
-        ld_pairs_input_path=ld_pairs_input,
-        output_dir=output_dir,
-    )
-    try:
-        run_study_locus_ld_annotation(config)
-    except (FileNotFoundError, IsADirectoryError, NotADirectoryError, TypeError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
 

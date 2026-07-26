@@ -1,6 +1,6 @@
 nextflow_workflow {
 
-    name "Test LOCUS_ANNOTATION workflow"
+    name "Test LOCUS_ANNOTATION Gentropy workflow"
     script "../../workflows/locus_annotation/main.nf"
     workflow "LOCUS_ANNOTATION"
     tag "workflow"
@@ -9,12 +9,15 @@ nextflow_workflow {
     topics "versions"
     options "-stub-run"
 
-    test("runs study_locus_ld_annotation for full-overlap loci") {
+    test("runs Gentropy LD annotation for full-overlap loci") {
         when {
             params {
                 output_dir = "$outputDir"
-                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
-                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
+                ld_pair_stats_stub_emit = true
+                ld_registry = [
+                    [ancestry: "nfe", vi_path: "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
+                    [ancestry: "afr", vi_path: "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
+                ]
             }
             workflow {
                 """
@@ -52,23 +55,25 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 1 },
+                { assert workflow.trace.succeeded().size() == 2 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 1 },
                 { assert workflow.out.ch_locus_annotation.size() == 1 },
                 { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
-                { assert workflow.out.ch_locus_annotation[0].fine_mapping_loci_path.toString().endsWith("fine_mapping_loci.parquet") },
-                { assert workflow.out.ch_locus_annotation[0].ld_pairs_path.toString().endsWith("ld_pairs.parquet") },
-                { assert workflow.out.ch_fine_mapping_loci.size() == 1 },
-                { assert workflow.out.ch_ld_pairs.size() == 1 },
+                { assert workflow.out.ch_locus_annotation[0].fine_mapping_locus_set_path.toString().endsWith("chr1.parquet") },
+                { assert workflow.out.ch_locus_annotation[0].multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld") },
+                { assert workflow.out.ch_locus_annotation[0].stats_path.toString().endsWith("stats.jsonl") },
+                { assert workflow.out.ch_fine_mapping_locus_sets.size() == 1 },
+                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 1 },
+                { assert workflow.out.ch_ld_pair_stats.size() == 1 },
+                { assert workflow.out.ch_ld_pair_stats_status.size() == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 1 },
                 { assert topics.versions.size() == 1 },
-                { assert topics.versions[0][0].startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") },
-                { assert topics.versions[0][1] == "collector" },
-                { assert topics.versions[0][2] == "1.0.0" }
+                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.0.0" } }
             )
         }
     }
 
-    test("skips study_locus_ld_annotation when full-overlap channel is empty") {
+    test("skips Gentropy LD annotation when full-overlap channel is empty") {
         when {
             params {
                 output_dir = "$outputDir"
@@ -86,8 +91,9 @@ nextflow_workflow {
                 { assert workflow.trace.failed().size() == 0 },
                 { assert workflow.trace.succeeded().size() == 0 },
                 { assert workflow.out.ch_locus_annotation.size() == 0 },
-                { assert workflow.out.ch_fine_mapping_loci.size() == 0 },
-                { assert workflow.out.ch_ld_pairs.size() == 0 }
+                { assert workflow.out.ch_fine_mapping_locus_sets.size() == 0 },
+                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 0 },
+                { assert workflow.out.ch_ld_pair_stats.size() == 0 }
             )
         }
     }

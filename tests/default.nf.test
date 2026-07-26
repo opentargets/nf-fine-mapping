@@ -14,8 +14,6 @@ nextflow_pipeline {
                 manifest = new File("testdata/manifest.tsv").canonicalPath
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
-                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
-                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
             }
         }
 
@@ -24,7 +22,7 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 36 },
+                { assert workflow.trace.succeeded().size() == 40 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 },
@@ -42,8 +40,6 @@ nextflow_pipeline {
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
                 locus_breaker_method = "gentropy"
-                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
-                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
             }
         }
 
@@ -53,7 +49,7 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 36 },
+                { assert workflow.trace.succeeded().size() == 40 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 },
@@ -71,12 +67,10 @@ nextflow_pipeline {
                 manifest = new File("testdata/manifest.invalid_run.tsv").canonicalPath
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
-                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
-                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
-                ld_references = [
-                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
-                    [ancestry: "eas", vi_path: "vi://eas", bm_path: "bm://eas"],
-                    [ancestry: "afr", vi_path: "vi://afr", bm_path: "bm://afr"],
+                ld_registry = [
+                    [ancestry: "nfe", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
+                    [ancestry: "eas", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
+                    [ancestry: "afr", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
                 ]
             }
         }
@@ -87,13 +81,13 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 6 },
+                { assert workflow.trace.succeeded().size() == 7 },
                 { assert succeededTasks.count { task -> task.startsWith("MANIFEST_VALIDATION:MANIFEST_VALIDATION_REPORT") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 1 },
                 { assert outputText.contains("RUN_INVALID.jsonl") },
                 { assert outputText.contains("RUN_VALID") },
                 { assert !outputText.contains("GCST90002351") }

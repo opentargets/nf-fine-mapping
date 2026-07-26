@@ -28,7 +28,7 @@ process GENTROPY_LOCUS_BREAKER_CLUMPING {
     )
 
     topic:
-    tuple("${task.process}", "gentropy", "3.3.0-dev.64") >> "versions"
+    tuple("${task.process}", "gentropy", "3.4.0-dev.1-ld-pair-extraction-v2") >> "versions"
 
     script:
     def args = task.ext.args ?: ''
