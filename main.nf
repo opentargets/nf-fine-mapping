@@ -205,6 +205,7 @@ workflow {
     partial_overlap_loci = locus_collection_out.ch_partial_overlap_loci
     non_overlap_loci = locus_collection_out.ch_non_overlap_loci
     collect_loci_stats = locus_collection_out.ch_collect_loci_stats
+    locus_collection_status = locus_collection_out.ch_locus_collection_status
     locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
     locus_annotation = locus_annotation_out.ch_locus_annotation
     fine_mapping_loci = locus_annotation_out.ch_fine_mapping_loci
@@ -213,6 +214,7 @@ workflow {
     publish:
     manifest_validation_status = manifest_validation_status
     locus_breaker_status   = locus_breaker_status
+    locus_collection_status = locus_collection_status
     loci                 = locus_out
     full_overlap_loci    = full_overlap_loci
     partial_overlap_loci = partial_overlap_loci
@@ -254,6 +256,10 @@ output {
     }
     locus_breaker_status {
         path 'status/locus_breaker'
+        mode 'copy'
+    }
+    locus_collection_status {
+        path 'status/locus_collection'
         mode 'copy'
     }
     locus_annotation {
