@@ -1,0 +1,257 @@
+import groovy.json.JsonSlurper
+
+nextflow_workflow {
+
+    name "Test MANIFEST_VALIDATION workflow"
+    script "../../main.nf"
+    workflow "MANIFEST_VALIDATION"
+    tag "workflow"
+    tag "manifest_validation"
+    tag "stub"
+    options "-stub-run"
+
+    test("passes through supported rows without emitting status") {
+        when {
+            params {
+                ld_references = [
+                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
+                    [ancestry: "eas", vi_path: "vi://eas", bm_path: "bm://eas"],
+                ]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90002351"),
+                        meta: [
+                            runId: "RUN_A",
+                            studyId: "GCST90002351",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 519288,
+                        ],
+                    ],
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90018748"),
+                        meta: [
+                            runId: "RUN_A",
+                            studyId: "GCST90018748",
+                            route: "multi_susie_route",
+                            ancestry: "eas",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 82810,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 0 },
+                { assert workflow.out.supported_manifest_rows.size() == 2 },
+                { assert workflow.out.supported_manifest_rows*.meta*.ancestry.flatten().sort() == ["eas", "nfe"] },
+                { assert workflow.out.manifest_validation_status.size() == 0 }
+            )
+        }
+    }
+
+    test("emits one JSONL status file per invalid run and preserves supported rows") {
+        when {
+            params {
+                ld_references = [
+                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
+                ]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90018748"),
+                        meta: [
+                            runId: "RUN_INVALID",
+                            studyId: "GCST90018748",
+                            route: "multi_susie_route",
+                            ancestry: "eas",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 82810,
+                        ],
+                    ],
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90278666"),
+                        meta: [
+                            runId: "RUN_INVALID",
+                            studyId: "GCST90278666",
+                            route: "multi_susie_route",
+                            ancestry: "amr",
+                            traitSet: ["EFO_0004309"],
+                            sampleSize: 241238,
+                        ],
+                    ],
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90475531"),
+                        meta: [
+                            runId: "RUN_SUPPORTED",
+                            studyId: "GCST90475531",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 74049,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def statusRecords = path(workflow.out.manifest_validation_status[0])
+                .readLines()
+                .findAll { line -> line }
+                .collect { line -> new JsonSlurper().parseText(line) }
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 1 },
+                { assert workflow.out.supported_manifest_rows.size() == 1 },
+                { assert workflow.out.supported_manifest_rows[0].meta.runId == "RUN_SUPPORTED" },
+                { assert workflow.out.manifest_validation_status.size() == 1 },
+                { assert statusRecords.size() == 2 },
+                { assert statusRecords*.runId.unique() == ["RUN_INVALID"] },
+                { assert statusRecords*.validationStage.unique() == ["MANIFEST"] },
+                { assert statusRecords*.reason.unique() == ["UNREGISTERED_ANCESTRY"] },
+                {
+                    assert statusRecords*.path.sort() == [
+                        new File("testdata/sumstats/GCST90018748").canonicalPath,
+                        new File("testdata/sumstats/GCST90278666").canonicalPath,
+                    ].sort()
+                }
+            )
+        }
+    }
+
+    test("fails when ld_references is missing") {
+        when {
+            params {
+                ld_references = null
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90475531"),
+                        meta: [
+                            runId: "RUN_SUPPORTED",
+                            studyId: "GCST90475531",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 74049,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("ld_references") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails when ld_references is empty") {
+        when {
+            params {
+                ld_references = []
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90475531"),
+                        meta: [
+                            runId: "RUN_SUPPORTED",
+                            studyId: "GCST90475531",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 74049,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("ld_references") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails when ld_references contains duplicate ancestry labels") {
+        when {
+            params {
+                ld_references = [
+                    [ancestry: "nfe", vi_path: "vi://nfe-1", bm_path: "bm://nfe-1"],
+                    [ancestry: "nfe", vi_path: "vi://nfe-2", bm_path: "bm://nfe-2"],
+                ]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90475531"),
+                        meta: [
+                            runId: "RUN_SUPPORTED",
+                            studyId: "GCST90475531",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 74049,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("Duplicate ld_references ancestry labels") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+}

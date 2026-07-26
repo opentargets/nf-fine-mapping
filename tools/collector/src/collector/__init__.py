@@ -107,10 +107,14 @@ def empty_status(
         ValidationStage,
         typer.Option("--validation_stage", help="Validation stage producing the empty-dataset status."),
     ],
+    logical_path: Annotated[
+        str | None,
+        typer.Option("--logical_path", help="Logical dataset path to emit in the status record instead of the staged path."),
+    ] = None,
 ):
     """Emit a JSONL status record when the input parquet dataset is logically empty."""
     try:
-        status = emit_empty_status(run_id=run_id, path=path, validation_stage=validation_stage)
+        status = emit_empty_status(run_id=run_id, path=path, logical_path=logical_path, validation_stage=validation_stage)
     except (FileNotFoundError, RuntimeError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
     if status is not None:
