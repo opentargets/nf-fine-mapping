@@ -420,8 +420,7 @@ def run_collect_finemapping_loci(config: CollectFineMappingLociConfig) -> None:
         partial_stats = _class_stats(con, "partial")
         non_overlap_stats = _class_stats(con, "non_overlap")
 
-        if full_stats["fineMappingSetCount"]:
-            _copy_full_loci(con, config.full_output)
+        _copy_full_loci(con, config.full_output)
         _copy_classified_loci(con, config.partial_output, "partial", "partial-overlapping studyLocus")
         _copy_classified_loci(con, config.non_overlap_output, "non_overlap", "non-overlapping studyLocus")
 

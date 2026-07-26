@@ -633,18 +633,20 @@ def test_collect_finemapping_loci_accepts_inputs_creates_dirs_and_removes_stale_
     result = runner.invoke(app, args)
 
     assert result.exit_code == 0, result.output
-    assert not full_output.exists()
+    assert full_output.exists()
     assert partial_output.exists()
     assert non_overlap_output.exists()
     assert stats_output.exists()
 
     con = duckdb.connect()
     try:
+        full_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{full_output}')").fetchall()]
         partial_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{partial_output}')").fetchall()]
         non_overlap_columns = [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{non_overlap_output}')").fetchall()]
     finally:
         con.close()
 
+    assert full_columns == list(COLLECTED_LOCUS_SCHEMA.column_names)
     assert partial_columns == list(COLLECTED_LOCUS_SCHEMA.column_names)
     assert non_overlap_columns == list(COLLECTED_LOCUS_SCHEMA.column_names)
 

@@ -30,7 +30,6 @@ workflow LOCUS_COLLECTION {
 
     emit:
     ch_full_overlap_loci      = ch_collected_loci.full_overlap
-        .filter { _runId, _metas, collected_locus_path -> collected_locus_path != null }
         .map { runId, metas, collected_locus_path ->
             record(runId: runId, metas: metas, collected_locus_path: collected_locus_path)
         }

@@ -74,11 +74,11 @@ def test_locus_collection_workflow_wires_collect_finemapping_loci_after_clumping
     assert "--non_overlap_output collected_loci/non_overlaps/${prefix}.parquet" in module
     assert "--stats_output collected_loci/stats/${prefix}.json" in module
     assert "tuple(runId: String, metas: List, study_locus_paths: List<Path>)" in module
-    assert 'full_overlap = tuple(runId, metas, file("collected_loci/full_overlaps/*.parquet", optional: true))' in module
+    assert 'full_overlap = tuple(runId, metas, file("collected_loci/full_overlaps/*.parquet"))' in module
     assert 'partial_overlap = tuple(runId, metas, file("collected_loci/partial_overlaps/*.parquet"))' in module
     assert 'non_overlap = tuple(runId, metas, file("collected_loci/non_overlaps/*.parquet"))' in module
     assert 'stats = tuple(runId, metas, file("collected_loci/stats/*.json"))' in module
-    assert ".filter { _runId, _metas, collected_locus_path -> collected_locus_path != null }" in workflow
+    assert ".filter { _runId, _metas, collected_locus_path -> collected_locus_path != null }" not in workflow
 
 
 def test_locus_annotation_workflow_wires_study_locus_ld_annotation_after_full_overlaps():

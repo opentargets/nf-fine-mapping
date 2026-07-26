@@ -13,7 +13,7 @@ process COLLECT_FINEMAPPING_LOCI {
     tuple(runId: String, metas: List, study_locus_paths: List<Path>)
 
     output:
-    full_overlap = tuple(runId, metas, file("collected_loci/full_overlaps/*.parquet", optional: true))
+    full_overlap = tuple(runId, metas, file("collected_loci/full_overlaps/*.parquet"))
     partial_overlap = tuple(runId, metas, file("collected_loci/partial_overlaps/*.parquet"))
     non_overlap = tuple(runId, metas, file("collected_loci/non_overlaps/*.parquet"))
     stats = tuple(runId, metas, file("collected_loci/stats/*.json"))
@@ -40,7 +40,8 @@ process COLLECT_FINEMAPPING_LOCI {
     stub:
     def prefix = task.ext.prefix ?: runId
     """
-    mkdir -p collected_loci/partial_overlaps collected_loci/non_overlaps collected_loci/stats
+    mkdir -p collected_loci/full_overlaps collected_loci/partial_overlaps collected_loci/non_overlaps collected_loci/stats
+    touch collected_loci/full_overlaps/${prefix}.parquet
     touch collected_loci/partial_overlaps/${prefix}.parquet
     touch collected_loci/non_overlaps/${prefix}.parquet
     touch collected_loci/stats/${prefix}.json
