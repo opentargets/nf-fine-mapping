@@ -128,10 +128,10 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)" in workflow
     assert "locus_out2" not in workflow
     assert "loci2" not in workflow
-    assert "full_overlap_loci = locus_collection_out.ch_full_overlap_loci" in workflow
-    assert "partial_overlap_loci = locus_collection_out.ch_partial_overlap_loci" in workflow
-    assert "non_overlap_loci = locus_collection_out.ch_non_overlap_loci" in workflow
-    assert "collect_loci_stats = locus_collection_out.ch_collect_loci_stats" in workflow
+    assert "full_overlap_loci = filter_rows_by_invalid_run_ids(" in workflow
+    assert "partial_overlap_loci = filter_rows_by_invalid_run_ids(" in workflow
+    assert "non_overlap_loci = filter_rows_by_invalid_run_ids(" in workflow
+    assert "collect_loci_stats = filter_rows_by_invalid_run_ids(" in workflow
     assert "locus_collection_status = locus_collection_out.ch_locus_collection_status" in workflow
     assert "fine_mapping_loci = locus_annotation_out.ch_fine_mapping_loci" in workflow
     assert "ld_pairs = locus_annotation_out.ch_ld_pairs" in workflow
@@ -149,6 +149,32 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "status/locus_collection" in workflow
     assert "locus_annotation/fine_mapping_loci" in workflow
     assert "locus_annotation/ld_pairs" in workflow
+    assert "validation/manifest" in workflow
+
+
+def test_main_workflow_filters_invalid_runs_from_manifest_locus_and_collection_channels():
+    workflow = MAIN_WORKFLOW.read_text()
+
+    assert "def invalid_run_ids_from_status_channels(status_channels)" in workflow
+    assert "def filter_rows_by_invalid_run_ids(rows, invalid_run_ids, extract_run_id)" in workflow
+    assert "status_channels.findAll { status_channel -> status_channel != null }" in workflow
+    assert "collect_invalid_run_ids = parsed_status_records" in workflow
+    assert "manifest_invalid_run_ids = invalid_run_ids_from_status_channels([manifest_validation_status])" in workflow
+    assert "supported_manifest_ch = filter_rows_by_invalid_run_ids(" in workflow
+    assert "manifest_validation_out.supported_manifest_rows" in workflow
+    assert "locus_invalid_run_ids = invalid_run_ids_from_status_channels([manifest_validation_status, locus_breaker_status])" in workflow
+    assert "locus_out = filter_rows_by_invalid_run_ids(" in workflow
+    assert "locus_breaker_out.ch_locus" in workflow
+    assert "collection_invalid_run_ids = invalid_run_ids_from_status_channels([" in workflow
+    assert "locus_collection_status" in workflow
+    assert "published_locus_out = filter_rows_by_invalid_run_ids(" in workflow
+    assert "loci                 = published_locus_out" in workflow
+    assert "locus_collection_out.ch_full_overlap_loci" in workflow
+    assert "locus_collection_out.ch_partial_overlap_loci" in workflow
+    assert "locus_collection_out.ch_non_overlap_loci" in workflow
+    assert "locus_collection_out.ch_collect_loci_stats" in workflow
+    assert "invalid_run_ids_from_status_channels([manifest_validation_status])" in workflow
+    assert "invalid_run_ids_from_status_channels([manifest_validation_status, locus_breaker_status])" in workflow
 
 
 def test_full_data_profile_uses_separate_manifest_work_and_output_locations():
