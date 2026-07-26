@@ -1,0 +1,94 @@
+nextflow_workflow {
+
+    name "Test LOCUS_ANNOTATION workflow"
+    script "../../workflows/locus_annotation/main.nf"
+    workflow "LOCUS_ANNOTATION"
+    tag "workflow"
+    tag "locus_annotation"
+    tag "stub"
+    topics "versions"
+    options "-stub-run"
+
+    test("runs study_locus_ld_annotation for full-overlap loci") {
+        when {
+            params {
+                output_dir = "$outputDir"
+                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
+                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        runId: "RUN_A",
+                        metas: [
+                            [
+                                runId: "RUN_A",
+                                studyId: "STUDY_A",
+                                route: "multi_susie_route",
+                                ancestry: "nfe",
+                                traitSet: ["EFO_0004833"],
+                                sampleSize: 100,
+                            ],
+                            [
+                                runId: "RUN_A",
+                                studyId: "STUDY_B",
+                                route: "multi_susie_route",
+                                ancestry: "afr",
+                                traitSet: ["EFO_0004833"],
+                                sampleSize: 200,
+                            ],
+                        ],
+                        collected_locus_path: file("${projectDir}/testdata/sumstats/GCST90475531/chr1.parquet"),
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 1 },
+                { assert workflow.out.ch_locus_annotation.size() == 1 },
+                { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
+                { assert workflow.out.ch_locus_annotation[0].fine_mapping_loci_path.toString().endsWith("fine_mapping_loci.parquet") },
+                { assert workflow.out.ch_locus_annotation[0].ld_pairs_path.toString().endsWith("ld_pairs.parquet") },
+                { assert workflow.out.ch_fine_mapping_loci.size() == 1 },
+                { assert workflow.out.ch_ld_pairs.size() == 1 },
+                { assert topics.versions.size() == 1 },
+                { assert topics.versions[0][0].startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") },
+                { assert topics.versions[0][1] == "collector" },
+                { assert topics.versions[0][2] == "1.0.0" }
+            )
+        }
+    }
+
+    test("skips study_locus_ld_annotation when full-overlap channel is empty") {
+        when {
+            params {
+                output_dir = "$outputDir"
+            }
+            workflow {
+                """
+                input[0] = channel.empty()
+                """
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 0 },
+                { assert workflow.out.ch_locus_annotation.size() == 0 },
+                { assert workflow.out.ch_fine_mapping_loci.size() == 0 },
+                { assert workflow.out.ch_ld_pairs.size() == 0 }
+            )
+        }
+    }
+}

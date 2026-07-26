@@ -5,6 +5,7 @@ nextflow.enable.types = true
 
 include { LOCUS_BREAKER    } from './workflows/locus_breaker/main.nf'
 include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'
+include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'
 
 params {
     manifest: String
@@ -115,6 +116,10 @@ workflow {
     partial_overlap_loci = locus_collection_out.ch_partial_overlap_loci
     non_overlap_loci = locus_collection_out.ch_non_overlap_loci
     collect_loci_stats = locus_collection_out.ch_collect_loci_stats
+    locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
+    locus_annotation = locus_annotation_out.ch_locus_annotation
+    fine_mapping_loci = locus_annotation_out.ch_fine_mapping_loci
+    ld_pairs = locus_annotation_out.ch_ld_pairs
 
     publish:
     loci                 = locus_out
@@ -122,6 +127,9 @@ workflow {
     partial_overlap_loci = partial_overlap_loci
     non_overlap_loci     = non_overlap_loci
     collect_loci_stats   = collect_loci_stats
+    locus_annotation     = locus_annotation
+    fine_mapping_loci    = fine_mapping_loci
+    ld_pairs             = ld_pairs
 
     onComplete:
     log.info('Pipeline complete!')
@@ -147,6 +155,18 @@ output {
     }
     collect_loci_stats {
         path 'collected_loci/stats'
+        mode 'copy'
+    }
+    locus_annotation {
+        path 'locus_annotation'
+        mode 'copy'
+    }
+    fine_mapping_loci {
+        path 'locus_annotation/fine_mapping_loci'
+        mode 'copy'
+    }
+    ld_pairs {
+        path 'locus_annotation/ld_pairs'
         mode 'copy'
     }
 }
