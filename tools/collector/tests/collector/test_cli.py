@@ -820,6 +820,47 @@ def test_collect_finemapping_loci_accepts_inputs_creates_dirs_and_removes_stale_
     assert non_overlap_columns == list(COLLECTED_LOCUS_SCHEMA.column_names)
 
 
+def test_collect_finemapping_loci_writes_schema_valid_empty_full_output_for_status_validation(
+    study_locus_inputs: list[Path],
+    tmp_path: Path,
+):
+    args, outputs = _collect_finemapping_loci_args(study_locus_inputs, tmp_path / "collected")
+
+    collect_result = runner.invoke(app, args)
+
+    assert collect_result.exit_code == 0, collect_result.output
+    assert outputs["full"].exists()
+
+    con = duckdb.connect()
+    try:
+        full_row_count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{outputs['full']}')").fetchone()
+    finally:
+        con.close()
+
+    assert full_row_count == (0,)
+
+    status_result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "RUN_EMPTY",
+            "--path",
+            str(outputs["full"]),
+            "--validation_stage",
+            "LOCUS_COLLECTION",
+        ],
+    )
+
+    assert status_result.exit_code == 0, status_result.output
+    assert json.loads(status_result.stdout) == {
+        "runId": "RUN_EMPTY",
+        "path": str(outputs["full"]),
+        "validationStage": "LOCUS_COLLECTION",
+        "reason": "EMPTY_DATASET",
+    }
+
+
 def test_collect_finemapping_loci_writes_stats_contract(study_locus_inputs: list[Path], tmp_path: Path):
     output_dir = tmp_path / "collected"
     stats_output = output_dir / "stats" / "run.json"
