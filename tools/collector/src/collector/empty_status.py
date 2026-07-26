@@ -23,7 +23,12 @@ class EmptyDatasetReason(StrEnum):
     EMPTY_DATASET = "EMPTY_DATASET"
 
 
-def emit_empty_status(run_id: str, path: Path, validation_stage: ValidationStage) -> str | None:
+def emit_empty_status(
+    run_id: str,
+    path: Path,
+    validation_stage: ValidationStage,
+    logical_path: str | None = None,
+) -> str | None:
     """Return a JSONL status record when the parquet dataset has zero logical rows."""
     row_count = parquet_row_count(path)
     if row_count > 0:
@@ -32,7 +37,7 @@ def emit_empty_status(run_id: str, path: Path, validation_stage: ValidationStage
     return json.dumps(
         {
             "runId": run_id,
-            "path": str(path),
+            "path": logical_path or str(path),
             "validationStage": validation_stage.value,
             "reason": EmptyDatasetReason.EMPTY_DATASET.value,
         }

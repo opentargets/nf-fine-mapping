@@ -7,6 +7,7 @@ LOCUS_BREAKER_WORKFLOW = REPO_ROOT / "workflows" / "locus_breaker" / "main.nf"
 LOCUS_COLLECTION_WORKFLOW = REPO_ROOT / "workflows" / "locus_collection" / "main.nf"
 LOCUS_ANNOTATION_WORKFLOW = REPO_ROOT / "workflows" / "locus_annotation" / "main.nf"
 COLLECTOR_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "locus_breaker" / "main.nf"
+COLLECTOR_EMPTY_STATUS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "empty_status" / "main.nf"
 GENTROPY_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "locus_breaker_clumping" / "main.nf"
 COLLECT_FINEMAPPING_LOCI_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "collect_finemapping_loci" / "main.nf"
 STUDY_LOCUS_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "study_locus_ld_annotation" / "main.nf"
@@ -26,10 +27,12 @@ FULL_MANIFEST = REPO_ROOT / "testdata" / "manifest.full.tsv"
 def test_locus_breaker_workflow_does_not_collect_loci():
     workflow = LOCUS_BREAKER_WORKFLOW.read_text()
     collector_module = COLLECTOR_LOCUS_BREAKER_MODULE.read_text()
+    empty_status_module = COLLECTOR_EMPTY_STATUS_MODULE.read_text()
     gentropy_module = GENTROPY_LOCUS_BREAKER_MODULE.read_text()
 
     assert "workflow LOCUS_BREAKER" in workflow
     assert "include { COLLECTOR_LOCUS_BREAKER }" in workflow
+    assert "include { COLLECTOR_EMPTY_STATUS as LOCUS_BREAKER_EMPTY_STATUS }" in workflow
     assert "include { GENTROPY_LOCUS_BREAKER_CLUMPING }" in workflow
     assert "locus_breaker_method = params.locus_breaker_method.toString().toLowerCase()" in workflow
     assert "locus_breaker_method == 'collector'" in workflow
@@ -38,16 +41,32 @@ def test_locus_breaker_workflow_does_not_collect_loci():
     assert "tuple(" in workflow
     assert "COLLECTOR_LOCUS_BREAKER(ch_input)" in workflow
     assert "GENTROPY_LOCUS_BREAKER_CLUMPING(ch_input)" in workflow
+    assert 'logical_path: "locus_breaker_clumped_study_locus/${r.meta.studyId}.parquet"' in workflow
+    assert 'logical_path: "gentropy_locus_breaker_clumped_study_locus/${r.meta.studyId}"' in workflow
+    assert 'validation_stage: "LOCUS_BREAKER"' in workflow
+    assert '.unique { row -> "${row.runId}\\t${row.logical_path}" }' in workflow
+    assert "LOCUS_BREAKER_EMPTY_STATUS(ch_empty_status_input)" in workflow
+    assert "ch_status = ch_empty_status" in workflow
     assert ".multiMap" not in workflow
     assert "process COLLECTOR_LOCUS_BREAKER" in collector_module
+    assert "process COLLECTOR_EMPTY_STATUS" in empty_status_module
     assert "process GENTROPY_LOCUS_BREAKER_CLUMPING" in gentropy_module
     assert "tuple(meta: Map, summary_statistics_path: Path)" in collector_module
+    assert "tuple(runId: String, logical_path: String, validation_stage: String, dataset_path: Path)" in empty_status_module
     assert "tuple(meta: Map, summary_statistics_path: Path)" in gentropy_module
     assert "gentropy step=locus_breaker_clumping" in gentropy_module
     assert "collector locus_breaker" in collector_module
+    assert "collector empty_status" in empty_status_module
+    assert "--run_id ${runId}" in empty_status_module
+    assert "--path ${dataset_path}" in empty_status_module
+    assert "--logical_path ${logical_path}" in empty_status_module
+    assert "--validation_stage ${validation_stage}" in empty_status_module
+    assert 'file("status/*.jsonl"), optional: true' in empty_status_module
     assert 'tuple("${task.process}", "collector", "1.0.0") >> "versions"' in collector_module
+    assert 'tuple("${task.process}", "collector", "1.0.0") >> "versions"' in empty_status_module
     assert 'tuple("${task.process}", "gentropy", "3.3.0-dev.64") >> "versions"' in gentropy_module
     assert "process COLLECTOR_LOCUS_BREAKER" not in workflow
+    assert "process COLLECTOR_EMPTY_STATUS" not in workflow
     assert "process GENTROPY_LOCUS_BREAKER_CLUMPING" not in workflow
     assert "process collect_finemapping_loci" not in workflow
     assert "collector collect_finemapping_loci" not in workflow
@@ -110,9 +129,11 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
 
     assert "include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'" in workflow
     assert "include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'" in workflow
+    assert "locus_breaker_out = LOCUS_BREAKER(filtered_ch)" in workflow
+    assert "locus_out = locus_breaker_out.ch_locus" in workflow
+    assert "locus_breaker_status = locus_breaker_out.ch_status" in workflow
     assert "locus_collection_out = LOCUS_COLLECTION(locus_out)" in workflow
     assert "locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)" in workflow
-    assert "locus_out = LOCUS_BREAKER(filtered_ch)" in workflow
     assert "locus_out2" not in workflow
     assert "loci2" not in workflow
     assert "full_overlap_loci = locus_collection_out.ch_full_overlap_loci" in workflow
@@ -125,12 +146,15 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "partial_overlap_loci = partial_overlap_loci" in workflow
     assert "non_overlap_loci     = non_overlap_loci" in workflow
     assert "collect_loci_stats   = collect_loci_stats" in workflow
+    assert "locus_breaker_status = locus_breaker_status" in workflow
     assert "fine_mapping_loci    = fine_mapping_loci" in workflow
     assert "ld_pairs             = ld_pairs" in workflow
+    assert "locus_breaker_status" in workflow
     assert "collected_loci/full_overlaps" in workflow
     assert "collected_loci/partial_overlaps" in workflow
     assert "collected_loci/non_overlaps" in workflow
     assert "collected_loci/stats" in workflow
+    assert "status/locus_breaker" in workflow
     assert "locus_annotation/fine_mapping_loci" in workflow
     assert "locus_annotation/ld_pairs" in workflow
 
@@ -211,15 +235,19 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet" in locus_collection_test
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2' in locus_breaker_test
+    assert 'task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1' in locus_collection_test
     assert 'task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 1' in locus_annotation_test
-    assert "workflow.out[0].size() == 2" in locus_breaker_test
+    assert "workflow.out.ch_locus.size() == 2" in locus_breaker_test
+    assert "workflow.out.ch_status.size() == 0" in locus_breaker_test
     assert 'topics "versions"' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER")' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING")' in locus_breaker_test
+    assert 'row[0].startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS")' in locus_breaker_test
     assert 'row[1] == "collector"' in locus_breaker_test
     assert 'row[1] == "gentropy"' in locus_breaker_test
     assert 'row[2] == "3.3.0-dev.64"' in locus_breaker_test
+    assert 'empty_status_stub_emit = true' in locus_breaker_test
     assert 'topics "versions"' in locus_collection_test
     assert 'topics "versions"' in locus_annotation_test
     assert 'topics.versions[0][0].startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI")' in locus_collection_test
@@ -273,3 +301,11 @@ def test_local_modules_support_process_ext_prefix():
     assert "${prefix}.parquet" in collect_finemapping_loci
     assert "${prefix}.json" in collect_finemapping_loci
     assert "locus_annotation/${prefix}" in study_locus_ld_annotation
+
+
+def test_empty_status_module_uses_stable_status_filenames():
+    module = COLLECTOR_EMPTY_STATUS_MODULE.read_text()
+
+    assert 'def safe_logical_path = logical_path.replaceAll(/[^A-Za-z0-9._-]+/, "__")' in module
+    assert 'def status_filename = "${runId}--${safe_logical_path}.jsonl"' in module
+    assert 'file("status/*.jsonl"), optional: true' in module

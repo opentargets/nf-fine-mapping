@@ -569,6 +569,33 @@ def test_empty_status_counts_rows_from_partitioned_directory_metadata(tmp_path: 
     }
 
 
+def test_empty_status_reports_logical_path_instead_of_staged_path(tmp_path: Path):
+    input_path = _write_simple_parquet(tmp_path / "empty.parquet", rows=[])
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(input_path),
+            "--logical_path",
+            "locus_breaker_clumped_study_locus/GCST90002351.parquet",
+            "--validation_stage",
+            "LOCUS_BREAKER",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "runId": "run-123",
+        "path": "locus_breaker_clumped_study_locus/GCST90002351.parquet",
+        "validationStage": "LOCUS_BREAKER",
+        "reason": "EMPTY_DATASET",
+    }
+
+
 def test_empty_status_fails_for_missing_path(tmp_path: Path):
     missing_path = tmp_path / "missing.parquet"
 
