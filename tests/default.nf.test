@@ -14,6 +14,8 @@ nextflow_pipeline {
                 manifest = new File("testdata/manifest.tsv").canonicalPath
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
+                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
+                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
             }
         }
 
@@ -41,6 +43,8 @@ nextflow_pipeline {
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
                 locus_breaker_method = "gentropy"
+                ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"
+                ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"
             }
         }
 
