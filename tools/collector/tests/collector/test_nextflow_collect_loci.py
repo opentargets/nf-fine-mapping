@@ -112,7 +112,10 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'" in workflow
     assert "locus_collection_out = LOCUS_COLLECTION(locus_out)" in workflow
     assert "locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)" in workflow
-    assert "locus_out = LOCUS_BREAKER(filtered_ch)" in workflow
+    assert "manifest_validation_rows_ch = filtered_ch.branch" in workflow
+    assert "supported_manifest_ch = manifest_validation_rows_ch.supported" in workflow
+    assert "unsupported_manifest_status_input_ch = manifest_validation_rows_ch.unsupported" in workflow
+    assert "locus_out = LOCUS_BREAKER(supported_manifest_ch)" in workflow
     assert "locus_out2" not in workflow
     assert "loci2" not in workflow
     assert "full_overlap_loci = locus_collection_out.ch_full_overlap_loci" in workflow
@@ -127,12 +130,34 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "collect_loci_stats   = collect_loci_stats" in workflow
     assert "fine_mapping_loci    = fine_mapping_loci" in workflow
     assert "ld_pairs             = ld_pairs" in workflow
+    assert "manifest_validation_status = manifest_validation_status" in workflow
     assert "collected_loci/full_overlaps" in workflow
     assert "collected_loci/partial_overlaps" in workflow
     assert "collected_loci/non_overlaps" in workflow
     assert "collected_loci/stats" in workflow
     assert "locus_annotation/fine_mapping_loci" in workflow
     assert "locus_annotation/ld_pairs" in workflow
+    assert "validation/manifest" in workflow
+
+
+def test_main_workflow_validates_manifest_ancestry_against_exact_ld_references():
+    workflow = MAIN_WORKFLOW.read_text()
+    nextflow_config = NEXTFLOW_CONFIG.read_text()
+    test_config = (REPO_ROOT / "conf" / "test.config").read_text()
+    gentropy_config = TEST_GENTROPY_LOCAL_CONFIG.read_text()
+    full_config = FULL_TEST_CONFIG.read_text()
+    nf_test_pipeline = NF_TEST_PIPELINE.read_text()
+
+    assert "params.ld_references" in workflow
+    assert "UNREGISTERED_ANCESTRY" in workflow
+    assert "validationStage: 'MANIFEST'" in workflow
+    assert "MANIFEST_VALIDATION_REPORT" in workflow
+    assert "Duplicate ld_references ancestry labels" in workflow
+    assert "ld_references = []" in nextflow_config
+    assert "ld_references = [" in test_config
+    assert "ld_references = [" in gentropy_config
+    assert "ld_references = [" in full_config
+    assert "manifest.unsupported.tsv" in nf_test_pipeline
 
 
 def test_full_data_profile_uses_separate_manifest_work_and_output_locations():
@@ -184,10 +209,13 @@ def test_nf_test_pipeline_verifies_collector_and_gentropy_step_wiring():
     assert 'locus_breaker_method = "gentropy"' in nf_test_pipeline
     assert 'manifest = new File("testdata/manifest.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest_base_dir = new File(".").canonicalPath' in nf_test_pipeline
-    assert "workflow.trace.succeeded().size() == 16" in nf_test_pipeline
+    assert 'ld_index = "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"' in nf_test_pipeline
+    assert 'ld_pairs_input = "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"' in nf_test_pipeline
+    assert "workflow.trace.succeeded().size() == 20" in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4' in nf_test_pipeline
+    assert 'task.startsWith("LOCUS_ANNOTATION:STUDY_LOCUS_LD_ANNOTATION") } == 4' in nf_test_pipeline
     assert "docker.enabled = false" in nf_test_nextflow_config
 
 
