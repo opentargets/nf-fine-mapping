@@ -109,7 +109,9 @@ workflow {
         row.meta.route == params.route
     }
 
-    locus_out = LOCUS_BREAKER(filtered_ch)
+    locus_breaker_out = LOCUS_BREAKER(filtered_ch)
+    locus_out = locus_breaker_out.ch_locus
+    locus_breaker_status = locus_breaker_out.ch_status
 
     locus_collection_out = LOCUS_COLLECTION(locus_out)
     full_overlap_loci = locus_collection_out.ch_full_overlap_loci
@@ -127,6 +129,7 @@ workflow {
     partial_overlap_loci = partial_overlap_loci
     non_overlap_loci     = non_overlap_loci
     collect_loci_stats   = collect_loci_stats
+    locus_breaker_status = locus_breaker_status
     locus_annotation     = locus_annotation
     fine_mapping_loci    = fine_mapping_loci
     ld_pairs             = ld_pairs
@@ -155,6 +158,10 @@ output {
     }
     collect_loci_stats {
         path 'collected_loci/stats'
+        mode 'copy'
+    }
+    locus_breaker_status {
+        path 'status/locus_breaker'
         mode 'copy'
     }
     locus_annotation {
