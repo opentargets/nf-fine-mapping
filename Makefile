@@ -1,6 +1,7 @@
 
 .PHONY: help \
 	dev \
+	reference-data-filters reference-data-variant-index reference-data-download-panukbb-tables reference-data-panukbb-indexes reference-data-panukbb-chr1 reference-data-all-indexes \
 	run-test run-test-gentropy-local run-test-full \
 	integration-test integration-test-gentropy-local integration-test-full integration-test-all \
 	unit-test unit-test-pipeline unit-test-workflows unit-test-all \
@@ -11,7 +12,7 @@ NF_TEST ?= nf-test
 JAVA_MIN_VERSION ?= 17
 
 help: ## Show available development and test targets
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-32s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-32s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 dev: ## Install and validate the local pipeline development toolchain
 	@set -eu; \
@@ -55,6 +56,23 @@ dev: ## Install and validate the local pipeline development toolchain
 		uv tool install prek; \
 	fi; \
 	echo "prek: $$(command -v prek || echo 'installed by uv; restart the shell if it is not on PATH')"
+
+reference-data-filters: ## Build PanUKBB chr1 and full-test variant filter parquet files
+	scripts/reference_data/build_panukbb_variant_filters.sh
+
+reference-data-variant-index: reference-data-filters ## Build minimal local VariantIndex from exact StudyLocus variants
+	scripts/reference_data/build_study_locus_variant_index.sh
+
+reference-data-download-panukbb-tables: ## Download PanUKBB .variant.b38.ht Hail Tables from public S3
+	scripts/reference_data/download_panukbb_variant_tables.sh
+
+reference-data-panukbb-indexes: reference-data-filters reference-data-variant-index ## Prepare local PanUKBB filtered LD indexes via Gentropy
+	FILTER_SCOPE=chr1,full_test scripts/reference_data/prepare_panukbb_ld_reference.sh
+
+reference-data-panukbb-chr1: reference-data-filters reference-data-variant-index ## Prepare local PanUKBB chr1 filtered LD index via Gentropy
+	FILTER_SCOPE=chr1 scripts/reference_data/prepare_panukbb_ld_reference.sh
+
+reference-data-all-indexes: reference-data-filters reference-data-variant-index reference-data-download-panukbb-tables reference-data-panukbb-indexes ## Build all local PanUKBB LD-index reference data
 
 integration-test: ## Run the collector Nextflow integration test profile
 	@echo "Running pipeline locally..."
