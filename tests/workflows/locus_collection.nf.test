@@ -61,23 +61,28 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 1 },
+                { assert workflow.trace.succeeded().size() == 2 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:VALIDATE_FULL_OVERLAP_LOCUS_COLLECTION") } == 1 },
                 { assert workflow.out.ch_full_overlap_loci.size() == 0 },
                 { assert workflow.out.ch_partial_overlap_loci.size() == 1 },
                 { assert workflow.out.ch_non_overlap_loci.size() == 1 },
                 { assert workflow.out.ch_collect_loci_stats.size() == 1 },
+                { assert workflow.out.ch_locus_collection_status.size() == 1 },
                 { assert workflow.out.ch_partial_overlap_loci[0].runId == "RUN_A" },
                 { assert workflow.out.ch_non_overlap_loci[0].runId == "RUN_A" },
                 { assert workflow.out.ch_collect_loci_stats[0].runId == "RUN_A" },
+                { assert workflow.out.ch_locus_collection_status[0].runId == "RUN_A" },
                 { assert workflow.out.ch_partial_overlap_loci[0].metas.collect { meta -> meta.studyId } == ["STUDY_A", "STUDY_B", "STUDY_C"] },
                 { assert workflow.out.ch_partial_overlap_loci[0].collected_locus_path.toString().endsWith("RUN_A.parquet") },
                 { assert workflow.out.ch_non_overlap_loci[0].collected_locus_path.toString().endsWith("RUN_A.parquet") },
                 { assert workflow.out.ch_collect_loci_stats[0].stats_path.toString().endsWith("RUN_A.json") },
-                { assert topics.versions.size() == 1 },
-                { assert topics.versions[0][0].startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") },
-                { assert topics.versions[0][1] == "collector" },
-                { assert topics.versions[0][2] == "1.0.0" }
+                { assert workflow.out.ch_locus_collection_status[0].status_path.toString().endsWith("RUN_A.jsonl") },
+                { assert topics.versions.size() == 2 },
+                { assert topics.versions.every { row -> row[1] == "collector" } },
+                { assert topics.versions.every { row -> row[2] == "1.0.0" } },
+                { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } },
+                { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:VALIDATE_FULL_OVERLAP_LOCUS_COLLECTION") } }
             )
         }
     }
