@@ -24,13 +24,15 @@ workflow LOCUS_ANNOTATION {
             error "LD annotation registry is missing an ancestry required by run ${r.runId}."
         }
 
+        def fine_mapping_locus_set_id = r.collected_locus_path.baseName
         tuple(
             r.runId,
             r.metas,
             r.collected_locus_path,
-            registry.collect { entry -> file(entry.vi_path) },
-            registry.collect { entry -> entry.bm_path.toString() },
-            registry.collect { entry -> entry.ancestry.toString() },
+            fine_mapping_locus_set_id,
+            selected_registry.collect { entry -> file(entry.vi_path) },
+            selected_registry.collect { entry -> entry.bm_path.toString() },
+            selected_registry.collect { entry -> entry.ancestry.toString() },
         )
     }
 

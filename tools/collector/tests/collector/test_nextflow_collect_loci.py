@@ -109,15 +109,15 @@ def test_locus_annotation_workflow_wires_gentropy_ld_annotation_after_full_overl
     assert "stats_path" in workflow
     assert "process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION" in module
     assert 'label "ld_annotation"' in module
-    assert "path(fine_mapping_locus_set_path), path(ld_variant_index_paths)" in module
+    assert "path(fine_mapping_locus_set_path), val(fine_mapping_locus_set_id), path(ld_variant_index_paths)" in module
     assert "step=fine_mapping_locus_set_ld_annotation" in module
-    assert 'step.fine_mapping_locus_set_input_path="\'${fine_mapping_locus_set_path}\'"' in module
+    assert "step.fine_mapping_locus_set_input_path=\"'${fine_mapping_locus_set_path}'\"" in module
     assert "step.fine_mapping_study_metadata_jsonl_input_path=metadata.jsonl" in module
     assert "printf '%s\\\\n' '${metadata_lines}' > metadata.jsonl" in module
     assert "step.ld_registry='${registry_override}'" in module
     assert "vi_path: ld_variant_index_paths[index].getName()" in module
-    assert 'step.multi_ancestry_pairwise_ld_output_path="\'gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld\'"' in module
-    assert 'step.stats_output_path="\'gentropy_ld_annotation/${prefix}/stats.jsonl\'"' in module
+    assert "step.multi_ancestry_pairwise_ld_output_path=\"'gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld'\"" in module
+    assert "step.stats_output_path=\"'gentropy_ld_annotation/${prefix}/stats.jsonl'\"" in module
     assert "step.session.start_hail=true" in module
     assert "step.session.spark_uri" in module
     assert "step.session.extended_spark_conf" in module
@@ -129,6 +129,7 @@ def test_locus_annotation_workflow_wires_gentropy_ld_annotation_after_full_overl
     assert 'path("gentropy_ld_annotation/*/stats.jsonl")' in module
     assert "process COLLECTOR_CHECK_LD_PAIR_STATS" in status_module
     assert "collector check_ld_pair_stats" in status_module
+    assert "--fine_mapping_locus_set_id ${fine_mapping_locus_set_id}" in status_module
 
 
 def test_main_workflow_publishes_collect_finemapping_loci_outputs():
@@ -216,11 +217,12 @@ def test_chr1_gentropy_local_profile_uses_gentropy_locus_breaker():
     assert "testGentropyLocal" in nextflow_config
     assert "includeConfig 'conf/test-gentropy-local.config'" in nextflow_config
     assert 'executor.name = "local"' in gentropy_config
-    assert 'manifest   = "${projectDir}/testdata/manifest.tsv"' in gentropy_config
-    assert 'output_dir = "${projectDir}/testdata/output_gentropy"' in gentropy_config
+    assert "manifest" in gentropy_config
+    assert '"${projectDir}/testdata/manifest.tsv"' in gentropy_config
+    assert '"${projectDir}/testdata/output_gentropy"' in gentropy_config
     assert 'workDir = "${projectDir}/testdata/work_gentropy"' in gentropy_config
-    assert 'locus_breaker_method = "gentropy"' in gentropy_config
-    assert 'gentropy_spark_uri   = "local[2]"' in gentropy_config
+    assert 'locus_breaker_method              = "collector"' in gentropy_config
+    assert 'gentropy_spark_uri                = "local[8]"' in gentropy_config
     assert "spark.driver.memory:8g" in gentropy_config
     assert "spark.executor.memory:8g" in gentropy_config
     assert "gentropy:3.4.0-dev.1-ld-pair-extraction-v2" in gentropy_config
@@ -254,7 +256,7 @@ def test_nf_test_pipeline_verifies_collector_and_gentropy_step_wiring():
     assert 'locus_breaker_method = "gentropy"' in nf_test_pipeline
     assert 'manifest = new File("testdata/manifest.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest_base_dir = new File(".").canonicalPath' in nf_test_pipeline
-    assert "workflow.trace.succeeded().size() == 40" in nf_test_pipeline
+    assert "workflow.trace.succeeded().size() == 52" in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4' in nf_test_pipeline
@@ -279,12 +281,12 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert "input[0] = channel.of(" in locus_collection_test
     assert "input[0] = channel.of(" in locus_annotation_test
     assert "${projectDir}/testdata/sumstats/GCST90002351" in locus_breaker_test
-    assert "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet" in locus_collection_test
+    assert "${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet" in locus_collection_test
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1' in locus_collection_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1' in locus_collection_test
-    assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 1' in locus_annotation_test
+    assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2' in locus_annotation_test
     assert "workflow.out.ch_locus.size() == 2" in locus_breaker_test
     assert 'topics "versions"' in locus_breaker_test
     assert 'row[0].startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER")' in locus_breaker_test
@@ -295,23 +297,21 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'topics "versions"' in locus_collection_test
     assert 'topics "versions"' in locus_annotation_test
     assert (
-        'topics.versions.collect { row -> row[0] }.any { value -> '
-        'value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") }'
-        in locus_collection_test
+        "topics.versions.collect { row -> row[0] }.any { value -> "
+        'value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") }' in locus_collection_test
     )
     assert (
-        'topics.versions.collect { row -> row[0] }.any { value -> '
-        'value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") }'
-        in locus_collection_test
+        "topics.versions.collect { row -> row[0] }.any { value -> "
+        'value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") }' in locus_collection_test
     )
     assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION")' in locus_annotation_test
-    assert "workflow.out.ch_full_overlap_loci.size() == 1" in locus_collection_test
+    assert "workflow.out.ch_full_overlap_loci.size() == 2" in locus_collection_test
     assert "workflow.out.ch_partial_overlap_loci.size() == 1" in locus_collection_test
     assert "workflow.out.ch_non_overlap_loci.size() == 1" in locus_collection_test
     assert "workflow.out.ch_collect_loci_stats.size() == 1" in locus_collection_test
     assert "workflow.out.ch_locus_collection_status.size() == 1" in locus_collection_test
     assert 'meta.studyId } == ["STUDY_A", "STUDY_B", "STUDY_C"]' in locus_collection_test
-    assert "workflow.out.ch_locus_annotation.size() == 1" in locus_annotation_test
+    assert "workflow.out.ch_locus_annotation.size() == 2" in locus_annotation_test
     assert 'workflow.out.ch_locus_annotation[0].runId == "RUN_A"' in locus_annotation_test
 
 
@@ -349,7 +349,7 @@ def test_local_modules_support_process_ext_prefix():
     assert "def prefix = task.ext.prefix ?: meta.studyId" in collector_locus_breaker
     assert "def prefix = task.ext.prefix ?: meta.studyId" in gentropy_locus_breaker
     assert "def prefix = task.ext.prefix ?: runId" in collect_finemapping_loci
-    assert "def prefix = task.ext.prefix ?: runId" in gentropy_ld_annotation
+    assert 'def prefix = task.ext.prefix ? "${task.ext.prefix}_${locus_set_id}" : "${runId}_${locus_set_id}"' in gentropy_ld_annotation
     assert "${prefix}.parquet" in collector_locus_breaker
     assert "${prefix}" in gentropy_locus_breaker
     assert "${prefix}.parquet" in collect_finemapping_loci

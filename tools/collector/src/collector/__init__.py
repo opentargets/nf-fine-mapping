@@ -12,6 +12,7 @@ from collector.collect_loci import CollectFineMappingLociConfig, run_collect_fin
 from collector.empty_status import ValidationStage, emit_empty_status
 from collector.ld_pair_stats import emit_empty_ld_pair_status
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
+from collector.split_loci import SplitFineMappingLociConfig, run_split_finemapping_loci
 
 app = typer.Typer()
 
@@ -124,11 +125,18 @@ def empty_status(
 @app.command(name="check_ld_pair_stats")
 def check_ld_pair_stats(
     run_id: Annotated[str, typer.Option("--run_id", help="Pipeline run identifier for the status record.")],
+    fine_mapping_locus_set_id: Annotated[
+        str, typer.Option("--fine_mapping_locus_set_id", help="Fine-mapping locus-set identifier for the status record.")
+    ],
     path: Annotated[Path, typer.Option("--path", help="Gentropy LD pair statistics JSONL path.")],
 ):
     """Emit one status record when any ancestry has zero LD pairs."""
     try:
-        status = emit_empty_ld_pair_status(run_id=run_id, path=path)
+        status = emit_empty_ld_pair_status(
+            run_id=run_id,
+            fine_mapping_locus_set_id=fine_mapping_locus_set_id,
+            path=path,
+        )
     except (FileNotFoundError, OSError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
     if status is not None:
@@ -191,6 +199,18 @@ def collect_finemapping_loci(
     try:
         run_collect_finemapping_loci(config)
     except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@app.command(name="split_finemapping_loci")
+def split_finemapping_loci(
+    input: Annotated[Path, typer.Option("--input", help="Input full-overlap Parquet file or directory dataset.")],
+    output: Annotated[Path, typer.Option("--output", help="Output directory for one Parquet file per locus set.")],
+):
+    """Split full-overlap loci into one Parquet file per fine-mapping locus set."""
+    try:
+        run_split_finemapping_loci(SplitFineMappingLociConfig(input_path=input, output_dir=output))
+    except (FileNotFoundError, OSError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
 

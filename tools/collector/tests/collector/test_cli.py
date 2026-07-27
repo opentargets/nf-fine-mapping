@@ -765,6 +765,97 @@ def test_locus_breaker_schema_contract_uses_pydantic_models():
 
 
 # ---------------------------------------------------------------------------
+# split_finemapping_loci command tests
+# ---------------------------------------------------------------------------
+
+
+def test_split_finemapping_loci_writes_one_file_for_one_locus_set(tmp_path: Path):
+    input_path = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        [("set-a", "locus-a", [("1_100_A_C", 0.1, 0.05)])],
+    )
+    output_dir = tmp_path / "split"
+
+    result = runner.invoke(
+        app,
+        [
+            "split_finemapping_loci",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    output_path = output_dir / "set-a.parquet"
+    assert output_path.exists()
+    con = duckdb.connect()
+    rows = con.execute(f"SELECT fineMappingLocusSetId, studyLocusId FROM read_parquet('{output_path}')").fetchall()
+    con.close()
+    assert rows == [("set-a", "locus-a")]
+
+
+def test_split_finemapping_loci_writes_all_rows_to_their_set(tmp_path: Path):
+    input_path = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        [
+            ("set-b", "locus-b", [("1_200_A_C", 0.2, 0.05)]),
+            ("set-a", "locus-a", [("1_100_A_C", 0.1, 0.05)]),
+            ("set-b", "locus-c", [("1_300_A_C", 0.3, 0.05)]),
+        ],
+    )
+    output_dir = tmp_path / "nested" / "split"
+
+    result = runner.invoke(app, ["split_finemapping_loci", "--input", str(input_path), "--output", str(output_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert sorted(path.name for path in output_dir.glob("*.parquet")) == ["set-a.parquet", "set-b.parquet"]
+    con = duckdb.connect()
+    rows = con.execute(
+        f"SELECT fineMappingLocusSetId, studyLocusId FROM read_parquet('{output_dir}/*.parquet') ORDER BY fineMappingLocusSetId, studyLocusId"
+    ).fetchall()
+    con.close()
+    assert rows == [("set-a", "locus-a"), ("set-b", "locus-b"), ("set-b", "locus-c")]
+
+
+def test_split_finemapping_loci_accepts_directory_dataset(tmp_path: Path):
+    input_file = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        [("set-a", "locus-a", [("1_100_A_C", 0.1, 0.05)])],
+    )
+    input_dir = tmp_path / "dataset"
+    input_dir.mkdir()
+    input_file.rename(input_dir / "part-00000.parquet")
+
+    result = runner.invoke(app, ["split_finemapping_loci", "--input", str(input_dir), "--output", str(tmp_path / "split")])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "split" / "set-a.parquet").exists()
+
+
+def test_split_finemapping_loci_rejects_empty_dataset(tmp_path: Path):
+    source_path = _write_collected_locus_file(
+        tmp_path,
+        "STUDY_A",
+        [("set-a", "locus-a", [("1_100_A_C", 0.1, 0.05)])],
+    )
+    input_path = tmp_path / "empty.parquet"
+    con = duckdb.connect()
+    try:
+        con.execute(f"COPY (SELECT * FROM read_parquet('{source_path}') WHERE FALSE) TO '{input_path}' (FORMAT PARQUET)")
+    finally:
+        con.close()
+
+    result = runner.invoke(app, ["split_finemapping_loci", "--input", str(input_path), "--output", str(tmp_path / "split")])
+
+    assert result.exit_code != 0
+    assert "no non-null fineMappingLocusSetId" in result.output
+
+
 # collect_finemapping_loci command tests
 # ---------------------------------------------------------------------------
 

@@ -10,16 +10,12 @@ from collector import app
 runner = CliRunner()
 
 
-def test_ld_pair_stats_reports_one_run_status_for_multiple_zero_ancestries(
+def test_ld_pair_stats_reports_one_locus_status_for_multiple_zero_ancestries(
     tmp_path: Path,
 ) -> None:
     """Any zero ancestry count emits one run-level status record."""
     stats_path = tmp_path / "stats.jsonl"
-    stats_path.write_text(
-        '{"ancestry":"afr","n_ld_pairs":0}\n'
-        '{"ancestry":"nfe","n_ld_pairs":0}\n'
-        '{"ancestry":"eas","n_ld_pairs":4}\n'
-    )
+    stats_path.write_text('{"ancestry":"afr","n_ld_pairs":0}\n{"ancestry":"nfe","n_ld_pairs":0}\n{"ancestry":"eas","n_ld_pairs":4}\n')
 
     result = runner.invoke(
         app,
@@ -27,6 +23,8 @@ def test_ld_pair_stats_reports_one_run_status_for_multiple_zero_ancestries(
             "check_ld_pair_stats",
             "--run_id",
             "run-123",
+            "--fine_mapping_locus_set_id",
+            "locus-set-456",
             "--path",
             str(stats_path),
         ],
@@ -35,6 +33,7 @@ def test_ld_pair_stats_reports_one_run_status_for_multiple_zero_ancestries(
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {
         "runId": "run-123",
+        "fineMappingLocusSetId": "locus-set-456",
         "path": str(stats_path),
         "validationStage": "LD_ANNOTATION",
         "reason": "EMPTY_LD_PAIRS",
@@ -46,10 +45,7 @@ def test_ld_pair_stats_emits_no_status_when_all_ancestries_have_pairs(
 ) -> None:
     """All positive ancestry counts produce no status output."""
     stats_path = tmp_path / "stats.jsonl"
-    stats_path.write_text(
-        '{"ancestry":"afr","n_ld_pairs":1}\n'
-        '{"ancestry":"nfe","n_ld_pairs":4}\n'
-    )
+    stats_path.write_text('{"ancestry":"afr","n_ld_pairs":1}\n{"ancestry":"nfe","n_ld_pairs":4}\n')
 
     result = runner.invoke(
         app,
@@ -57,6 +53,8 @@ def test_ld_pair_stats_emits_no_status_when_all_ancestries_have_pairs(
             "check_ld_pair_stats",
             "--run_id",
             "run-123",
+            "--fine_mapping_locus_set_id",
+            "locus-set-456",
             "--path",
             str(stats_path),
         ],
@@ -64,3 +62,23 @@ def test_ld_pair_stats_emits_no_status_when_all_ancestries_have_pairs(
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
+
+
+def test_ld_pair_stats_fails_for_malformed_statistics(tmp_path: Path) -> None:
+    stats_path = tmp_path / "stats.jsonl"
+    stats_path.write_text('{"ancestry":"afr"}\n')
+
+    result = runner.invoke(
+        app,
+        [
+            "check_ld_pair_stats",
+            "--run_id",
+            "run-123",
+            "--fine_mapping_locus_set_id",
+            "locus-set-456",
+            "--path",
+            str(stats_path),
+        ],
+    )
+
+    assert result.exit_code != 0

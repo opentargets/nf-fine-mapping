@@ -15,8 +15,9 @@ nextflow_workflow {
                 output_dir = "$outputDir"
                 ld_pair_stats_stub_emit = true
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
-                    [ancestry: "afr", vi_path: "${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
+                    [ancestry: "nfe", vi_path: "${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
+                    [ancestry: "afr", vi_path: "${projectDir}/testdata/sumstats/GCST90018748/GCST90018748.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
+                    [ancestry: "eas", vi_path: "${projectDir}/testdata/does-not-exist.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
                 ]
             }
             workflow {
@@ -44,6 +45,28 @@ nextflow_workflow {
                         ],
                         collected_locus_path: file("${projectDir}/testdata/sumstats/GCST90475531/chr1.parquet"),
                     ],
+                    [
+                        runId: "RUN_A",
+                        metas: [
+                            [
+                                runId: "RUN_A",
+                                studyId: "STUDY_A",
+                                route: "multi_susie_route",
+                                ancestry: "nfe",
+                                traitSet: ["EFO_0004833"],
+                                sampleSize: 100,
+                            ],
+                            [
+                                runId: "RUN_A",
+                                studyId: "STUDY_B",
+                                route: "multi_susie_route",
+                                ancestry: "afr",
+                                traitSet: ["EFO_0004833"],
+                                sampleSize: 200,
+                            ],
+                        ],
+                        collected_locus_path: file("${projectDir}/testdata/output/locus_breaker_clumped_study_locus/GCST90278661.parquet"),
+                    ],
                 )
                 """
             }
@@ -55,19 +78,21 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 2 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 1 },
-                { assert workflow.out.ch_locus_annotation.size() == 1 },
+                { assert workflow.trace.succeeded().size() == 4 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
+                { assert workflow.out.ch_locus_annotation.size() == 2 },
                 { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
-                { assert workflow.out.ch_locus_annotation[0].fine_mapping_locus_set_path.toString().endsWith("chr1.parquet") },
-                { assert workflow.out.ch_locus_annotation[0].multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld") },
-                { assert workflow.out.ch_locus_annotation[0].stats_path.toString().endsWith("stats.jsonl") },
-                { assert workflow.out.ch_fine_mapping_locus_sets.size() == 1 },
-                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 1 },
-                { assert workflow.out.ch_ld_pair_stats.size() == 1 },
-                { assert workflow.out.ch_ld_pair_stats_status.size() == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 1 },
-                { assert topics.versions.size() == 1 },
+                { assert workflow.out.ch_locus_annotation.collect { r -> r.fine_mapping_locus_set_path.toString().tokenize('/')[-1] }.sort() == ["GCST90278661.parquet", "chr1.parquet"] },
+                { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld") } },
+                { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().contains("RUN_A_") } },
+                { assert workflow.out.ch_locus_annotation.every { r -> r.stats_path.toString().endsWith("stats.jsonl") } },
+                { assert workflow.out.ch_fine_mapping_locus_sets.size() == 2 },
+                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 2 },
+                { assert workflow.out.ch_ld_pair_stats.size() == 2 },
+                { assert workflow.out.ch_ld_pair_stats_status.size() == 2 },
+                { assert workflow.out.ch_ld_pair_stats_status.every { path -> new File(path.toString()).text.contains('"fineMappingLocusSetId"') } },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 2 },
+                { assert topics.versions.size() == 2 },
                 { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.0.0" } }
             )
         }

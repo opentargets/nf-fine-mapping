@@ -160,6 +160,33 @@ def invalid_run_ids_from_status_channels(status_channels) {
 }
 
 
+def invalid_fine_mapping_locus_set_ids_from_status_channels(status_channels) {
+    def active_status_channels = status_channels.findAll { status_channel -> status_channel != null }
+    if (!active_status_channels) {
+        return channel.value([] as Set<String>)
+    }
+
+    def combined_status_channels = active_status_channels.tail().inject(active_status_channels.head()) { mixed_status_channel, status_channel ->
+        mixed_status_channel.mix(status_channel)
+    }
+
+    def parsed_status_records = combined_status_channels.flatMap { status_path ->
+        if (status_path == null) {
+            return []
+        }
+        status_path.readLines()
+            .findAll { line -> line }
+            .collect { line -> new groovy.json.JsonSlurper().parseText(line) as Map }
+    }
+
+    return parsed_status_records
+        .map { status_record -> status_record.fineMappingLocusSetId.toString() }
+        .unique()
+        .collect()
+        .map { invalid_locus_set_ids -> invalid_locus_set_ids as Set<String> }
+}
+
+
 def filter_rows_by_invalid_run_ids(rows, invalid_run_ids, extract_run_id) {
     return rows
         .combine(invalid_run_ids)
@@ -285,16 +312,11 @@ workflow {
     )
     locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
     locus_annotation_status = locus_annotation_out.ch_ld_pair_stats_status
-    annotation_invalid_run_ids = invalid_run_ids_from_status_channels([
-        manifest_validation_status,
-        locus_breaker_status,
-        locus_collection_status,
-        locus_annotation_status,
-    ])
+    annotation_invalid_locus_set_ids = invalid_fine_mapping_locus_set_ids_from_status_channels([locus_annotation_status])
     locus_annotation = filter_rows_by_invalid_run_ids(
         locus_annotation_out.ch_locus_annotation,
-        annotation_invalid_run_ids,
-        { annotation_row -> annotation_row.runId },
+        annotation_invalid_locus_set_ids,
+        { annotation_row -> annotation_row.fine_mapping_locus_set_path.toString().tokenize('/')[-1].replaceFirst(/\.parquet$/, '') },
     )
     fine_mapping_locus_sets = locus_annotation.map { annotation_row -> annotation_row.fine_mapping_locus_set_path }
     multi_ancestry_pairwise_ld = locus_annotation.map { annotation_row -> annotation_row.multi_ancestry_pairwise_ld_path }

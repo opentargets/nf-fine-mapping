@@ -27,7 +27,7 @@ nextflow_workflow {
                             traitSet: ["EFO_0004833"],
                             sampleSize: 100,
                         ],
-                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90002351/chr1.parquet"),
+                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet"),
                     ],
                     [
                         meta: [
@@ -38,7 +38,7 @@ nextflow_workflow {
                             traitSet: ["EFO_0004833"],
                             sampleSize: 200,
                         ],
-                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90018748/chr1.parquet"),
+                        study_locus_path: file("${projectDir}/testdata/sumstats/GCST90018748/GCST90018748.parquet"),
                     ],
                     [
                         meta: [
@@ -62,14 +62,18 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 2 },
+                { assert workflow.trace.succeeded().size() == 3 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1 },
-                { assert workflow.out.ch_full_overlap_loci.size() == 1 },
+                { assert workflow.out.ch_full_overlap_loci.size() == 2 },
                 { assert workflow.out.ch_partial_overlap_loci.size() == 1 },
                 { assert workflow.out.ch_non_overlap_loci.size() == 1 },
                 { assert workflow.out.ch_collect_loci_stats.size() == 1 },
                 { assert workflow.out.ch_locus_collection_status.size() == 1 },
+                { assert workflow.out.ch_full_overlap_loci*.runId == ["RUN_A", "RUN_A"] },
+                { assert workflow.out.ch_full_overlap_loci.collect { r -> r.metas.collect { meta -> meta.studyId } }.flatten() == ["STUDY_A", "STUDY_B", "STUDY_C", "STUDY_A", "STUDY_B", "STUDY_C"] },
+                { assert workflow.out.ch_full_overlap_loci.collect { r -> r.collected_locus_path.toString().tokenize('/')[-1] }.sort() == ["set-a.parquet", "set-b.parquet"] },
                 { assert workflow.out.ch_partial_overlap_loci[0].runId == "RUN_A" },
                 { assert workflow.out.ch_non_overlap_loci[0].runId == "RUN_A" },
                 { assert workflow.out.ch_collect_loci_stats[0].runId == "RUN_A" },
@@ -79,10 +83,11 @@ nextflow_workflow {
                 { assert workflow.out.ch_non_overlap_loci[0].collected_locus_path.toString().endsWith("RUN_A.parquet") },
                 { assert workflow.out.ch_collect_loci_stats[0].stats_path.toString().endsWith("RUN_A.json") },
                 { assert new File(workflow.out.ch_locus_collection_status[0].toString()).text.contains('"runId":"RUN_A"') },
-                { assert topics.versions.size() == 2 },
+                { assert topics.versions.size() == 3 },
                 { assert topics.versions.every { row -> row[1] == "collector" } },
                 { assert topics.versions.every { row -> row[2] == "1.0.0" } },
                 { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } },
+                { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } },
                 { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } }
             )
         }

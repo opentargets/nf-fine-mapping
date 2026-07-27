@@ -2,36 +2,39 @@ nextflow.enable.dsl = 2
 
 
 process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
-    tag "${runId}"
+    tag "${runId}:${fine_mapping_locus_set_path.baseName}"
 
     label "gentropy"
     label "ld_annotation"
+    maxForks 10
 
     input:
-    tuple val(runId), val(metas), path(fine_mapping_locus_set_path), path(ld_variant_index_paths), val(ld_block_matrix_paths), val(ancestries)
+    tuple val(runId), val(metas), path(fine_mapping_locus_set_path), val(fine_mapping_locus_set_id), path(ld_variant_index_paths), val(ld_block_matrix_paths), val(ancestries)
 
     output:
     tuple val(runId), path(fine_mapping_locus_set_path), path("gentropy_ld_annotation/*/multi_ancestry_pairwise_ld"), path("gentropy_ld_annotation/*/stats.jsonl"), emit: annotation
-    tuple val(runId), path("gentropy_ld_annotation/*/stats.jsonl"), emit: stats
+    tuple val(runId), val(fine_mapping_locus_set_id), path("gentropy_ld_annotation/*/stats.jsonl"), emit: stats
 
     script:
     def args = task.ext.args ?: ''
-    def prefix = task.ext.prefix ?: runId
+    def locus_set_id = fine_mapping_locus_set_path.baseName
+    def prefix = task.ext.prefix ? "${task.ext.prefix}_${locus_set_id}" : "${runId}_${locus_set_id}"
     def gentropy_spark_uri = params.gentropy_spark_uri ?: 'local[*]'
     def gentropy_spark_conf = params.gentropy_ld_annotation_spark_conf ?: params.gentropy_spark_conf ?: '{}'
-    def metadata_lines = metas.collect { meta ->
-        groovy.json.JsonOutput.toJson([
-            studyId: meta.studyId,
-            ancestry: meta.ancestry,
-            sampleSize: meta.sampleSize,
-        ])
-    }.join('\n')
+    def metadata_lines = metas
+        .collect { meta ->
+            groovy.json.JsonOutput.toJson(
+                [
+                    studyId: meta.studyId,
+                    ancestry: meta.ancestry,
+                    sampleSize: meta.sampleSize,
+                ]
+            )
+        }
+        .join('\n')
     def registry = (0..<ancestries.size()).collect { index ->
         [
             ancestry: ancestries[index],
-            // Nextflow stages Path inputs into the task work directory.  The
-            // container cannot see the host-side absolute path from params,
-            // so Gentropy must receive the staged basename.
             vi_path: ld_variant_index_paths[index].getName(),
             bm_path: ld_block_matrix_paths[index],
         ]
@@ -62,6 +65,7 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
         'step.session.spark_uri="${gentropy_spark_uri}"' \\
         '+step.session.extended_spark_conf=${gentropy_spark_conf}' \\
         step.session.write_mode=overwrite \\
+        step.session.log_level=INFO \\
         step.session.start_hail=true \\
         step.session.output_partitions=1 \\
         step.fine_mapping_locus_set_input_path="'${fine_mapping_locus_set_path}'" \\
@@ -74,10 +78,11 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
     """
 
     stub:
-    def prefix = task.ext.prefix ?: runId
+    def locus_set_id = fine_mapping_locus_set_path.baseName
+    def prefix = task.ext.prefix ? "${task.ext.prefix}_${locus_set_id}" : "${runId}_${locus_set_id}"
     """
-    mkdir -p gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld
-    touch gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld/_SUCCESS
+    mkdir -p gentropy_ld_annotation/${prefix}
+    touch gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld
     touch gentropy_ld_annotation/${prefix}/stats.jsonl
     """
 }

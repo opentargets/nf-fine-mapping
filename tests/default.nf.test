@@ -22,11 +22,14 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 40 },
+                { assert workflow.trace.succeeded().size() == 52 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 }
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } == 4 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 }
             )
         }
     }
@@ -49,11 +52,40 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 40 },
+                { assert workflow.trace.succeeded().size() == 52 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 }
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } == 4 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 }
+            )
+        }
+    }
+
+    test("filters only locus sets with empty LD pairs") {
+        tag "validation"
+
+        when {
+            params {
+                manifest = new File("testdata/manifest.tsv").canonicalPath
+                manifest_base_dir = new File(".").canonicalPath
+                output_dir = "$outputDir"
+                ld_pair_stats_stub_emit = true
+                ld_pair_stats_stub_empty_locus_set_ids = ["set-a"]
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
+                { assert new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-b.parquet").exists() },
+                { assert !new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-a.parquet").exists() }
             )
         }
     }
@@ -81,13 +113,13 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 7 },
+                { assert workflow.trace.succeeded().size() == 10 },
                 { assert succeededTasks.count { task -> task.startsWith("MANIFEST_VALIDATION:MANIFEST_VALIDATION_REPORT") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
                 { assert outputText.contains("RUN_INVALID.jsonl") },
                 { assert outputText.contains("RUN_VALID") },
                 { assert !outputText.contains("GCST90002351") }
