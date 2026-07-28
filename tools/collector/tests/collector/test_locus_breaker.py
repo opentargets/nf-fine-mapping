@@ -450,7 +450,7 @@ def test_mhc_exclusion_happens_after_large_locus_replacement(tmp_path: Path):
     assert [(row[2], row[3], row[5], row[6]) for row in rows] == [("1_100_A_C", "1", 50, 150)]
 
 
-def test_collect_locus_uses_original_unfiltered_sumstats_and_preserves_duplicates_and_nulls(tmp_path: Path):
+def test_collect_locus_removes_duplicated_sumstats_rows(tmp_path: Path):
     input_path = tmp_path / "sumstats.parquet"
     output_path = tmp_path / "study_locus.parquet"
     write_sumstats(
@@ -484,12 +484,8 @@ def test_collect_locus_uses_original_unfiltered_sumstats_and_preserves_duplicate
         con.close()
 
     assert row_count == (1,)
-    assert [entry["variantId"] for entry in locus] == ["1_100_A_C", "1_105_A_C", "1_105_A_C"]
-    duplicate_entries = [entry for entry in locus if entry["variantId"] == "1_105_A_C"]
-    assert len(duplicate_entries) == 2
-    assert any(entry["beta"] is None for entry in duplicate_entries)
-    assert any(entry["pValueMantissa"] is None for entry in duplicate_entries)
-    assert any(entry["standardError"] is None for entry in duplicate_entries)
+    assert [entry["variantId"] for entry in locus] == ["1_100_A_C"]
+    assert all(entry["variantId"] != "1_105_A_C" for entry in locus)
     assert locus[0]["is95CredibleSet"] is None
     assert locus[0]["r2Overall"] is None
 

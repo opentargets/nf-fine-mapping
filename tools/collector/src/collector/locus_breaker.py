@@ -98,6 +98,15 @@ def _read_parquet_sql(input_path: Path) -> str:
     return f"read_parquet({_quote_sql_string(path)})"
 
 
+def _unique_sumstats_sql(source: str) -> str:
+    """Return sum statistics with ambiguous study/variant rows removed."""
+    return f"""
+SELECT *
+FROM {source}
+QUALIFY count(*) OVER (PARTITION BY studyId, variantId) = 1
+"""
+
+
 def _study_locus_id_sql(study_id: str = "studyId", variant_id: str = "variantId") -> str:
     """Return Gentropy-compatible studyLocusId SQL expression."""
     return f"md5(coalesce(cast({study_id} AS VARCHAR), 'None') || coalesce(cast({variant_id} AS VARCHAR), 'None'))"
@@ -486,7 +495,7 @@ def run_locus_breaker(input_path: Path, output_path: Path, config: LocusBreakerC
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with duckdb.connect() as con:
-        con.execute("CREATE TEMP TABLE source_sumstats AS SELECT * FROM " + _read_parquet_sql(input_path))
+        con.execute("CREATE TEMP TABLE source_sumstats AS " + _unique_sumstats_sql(_read_parquet_sql(input_path)))
         source = "source_sumstats"
         con.execute("CREATE TEMP TABLE lbc AS " + lbc_core_sql(source, config))
         large_loci_count_row = con.execute(f"SELECT COUNT(*) FROM lbc WHERE locusEnd - locusStart > {config.large_loci_size}").fetchone()
