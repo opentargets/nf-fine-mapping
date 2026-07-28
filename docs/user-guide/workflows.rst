@@ -35,6 +35,7 @@ The MultiSuSiE process emits a metadata-preserving record containing:
 * ``study_locus_path`` — the Gentropy-compatible StudyLocus Parquet output;
 * ``extended_results_path`` — the AnnData H5AD output with component-level
   posterior results and provenance;
+* ``stats_path`` — the JSON status record for the locus-set fit;
 * ``runId``, ``fine_mapping_locus_set_id``, and the input ``metas``.
 
 The image is configured with ``params.multisusie_container`` and defaults to
@@ -47,8 +48,10 @@ The image is configured with ``params.multisusie_container`` and defaults to
        ext.args = '--L 10 --max-iter 100 --low-memory-mode'
    }
 
-The process writes no successful output record when input validation, model
-convergence, credible-set quality gating, or output writing fails.
+Non-converged or non-reportable fits write ``stats.json`` with a failure status
+and exit successfully so the workflow can continue. The result files are
+omitted for those fits. Input validation and output-writing errors still fail
+the process.
 
 Fine-mapping routes
 -------------------

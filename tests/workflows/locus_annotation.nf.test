@@ -101,7 +101,8 @@ nextflow_workflow {
                 { assert workflow.out.ch_multisusie.collect { r -> r.fine_mapping_locus_set_id }.sort() == ["GCST90278661", "chr1"] },
                 { assert workflow.out.ch_multisusie.every { r -> r.metas.collect { meta -> meta.studyId } == ["STUDY_A", "STUDY_B"] } },
                 { assert workflow.out.ch_multisusie.every { r -> r.study_locus_path.toString().endsWith("study_locus.parquet") } },
-                { assert workflow.out.ch_multisusie.every { r -> r.extended_results_path.toString().endsWith("fit.h5ad") } }
+                { assert workflow.out.ch_multisusie.every { r -> r.extended_results_path.toString().endsWith("fit.h5ad") } },
+                { assert workflow.out.ch_multisusie.every { r -> r.stats_path.toString().endsWith("stats.json") } }
             )
         }
     }

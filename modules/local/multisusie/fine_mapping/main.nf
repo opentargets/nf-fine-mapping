@@ -8,6 +8,7 @@ process MULTISUSIE_FINE_MAPPING {
     label "multisusie"
     container params.multisusie_container ?: 'multisusie:latest'
     containerOptions '--entrypoint=""'
+    maxForks 1
 
     input:
     tuple(
@@ -23,8 +24,9 @@ process MULTISUSIE_FINE_MAPPING {
         runId: runId,
         fine_mapping_locus_set_id: fine_mapping_locus_set_id,
         metas: metas,
-        study_locus_path: file("multisusie/study_locus.parquet"),
-        extended_results_path: file("multisusie/fit.h5ad"),
+        study_locus_path: file("multisusie/study_locus.parquet", optional: true),
+        extended_results_path: file("multisusie/fit.h5ad", optional: true),
+        stats_path: file("multisusie/stats.json"),
     )
 
     topic:
@@ -56,6 +58,7 @@ process MULTISUSIE_FINE_MAPPING {
         --fine-mapping-locus-set-id ${fine_mapping_locus_set_id} \\
         --study-locus-output multisusie/study_locus.parquet \\
         --extended-results-output multisusie/fit.h5ad \\
+        --stats-output multisusie/stats.json \\
         ${args}
     """
 
@@ -64,5 +67,6 @@ process MULTISUSIE_FINE_MAPPING {
     mkdir -p multisusie
     touch multisusie/study_locus.parquet
     touch multisusie/fit.h5ad
+    printf '%s\n' '{"status":"SUCCESS"}' > multisusie/stats.json
     """
 }
