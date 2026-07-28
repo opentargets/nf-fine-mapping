@@ -8,11 +8,13 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
     label "ld_annotation"
     maxForks 10
 
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'gentropy_ld_annotation/**/*'
+
     input:
     tuple val(runId), val(metas), path(fine_mapping_locus_set_path), val(fine_mapping_locus_set_id), path(ld_variant_index_paths), val(ld_block_matrix_paths), val(ancestries)
 
     output:
-    tuple val(runId), path(fine_mapping_locus_set_path), path("gentropy_ld_annotation/*/multi_ancestry_pairwise_ld"), path("gentropy_ld_annotation/*/stats.jsonl"), emit: annotation
+    tuple val(runId), val(metas), val(fine_mapping_locus_set_id), path("fine_mapping_locus_sets/*.parquet"), path("gentropy_ld_annotation/*/multi_ancestry_pairwise_ld"), path("gentropy_ld_annotation/*/stats.jsonl"), emit: annotation
     tuple val(runId), val(fine_mapping_locus_set_id), path("gentropy_ld_annotation/*/stats.jsonl"), emit: stats
 
     script:
@@ -58,6 +60,8 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
     }
     """
     mkdir -p gentropy_ld_annotation/${prefix}
+    mkdir -p fine_mapping_locus_sets
+    cp ${fine_mapping_locus_set_path} fine_mapping_locus_sets/${fine_mapping_locus_set_path.getName()}
 
     printf '%s\\n' '${metadata_lines}' > metadata.jsonl
 
@@ -82,6 +86,8 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
     def prefix = task.ext.prefix ? "${task.ext.prefix}_${locus_set_id}" : "${runId}_${locus_set_id}"
     """
     mkdir -p gentropy_ld_annotation/${prefix}
+    mkdir -p fine_mapping_locus_sets
+    touch fine_mapping_locus_sets/${fine_mapping_locus_set_path.getName()}
     touch gentropy_ld_annotation/${prefix}/multi_ancestry_pairwise_ld
     touch gentropy_ld_annotation/${prefix}/stats.jsonl
     """

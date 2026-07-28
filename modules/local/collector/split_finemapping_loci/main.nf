@@ -8,6 +8,8 @@ process SPLIT_FINEMAPPING_LOCI {
     label "collector"
     label "locus_collection"
 
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'fine_mapping_locus_sets'
+
     input:
     tuple(runId: String, metas: List, full_overlap_path: Path)
 

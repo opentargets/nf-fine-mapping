@@ -8,12 +8,13 @@ process COLLECTOR_EMPTY_STATUS {
 
     label "collector"
     label "status"
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'status/*.jsonl'
 
     input:
     tuple(runId: String, logical_path: String, validation_stage: String, dataset_path: Path)
 
     output:
-    file("status/*.jsonl"), optional: true
+    file(("status/*.jsonl"), optional: true)
 
     topic:
     tuple("${task.process}", "collector", "1.0.0") >> "versions"

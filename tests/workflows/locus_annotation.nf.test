@@ -78,7 +78,7 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 4 },
+                { assert workflow.trace.succeeded().size() == 6 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
                 { assert workflow.out.ch_locus_annotation.size() == 2 },
                 { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
@@ -92,8 +92,16 @@ nextflow_workflow {
                 { assert workflow.out.ch_ld_pair_stats_status.size() == 2 },
                 { assert workflow.out.ch_ld_pair_stats_status.every { path -> new File(path.toString()).text.contains('"fineMappingLocusSetId"') } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 2 },
-                { assert topics.versions.size() == 2 },
-                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.0.0" } }
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 2 },
+                { assert topics.versions.size() == 4 },
+                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.0.0" } },
+                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") && row[1] == "multisusie" && row[2] == "1.0.0" } },
+                { assert workflow.out.ch_multisusie.size() == 2 },
+                { assert workflow.out.ch_multisusie.every { r -> r.runId == "RUN_A" } },
+                { assert workflow.out.ch_multisusie.collect { r -> r.fine_mapping_locus_set_id }.sort() == ["GCST90278661", "chr1"] },
+                { assert workflow.out.ch_multisusie.every { r -> r.metas.collect { meta -> meta.studyId } == ["STUDY_A", "STUDY_B"] } },
+                { assert workflow.out.ch_multisusie.every { r -> r.study_locus_path.toString().endsWith("study_locus.parquet") } },
+                { assert workflow.out.ch_multisusie.every { r -> r.extended_results_path.toString().endsWith("fit.h5ad") } }
             )
         }
     }

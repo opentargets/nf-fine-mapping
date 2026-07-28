@@ -3,6 +3,7 @@ nextflow.enable.types = true
 
 include { GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION } from '../../modules/local/gentropy/fine_mapping_locus_set_ld_annotation/main.nf'
 include { COLLECTOR_CHECK_LD_PAIR_STATS } from '../../modules/local/collector/ld_pair_stats/main.nf'
+include { MULTISUSIE_FINE_MAPPING } from '../../modules/local/multisusie/fine_mapping/main.nf'
 
 
 workflow LOCUS_ANNOTATION {
@@ -39,14 +40,27 @@ workflow LOCUS_ANNOTATION {
     ch_gentropy_ld_annotation = GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION(ch_gentropy_ld_annotation_input)
     ch_ld_pair_stats_status = COLLECTOR_CHECK_LD_PAIR_STATS(ch_gentropy_ld_annotation.stats)
 
-    ch_locus_annotation = ch_gentropy_ld_annotation.annotation.map { runId, fine_mapping_locus_set_path, multi_ancestry_pairwise_ld_path, stats_path ->
+    ch_locus_annotation = ch_gentropy_ld_annotation.annotation.map { runId, metas, fine_mapping_locus_set_id, fine_mapping_locus_set_path, multi_ancestry_pairwise_ld_path, stats_path ->
         record(
             runId: runId,
+            fine_mapping_locus_set_id: fine_mapping_locus_set_id,
+            metas: metas,
             fine_mapping_locus_set_path: fine_mapping_locus_set_path,
             multi_ancestry_pairwise_ld_path: multi_ancestry_pairwise_ld_path,
             stats_path: stats_path,
         )
     }
+
+    ch_multisusie_input = ch_gentropy_ld_annotation.annotation.map { runId, metas, fine_mapping_locus_set_id, fine_mapping_locus_set_path, multi_ancestry_pairwise_ld_path, _stats_path ->
+        tuple(
+            runId,
+            fine_mapping_locus_set_id,
+            metas,
+            fine_mapping_locus_set_path,
+            multi_ancestry_pairwise_ld_path,
+        )
+    }
+    ch_multisusie_results = MULTISUSIE_FINE_MAPPING(ch_multisusie_input)
 
     emit:
     ch_locus_annotation = ch_locus_annotation
@@ -54,4 +68,5 @@ workflow LOCUS_ANNOTATION {
     ch_multi_ancestry_pairwise_ld = ch_locus_annotation.map { r -> r.multi_ancestry_pairwise_ld_path }
     ch_ld_pair_stats = ch_locus_annotation.map { r -> r.stats_path }
     ch_ld_pair_stats_status = ch_ld_pair_stats_status
+    ch_multisusie = ch_multisusie_results
 }
