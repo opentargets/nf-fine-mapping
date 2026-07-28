@@ -32,3 +32,5 @@ testdata/work_full/*
 .nf-test
 .nf-test.log
 .worktrees/
+testdata/work_gentropy/
+testdata/output_gentropy/
