@@ -10,6 +10,9 @@ on:
       - "tools/collector/src/**"
       - "tools/collector/pyproject.toml"
       - "tools/collector/uv.lock"
+      - "modules/local/multisusie/**"
+      - "workflows/locus_annotation/**"
+      - "Makefile"
       - ".github/workflows/docs.yml"
 
 permissions:
