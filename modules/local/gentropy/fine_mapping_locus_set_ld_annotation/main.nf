@@ -6,7 +6,7 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
 
     label "gentropy"
     label "ld_annotation"
-    maxForks 10
+    maxForks 1
 
     publishDir "${params.output_dir}", mode: 'copy', pattern: 'gentropy_ld_annotation/**/*'
 
