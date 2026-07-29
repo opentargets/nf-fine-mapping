@@ -1,3 +1,6 @@
+FROM ghcr.io/project-defiant/hailing-ducks:v1.1.0 AS hailing_ducks
+
+
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS uv_builder
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 # Disable python downloads to use the one from the base image
@@ -16,6 +19,7 @@ WORKDIR /app
 COPY src /app/src
 COPY README.md /app/README.md
 COPY LICENCE.md /app/LICENCE.md
+COPY scripts /app/scripts
 COPY pyproject.toml /app/pyproject.toml
 COPY uv.lock /app/uv.lock
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -28,10 +32,12 @@ RUN groupadd --gid 1000 app && \
     useradd --uid 1000 --gid app --shell /bin/bash --create-home app
 # Add ps 
 RUN apt-get update && \
-    apt-get install -y procps && \
+    apt-get install -y procps libcurl4 libssl3 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 # Copy the application code from the builder stage
 COPY --from=uv_builder --chown=app:app /app /app
+COPY --from=hailing_ducks /usr/local/bin/duckdb /usr/local/bin/duckdb
+COPY --from=hailing_ducks /opt/duckdb_extensions /opt/duckdb_extensions
 
 
 # Configure PATH to use the virtual environment's binaries

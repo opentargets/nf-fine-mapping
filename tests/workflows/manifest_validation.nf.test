@@ -254,4 +254,84 @@ nextflow_workflow {
             )
         }
     }
+
+    test("accepts a Hailing Ducks registry with native HailTable and BlockMatrix paths") {
+        when {
+            params {
+                ld_annotation_method = "hailing_ducks"
+                ld_registry = [
+                    [ancestry: "nfe", ht_path: "s3://bucket/nfe.ht", bm_path: "s3://bucket/nfe.bm"],
+                    [ancestry: "eas", ht_path: "local/eas.ht", bm_path: "local/eas.bm"],
+                ]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90475531"),
+                        meta: [
+                            runId: "RUN_SUPPORTED",
+                            studyId: "GCST90475531",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 74049,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.tasks().size() == 0 },
+                { assert workflow.out.supported_manifest_rows.size() == 1 },
+                { assert workflow.out.manifest_validation_status.size() == 0 },
+            )
+        }
+    }
+
+    test("fails Hailing Ducks registry validation when a native HailTable path is missing") {
+        when {
+            params {
+                ld_annotation_method = "hailing_ducks"
+                ld_registry = [
+                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "s3://bucket/nfe.bm"],
+                ]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90475531"),
+                        meta: [
+                            runId: "RUN_SUPPORTED",
+                            studyId: "GCST90475531",
+                            route: "multi_susie_route",
+                            ancestry: "nfe",
+                            traitSet: ["EFO_0004833"],
+                            sampleSize: 74049,
+                        ],
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("ht_path") },
+                { assert workflow.trace.tasks().size() == 0 },
+            )
+        }
+    }
 }

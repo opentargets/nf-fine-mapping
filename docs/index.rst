@@ -15,6 +15,7 @@ disequilibrium resources.
    user-guide/workflows
    user-guide/locus-processing
    user-guide/fine-mapping-routes
+   benchmarks/hailing-ducks-ld-annotation
    api/collector
 
 Indices and tables

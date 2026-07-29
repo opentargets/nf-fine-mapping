@@ -13,6 +13,7 @@ local checks:
 | `make lint` | Run Ruff formatting/linting and `ty` type checks. |
 | `make test` | Run the Python test suite. |
 | `make build` | Build the collector container image. |
+| `make hailing-s3-smoke` | Opt in to real Pan-UKBB HT/BM, indel, and signed-LD validation. |
 | `make clean` | Remove local development artifacts. |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
@@ -42,3 +43,15 @@ uv run python scripts/compare_locus_breaker_outputs.py \
 ```
 
 The comparison normalizes Gentropy hive partitions into a real `studyLocusId` column, sorts top-level rows, sorts nested `locus` arrays, and compares logical values instead of Parquet metadata. It is strict by default; use `--float-abs-tolerance 1e-6` to ignore tiny FLOAT representation differences while still checking row membership and non-float values exactly.
+
+## Hailing Ducks LD annotation
+
+The production collector image includes the native Hailing Ducks v1.1.0
+DuckDB CLI. ``collector hailing_ld`` accepts one fine-mapping locus-set
+Parquet dataset, study metadata JSONL, and aligned ancestry/HT/BM registry
+options. It emits a flat Gentropy-compatible MultiAncestryPairwiseLD Parquet
+file and per-ancestry JSONL statistics.
+
+Use ``collector ld_parity`` to compare that output with Gentropy. The report
+separates shared, backend-only, diagonal, and value-mismatch counts and reports
+the maximum absolute LD difference by ancestry and overall.

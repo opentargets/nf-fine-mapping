@@ -78,7 +78,7 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 6 },
+                { assert workflow.trace.succeeded().size() == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
                 { assert workflow.out.ch_locus_annotation.size() == 2 },
                 { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
@@ -92,17 +92,9 @@ nextflow_workflow {
                 { assert workflow.out.ch_ld_pair_stats_status.size() == 2 },
                 { assert workflow.out.ch_ld_pair_stats_status.every { path -> new File(path.toString()).text.contains('"fineMappingLocusSetId"') } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 2 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 2 },
-                { assert topics.versions.size() == 4 },
+                { assert topics.versions.size() == 2 },
                 { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.0.0" } },
-                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") && row[1] == "multisusie" && row[2] == "1.0.0" } },
-                { assert workflow.out.ch_multisusie.size() == 2 },
-                { assert workflow.out.ch_multisusie.every { r -> r.runId == "RUN_A" } },
-                { assert workflow.out.ch_multisusie.collect { r -> r.fine_mapping_locus_set_id }.sort() == ["GCST90278661", "chr1"] },
-                { assert workflow.out.ch_multisusie.every { r -> r.metas.collect { meta -> meta.studyId } == ["STUDY_A", "STUDY_B"] } },
-                { assert workflow.out.ch_multisusie.every { r -> r.study_locus_path.toString().endsWith("study_locus.parquet") } },
-                { assert workflow.out.ch_multisusie.every { r -> r.extended_results_path.toString().endsWith("fit.h5ad") } },
-                { assert workflow.out.ch_multisusie.every { r -> r.stats_path.toString().endsWith("stats.json") } }
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 0 },
             )
         }
     }
@@ -128,6 +120,54 @@ nextflow_workflow {
                 { assert workflow.out.ch_fine_mapping_locus_sets.size() == 0 },
                 { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 0 },
                 { assert workflow.out.ch_ld_pair_stats.size() == 0 }
+            )
+        }
+    }
+
+    test("runs Hailing Ducks LD annotation with the Gentropy-compatible channel contract") {
+        when {
+            params {
+                output_dir = "$outputDir"
+                ld_annotation_method = "hailing_ducks"
+                ld_pair_stats_stub_emit = false
+                ld_registry = [
+                    [ancestry: "nfe", ht_path: "s3://bucket/nfe.ht", bm_path: "s3://bucket/nfe.bm"],
+                    [ancestry: "afr", ht_path: "s3://bucket/afr.ht", bm_path: "s3://bucket/afr.bm"],
+                ]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    [
+                        runId: "RUN_HAILING",
+                        metas: [
+                            [runId: "RUN_HAILING", studyId: "STUDY_A", route: "multi_susie_route", ancestry: "nfe", traitSet: ["EFO_1"], sampleSize: 100],
+                            [runId: "RUN_HAILING", studyId: "STUDY_B", route: "multi_susie_route", ancestry: "afr", traitSet: ["EFO_1"], sampleSize: 200],
+                        ],
+                        collected_locus_path: file("${projectDir}/testdata/sumstats/GCST90475531/chr1.parquet"),
+                    ],
+                )
+                """
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+            def annotation = workflow.out.ch_locus_annotation[0]
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
+                { assert workflow.out.ch_locus_annotation.size() == 1 },
+                { assert annotation.runId == "RUN_HAILING" },
+                { assert annotation.fine_mapping_locus_set_id == "chr1" },
+                { assert annotation.fine_mapping_locus_set_path.toString().endsWith("chr1.parquet") },
+                { assert annotation.multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld.parquet") },
+                { assert annotation.stats_path.toString().endsWith("stats.jsonl") },
+                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 1 },
+                { assert workflow.out.ch_ld_pair_stats.size() == 1 },
             )
         }
     }

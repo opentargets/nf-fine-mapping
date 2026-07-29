@@ -6,6 +6,7 @@ nextflow.enable.types = true
 include { LOCUS_BREAKER    } from './workflows/locus_breaker/main.nf'
 include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'
 include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'
+include { FINE_MAPPING     } from './workflows/fine_mapping/main.nf'
 
 params {
     manifest: String
@@ -13,6 +14,10 @@ params {
     output_dir: String
     route: String
     ld_registry: List = []
+    ld_annotation_method: String = 'gentropy'
+    hailing_ducks_container: String = 'ghcr.io/project-defiant/hailing-ducks:v1.1.0'
+    hailing_ducks_max_cached_blocks: Integer = 8
+    fine_mapping_methods: List = ['multisusie']
 }
 
 def intro() -> Void {
@@ -93,9 +98,23 @@ def registered_ld_registry_ancestries(ld_registry) -> Set<String> {
         error "Manifest ancestry validation requires non-empty params.ld_registry."
     }
 
+    def required_fields = ['ancestry', 'bm_path']
+    if (params.ld_annotation_method.toString() == 'hailing_ducks') {
+        required_fields << 'ht_path'
+    } else {
+        required_fields << 'vi_path'
+    }
+
     def ancestry_labels = ld_registry.collect { entry ->
         if (!(entry instanceof Map) || !entry.containsKey('ancestry')) {
             error "Manifest ancestry validation requires each params.ld_registry entry to define ancestry."
+        }
+
+        def missing_fields = required_fields.findAll { field ->
+            !entry.containsKey(field) || entry[field] == null || entry[field].toString().trim().isEmpty()
+        }
+        if (missing_fields) {
+            error "Manifest ancestry validation requires each params.ld_registry entry to define non-empty ${missing_fields.join(', ')}."
         }
 
         def ancestry = entry.ancestry
@@ -321,6 +340,7 @@ workflow {
     fine_mapping_locus_sets = locus_annotation.map { annotation_row -> annotation_row.fine_mapping_locus_set_path }
     multi_ancestry_pairwise_ld = locus_annotation.map { annotation_row -> annotation_row.multi_ancestry_pairwise_ld_path }
     ld_pair_stats = locus_annotation.map { annotation_row -> annotation_row.stats_path }
+    FINE_MAPPING(locus_annotation)
 
     publish:
     manifest_validation_status = manifest_validation_status

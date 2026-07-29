@@ -30,7 +30,7 @@ nextflow_pipeline {
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 8 }
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 8 }
             )
         }
     }
@@ -61,7 +61,7 @@ nextflow_pipeline {
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 8 }
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 8 }
             )
         }
     }
@@ -86,7 +86,7 @@ nextflow_pipeline {
                 { assert workflow.trace.failed().size() == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 4 },
                 { assert new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-b.parquet").exists() },
                 { assert !new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-a.parquet").exists() }
             )
@@ -123,7 +123,7 @@ nextflow_pipeline {
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 2 },
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 2 },
                 { assert outputText.contains("RUN_INVALID.jsonl") },
                 { assert outputText.contains("RUN_VALID") },
                 { assert !outputText.contains("GCST90002351") }

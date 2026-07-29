@@ -10,11 +10,74 @@ import typer
 
 from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.empty_status import ValidationStage, emit_empty_status
+from collector.hailing_ld import HailingLdConfig, HailingLdReference, run_hailing_ld
 from collector.ld_pair_stats import emit_empty_ld_pair_status
+from collector.ld_parity import LdParityConfig, compare_ld_outputs
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
 from collector.split_loci import SplitFineMappingLociConfig, run_split_finemapping_loci
 
 app = typer.Typer()
+
+
+@app.command(name="ld_parity")
+def ld_parity(
+    hailing: Annotated[Path, typer.Option("--hailing", help="Hailing Ducks MultiAncestryPairwiseLD Parquet dataset.")],
+    gentropy: Annotated[Path, typer.Option("--gentropy", help="Gentropy MultiAncestryPairwiseLD Parquet dataset.")],
+    report: Annotated[Path, typer.Option("--report", help="Output JSON parity report.")],
+    hailing_stats: Annotated[Path | None, typer.Option("--hailing_stats", help="Optional Hailing Ducks stats JSONL.")] = None,
+    gentropy_stats: Annotated[Path | None, typer.Option("--gentropy_stats", help="Optional Gentropy stats JSONL.")] = None,
+    tolerance: Annotated[float, typer.Option("--tolerance", min=0, help="Maximum accepted absolute LD difference.")] = 1e-8,
+):
+    """Compare LD outputs independent of row order and chr contig prefixes."""
+    try:
+        parity = compare_ld_outputs(
+            LdParityConfig(
+                hailing_path=hailing,
+                gentropy_path=gentropy,
+                report_path=report,
+                hailing_stats_path=hailing_stats,
+                gentropy_stats_path=gentropy_stats,
+                tolerance=tolerance,
+            )
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    typer.echo(f"Wrote LD parity report to {report}")
+    if parity["totals"]["shared_value_mismatches"]:
+        raise typer.Exit(code=1)
+
+
+@app.command(name="hailing_ld")
+def hailing_ld(
+    input: Annotated[Path, typer.Option("--input", help="FineMappingLocusSet Parquet file or directory dataset.")],
+    study_metadata: Annotated[Path, typer.Option("--study_metadata", help="Study metadata JSONL with studyId and ancestry.")],
+    output: Annotated[Path, typer.Option("--output", help="Flat MultiAncestryPairwiseLD output Parquet file.")],
+    stats_output: Annotated[Path, typer.Option("--stats_output", help="Per-ancestry LD pair statistics JSONL file.")],
+    ancestry: Annotated[list[str], typer.Option("--ancestry", help="Ancestry labels, in registry order.")],
+    ht_path: Annotated[list[str], typer.Option("--ht_path", help="Native hg38 HailTable paths, in ancestry order.")],
+    bm_path: Annotated[list[str], typer.Option("--bm_path", help="Native BlockMatrix paths, in ancestry order.")],
+    native_contig_prefix: Annotated[str, typer.Option("--native_contig_prefix", help="Prefix used by the native HT contigs.")] = "chr",
+    max_cached_blocks: Annotated[int, typer.Option("--max_cached_blocks", min=1)] = 8,
+):
+    """Query native Hail references and adapt them to MultiAncestryPairwiseLD."""
+    if not (len(ancestry) == len(ht_path) == len(bm_path)):
+        raise typer.BadParameter("ancestry, ht_path, and bm_path must have identical lengths")
+    try:
+        run_hailing_ld(
+            HailingLdConfig(
+                input_path=input,
+                study_metadata_path=study_metadata,
+                output_path=output,
+                stats_output=stats_output,
+                references=tuple(
+                    HailingLdReference(ancestry=label, ht_path=ht, bm_path=bm) for label, ht, bm in zip(ancestry, ht_path, bm_path, strict=True)
+                ),
+                native_contig_prefix=native_contig_prefix,
+                max_cached_blocks=max_cached_blocks,
+            )
+        )
+    except (FileNotFoundError, IsADirectoryError, OSError, RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
 
 
 @app.command()

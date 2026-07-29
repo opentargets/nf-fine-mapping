@@ -102,7 +102,7 @@ unit-test-pipeline: ## Run the top-level pipeline nf-test suite
 	$(NF_TEST) test tests/default.nf.test
 
 unit-test-workflows: ## Run the workflow-level nf-test suites
-	$(NF_TEST) test tests/workflows/locus_breaker.nf.test tests/workflows/locus_collection.nf.test tests/workflows/locus_annotation.nf.test
+	$(NF_TEST) test tests/workflows/locus_breaker.nf.test tests/workflows/locus_collection.nf.test tests/workflows/locus_annotation.nf.test tests/workflows/fine_mapping.nf.test
 
 unit-test-all: ## Run all nf-test suites
 unit-test-all: unit-test

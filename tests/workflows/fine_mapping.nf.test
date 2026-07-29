@@ -1,0 +1,153 @@
+nextflow_workflow {
+
+    name "Test FINE_MAPPING workflow"
+    script "../../workflows/fine_mapping/main.nf"
+    workflow "FINE_MAPPING"
+    tag "workflow"
+    tag "fine_mapping"
+    tag "stub"
+    topics "versions"
+    options "-stub-run"
+
+    test("runs every configured fine-mapping method for each annotated locus") {
+        when {
+            params {
+                output_dir = "$outputDir"
+                fine_mapping_methods = ["multisusie", "susiex", "sushie"]
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    record(
+                        runId: "RUN_A",
+                        fine_mapping_locus_set_id: "LOCUS_A",
+                        metas: [
+                            [studyId: "STUDY_A", ancestry: "nfe", sampleSize: 100],
+                            [studyId: "STUDY_B", ancestry: "afr", sampleSize: 200],
+                        ],
+                        fine_mapping_locus_set_path: file("${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet"),
+                        multi_ancestry_pairwise_ld_path: file("${projectDir}/testdata/output/locus_breaker_clumped_study_locus/GCST90278661.parquet"),
+                        stats_path: file("${projectDir}/testdata/output/locus_breaker_clumped_study_locus/GCST90278665.parquet"),
+                    ),
+                )
+                """
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert workflow.trace.succeeded().size() == 3 },
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:SUSIEX_FINE_MAPPING") } == 1 },
+                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:SUSHIE_FINE_MAPPING") } == 1 },
+                { assert workflow.out.ch_multisusie.size() == 1 },
+                { assert workflow.out.ch_susiex.size() == 1 },
+                { assert workflow.out.ch_sushie.size() == 1 },
+                { assert workflow.out.ch_multisusie[0].runId == "RUN_A" },
+                { assert workflow.out.ch_susiex[0].fine_mapping_locus_set_id == "LOCUS_A" },
+                { assert workflow.out.ch_sushie[0].metas*.studyId == ["STUDY_A", "STUDY_B"] },
+                { assert workflow.out.ch_multisusie[0].study_locus_path.toString().endsWith("study_locus.parquet") },
+                { assert workflow.out.ch_susiex[0].extended_results_path.toString().endsWith("fit.h5ad") },
+                { assert workflow.out.ch_sushie[0].stats_path.toString().endsWith("stats.json") },
+                { assert topics.versions*.getAt(1).toSet() == ["multisusie", "susiex", "sushie"] as Set },
+            )
+        }
+    }
+
+    test("runs only MultiSuSiE by default") {
+        when {
+            params {
+                output_dir = "$outputDir"
+            }
+            workflow {
+                """
+                input[0] = channel.of(
+                    record(
+                        runId: "RUN_DEFAULT",
+                        fine_mapping_locus_set_id: "LOCUS_DEFAULT",
+                        metas: [
+                            [studyId: "STUDY_A", ancestry: "nfe", sampleSize: 100],
+                        ],
+                        fine_mapping_locus_set_path: file("${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet"),
+                        multi_ancestry_pairwise_ld_path: file("${projectDir}/testdata/output/locus_breaker_clumped_study_locus/GCST90278661.parquet"),
+                        stats_path: file("${projectDir}/testdata/output/locus_breaker_clumped_study_locus/GCST90278665.parquet"),
+                    ),
+                )
+                """
+            }
+        }
+
+        then {
+            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.succeeded().size() == 1 },
+                { assert succeededTasks[0].startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") },
+                { assert workflow.out.ch_multisusie.size() == 1 },
+                { assert workflow.out.ch_susiex.size() == 0 },
+                { assert workflow.out.ch_sushie.size() == 0 },
+            )
+        }
+    }
+
+    test("rejects duplicate method configuration before launching tasks") {
+        when {
+            params {
+                output_dir = "$outputDir"
+                fine_mapping_methods = ["multisusie", "multisusie"]
+            }
+            workflow {
+                """
+                input[0] = channel.empty()
+                """
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("Duplicate fine-mapping methods: multisusie") },
+                { assert workflow.trace.tasks().size() == 0 },
+            )
+        }
+    }
+
+    test("rejects unsupported method configuration before launching tasks") {
+        when {
+            params {
+                output_dir = "$outputDir"
+                fine_mapping_methods = ["unknown"]
+            }
+            workflow {
+                """
+                input[0] = channel.empty()
+                """
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("Unsupported fine-mapping methods: unknown") },
+                { assert workflow.trace.tasks().size() == 0 },
+            )
+        }
+    }
+}

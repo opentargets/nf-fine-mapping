@@ -11,6 +11,7 @@ GENTROPY_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "
 COLLECT_FINEMAPPING_LOCI_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "collect_finemapping_loci" / "main.nf"
 EMPTY_STATUS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "empty_status" / "main.nf"
 GENTROPY_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "fine_mapping_locus_set_ld_annotation" / "main.nf"
+HAILING_DUCKS_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "hailing_ld" / "main.nf"
 LD_PAIR_STATS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "ld_pair_stats" / "main.nf"
 MAIN_WORKFLOW = REPO_ROOT / "main.nf"
 NEXTFLOW_CONFIG = REPO_ROOT / "nextflow.config"
@@ -89,19 +90,23 @@ def test_locus_collection_workflow_wires_collect_finemapping_loci_after_clumping
     assert 'partial_overlap = tuple(runId, metas, file("collected_loci/partial_overlaps/*.parquet"))' in module
     assert 'non_overlap = tuple(runId, metas, file("collected_loci/non_overlaps/*.parquet"))' in module
     assert 'stats = tuple(runId, metas, file("collected_loci/stats/*.json"))' in module
-    assert 'file("status/*.jsonl"), optional: true' in validation_module
+    assert 'file(("status/*.jsonl"), optional: true' in validation_module
     assert "ch_locus_collection_status = ch_collection_status" in workflow
     assert ".filter { status_path -> status_path != null }" in workflow
 
 
-def test_locus_annotation_workflow_wires_gentropy_ld_annotation_after_full_overlaps():
+def test_locus_annotation_workflow_selects_gentropy_or_hailing_ducks_after_full_overlaps():
     workflow = LOCUS_ANNOTATION_WORKFLOW.read_text()
     module = GENTROPY_LD_ANNOTATION_MODULE.read_text()
+    hailing_module = HAILING_DUCKS_LD_ANNOTATION_MODULE.read_text()
     status_module = LD_PAIR_STATS_MODULE.read_text()
 
     assert "workflow LOCUS_ANNOTATION" in workflow
     assert "include { GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION }" in workflow
-    assert "GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION(ch_gentropy_ld_annotation_input)" in workflow
+    assert "include { HAILING_DUCKS_LD_ANNOTATION }" in workflow
+    assert "GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION(ch_selected_ld_annotation_input)" in workflow
+    assert "HAILING_DUCKS_LD_ANNOTATION(ch_selected_ld_annotation_input)" in workflow
+    assert "params.ld_annotation_method" in workflow
     assert "params.ld_registry" in workflow
     assert "record(" in workflow
     assert "fine_mapping_locus_set_path" in workflow
@@ -127,6 +132,14 @@ def test_locus_annotation_workflow_wires_gentropy_ld_annotation_after_full_overl
     assert "step.session.output_partitions=1" in module
     assert 'path("gentropy_ld_annotation/*/multi_ancestry_pairwise_ld")' in module
     assert 'path("gentropy_ld_annotation/*/stats.jsonl")' in module
+    assert "process HAILING_DUCKS_LD_ANNOTATION" in hailing_module
+    assert "collector hailing_ld" in hailing_module
+    assert "--study_metadata metadata.jsonl" in hailing_module
+    assert "--max_cached_blocks ${params.hailing_ducks_max_cached_blocks}" in hailing_module
+    assert "printf '%s\\\\n' '${metadata_lines}' > metadata.jsonl" in hailing_module
+    assert "--ht_path" in hailing_module
+    assert "--bm_path" in hailing_module
+    assert "multi_ancestry_pairwise_ld.parquet" in hailing_module
     assert "process COLLECTOR_CHECK_LD_PAIR_STATS" in status_module
     assert "collector check_ld_pair_stats" in status_module
     assert "--fine_mapping_locus_set_id ${fine_mapping_locus_set_id}" in status_module
@@ -237,6 +250,7 @@ def test_real_profiles_use_local_variant_indexes_and_remote_panukbb_block_matric
         assert "pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm" in config
         assert "pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm" in config
         assert "pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm" in config
+        assert "ldadj.variant.b38.ht" in config
         assert "ld_references" not in config
 
     assert "data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet" in chr1_config
@@ -256,7 +270,7 @@ def test_nf_test_pipeline_verifies_collector_and_gentropy_step_wiring():
     assert 'locus_breaker_method = "gentropy"' in nf_test_pipeline
     assert 'manifest = new File("testdata/manifest.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest_base_dir = new File(".").canonicalPath' in nf_test_pipeline
-    assert "workflow.trace.succeeded().size() == 52" in nf_test_pipeline
+    assert "workflow.trace.succeeded().size() == 60" in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4' in nf_test_pipeline
