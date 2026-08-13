@@ -223,22 +223,23 @@ def test_full_data_profile_uses_separate_manifest_work_and_output_locations():
     assert all("\ttestdata/sumstats/" not in row for row in manifest[1:])
 
 
-def test_chr1_gentropy_local_profile_uses_gentropy_locus_breaker():
+def test_chr1_local_profile_uses_hailing_ducks_ld_annotation():
     nextflow_config = NEXTFLOW_CONFIG.read_text()
-    gentropy_config = TEST_GENTROPY_LOCAL_CONFIG.read_text()
+    local_config = TEST_GENTROPY_LOCAL_CONFIG.read_text()
 
     assert "testGentropyLocal" in nextflow_config
     assert "includeConfig 'conf/test-gentropy-local.config'" in nextflow_config
-    assert 'executor.name = "local"' in gentropy_config
-    assert "manifest" in gentropy_config
-    assert '"${projectDir}/testdata/manifest.tsv"' in gentropy_config
-    assert '"${projectDir}/testdata/output_gentropy"' in gentropy_config
-    assert 'workDir = "${projectDir}/testdata/work_gentropy"' in gentropy_config
-    assert 'locus_breaker_method              = "collector"' in gentropy_config
-    assert 'gentropy_spark_uri                = "local[8]"' in gentropy_config
-    assert "spark.driver.memory:8g" in gentropy_config
-    assert "spark.executor.memory:8g" in gentropy_config
-    assert "gentropy:3.4.0-dev.1-ld-pair-extraction-v2" in gentropy_config
+    assert 'executor.name = "local"' in local_config
+    assert "manifest" in local_config
+    assert '"${projectDir}/testdata/manifest.tsv"' in local_config
+    assert '"${projectDir}/testdata/output_gentropy"' in local_config
+    assert 'workDir = "${projectDir}/testdata/work_gentropy"' in local_config
+    assert 'locus_breaker_method              = "collector"' in local_config
+    assert 'ld_annotation_method              = "hailing_ducks"' in local_config
+    assert "ghcr.io/project-defiant/hailing-ducks:v1.1.0" in local_config
+    assert "container  = 'collector:hailing-ducks-dev'" in local_config
+    assert 'ht_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.variant.b38.ht"' in local_config
+    assert 'bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"' in local_config
 
 
 def test_real_profiles_use_local_variant_indexes_and_remote_panukbb_block_matrices():
