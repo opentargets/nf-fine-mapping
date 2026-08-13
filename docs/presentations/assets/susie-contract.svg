@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="title desc">
+  <title id="title">Shared application contract for SuSiE-family methods</title>
+  <desc id="desc">Common per-locus inputs fan out to MultiSuSiE, SuSiEx and SuShiE, which preserve different variant semantics and numerical cores, then converge on Gentropy StudyLocus, AnnData and status outputs.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#67e8f9"/></marker>
+    <style>
+      .title { font: 700 36px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .head { font: 700 23px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .body { font: 500 18px Inter, Arial, sans-serif; fill: #d2dbea; }
+      .small { font: 500 17px Inter, Arial, sans-serif; fill: #aab8cc; }
+      .chip { font: 700 15px Inter, Arial, sans-serif; fill: #07111f; }
+      .arrow { fill: none; stroke: #67e8f9; stroke-width: 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1600" height="800" rx="36" fill="#07111f"/>
+  <text x="70" y="70" class="title">One application boundary — three method-native engines</text>
+
+  <rect x="70" y="135" width="310" height="520" rx="28" fill="#0f172a" stroke="#22d3ee" stroke-width="3"/>
+  <text x="105" y="190" class="head">Shared per-locus input</text>
+  <text x="105" y="245" class="body">FineMappingLocusSet</text>
+  <text x="105" y="278" class="small">summary statistics + loci</text>
+  <text x="105" y="340" class="body">MultiAncestryPairwiseLD</text>
+  <text x="105" y="373" class="small">ancestry-aware long Parquet</text>
+  <text x="105" y="435" class="body">Study metadata</text>
+  <text x="105" y="468" class="small">JSONL · sample size · ancestry</text>
+  <rect x="105" y="535" width="210" height="40" rx="20" fill="#22d3ee"/><text x="210" y="561" text-anchor="middle" class="chip">typed + validated</text>
+
+  <path class="arrow" d="M380 395 H470"/>
+  <path class="arrow" d="M1130 395 H1220"/>
+
+  <g>
+    <rect x="470" y="125" width="660" height="190" rx="26" fill="#1f1326" stroke="#ec4899" stroke-width="3"/>
+    <rect x="470" y="330" width="660" height="190" rx="26" fill="#17132d" stroke="#a78bfa" stroke-width="3"/>
+    <rect x="470" y="535" width="660" height="190" rx="26" fill="#29240b" stroke="#facc15" stroke-width="3"/>
+  </g>
+
+  <text x="505" y="175" class="head">MultiSuSiE</text>
+  <text x="505" y="214" class="body">Union of variants across ancestries</text>
+  <text x="505" y="246" class="small">ancestry masks · Python multisusie_rss core</text>
+  <rect x="910" y="169" width="175" height="36" rx="18" fill="#ec4899"/><text x="998" y="193" text-anchor="middle" class="chip">pipeline default</text>
+
+  <text x="505" y="380" class="head">SuSiEx</text>
+  <text x="505" y="419" class="body">Union of variants + native indicator mask</text>
+  <text x="505" y="451" class="small">validated arrays · pybind11 → C++ core</text>
+  <rect x="936" y="374" width="149" height="36" rx="18" fill="#a78bfa"/><text x="1010" y="398" text-anchor="middle" class="chip">PoC route</text>
+
+  <text x="505" y="585" class="head">SuShiE</text>
+  <text x="505" y="624" class="body">Strict shared GWAS ∩ shared LD intersection</text>
+  <text x="505" y="656" class="small">intersection quality gates · Python/JAX core</text>
+  <rect x="936" y="579" width="149" height="36" rx="18" fill="#facc15"/><text x="1010" y="603" text-anchor="middle" class="chip">PoC route</text>
+
+  <rect x="1220" y="135" width="310" height="520" rx="28" fill="#0f172a" stroke="#14b8a6" stroke-width="3"/>
+  <text x="1255" y="190" class="head">Shared output contract</text>
+  <text x="1255" y="245" class="body">StudyLocus Parquet</text>
+  <text x="1255" y="278" class="small">Gentropy-compatible results</text>
+  <text x="1255" y="340" class="body">AnnData H5AD</text>
+  <text x="1255" y="373" class="small">lossless posterior detail</text>
+  <text x="1255" y="435" class="body">stats.json</text>
+  <text x="1255" y="468" class="small">success + quality outcomes</text>
+  <rect x="1255" y="535" width="210" height="40" rx="20" fill="#2dd4bf"/><text x="1360" y="561" text-anchor="middle" class="chip">method-comparable</text>
+
+  <text x="800" y="770" text-anchor="middle" class="body">We refactored packaging, contracts, status handling and orchestration — not the scientific models.</text>
+</svg>

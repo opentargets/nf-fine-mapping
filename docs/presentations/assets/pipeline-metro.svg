@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Metro map of the nf-fine-mapping pipeline</title>
+  <desc id="desc">A main pipeline line connects manifest planning, locus breaking, locus collection, LD annotation, validation, fine-mapping and Gentropy outputs. Branches show selectable implementations and fine-mapping methods.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#020617" flood-opacity="0.38"/>
+    </filter>
+    <style>
+      .title { font: 700 38px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .subtitle { font: 500 21px Inter, Arial, sans-serif; fill: #aab8cc; }
+      .station { font: 700 20px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .detail { font: 500 18px Inter, Arial, sans-serif; fill: #d2dbea; }
+      .line-label { font: 700 17px Inter, Arial, sans-serif; fill: #e2e8f0; }
+      .main-line { fill: none; stroke: #22d3ee; stroke-width: 18; stroke-linecap: round; stroke-linejoin: round; }
+      .collector-line { fill: none; stroke: #14b8a6; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+      .gentropy-line { fill: none; stroke: #8b5cf6; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+      .hailing-line { fill: none; stroke: #f59e0b; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+      .multi-line { fill: none; stroke: #ec4899; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+      .susiex-line { fill: none; stroke: #a78bfa; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+      .sushie-line { fill: none; stroke: #facc15; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+      .node { fill: #0f172a; stroke: #e2e8f0; stroke-width: 6; }
+      .minor-node { fill: #0f172a; stroke-width: 5; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" rx="36" fill="#07111f"/>
+  <circle cx="1440" cy="80" r="180" fill="#22d3ee" opacity="0.025"/>
+  <circle cx="125" cy="820" r="210" fill="#ec4899" opacity="0.025"/>
+
+  <text x="72" y="74" class="title">The pipeline as a metro system</text>
+  <text x="72" y="108" class="subtitle">Stable stations; selectable engines; one downstream data contract</text>
+
+  <!-- Core line -->
+  <path class="main-line" d="M110 390 H310 H515 H735 H980 H1190 H1430"/>
+
+  <!-- Locus breaker alternatives -->
+  <path class="collector-line" d="M310 390 C350 390 360 265 405 265 H475 C520 265 535 390 575 390"/>
+  <path class="gentropy-line" d="M310 390 C350 390 360 515 405 515 H475 C520 515 535 390 575 390"/>
+
+  <!-- LD annotation alternatives -->
+  <path class="gentropy-line" d="M775 390 C810 390 820 265 860 265 H950 C1005 265 1015 390 1060 390"/>
+  <path class="hailing-line" d="M775 390 C810 390 820 515 860 515 H950 C1005 515 1015 390 1060 390"/>
+
+  <!-- Method fan-out -->
+  <path class="multi-line" d="M1190 390 C1235 390 1250 235 1300 235 H1430"/>
+  <path class="susiex-line" d="M1190 390 H1430"/>
+  <path class="sushie-line" d="M1190 390 C1235 390 1250 545 1300 545 H1430"/>
+
+  <!-- Main stations -->
+  <g filter="url(#shadow)">
+    <circle class="node" cx="110" cy="390" r="22"/>
+    <circle class="node" cx="310" cy="390" r="22"/>
+    <circle class="node" cx="575" cy="390" r="22"/>
+    <circle class="node" cx="775" cy="390" r="22"/>
+    <circle class="node" cx="1060" cy="390" r="22"/>
+    <circle class="node" cx="1190" cy="390" r="22"/>
+    <circle class="node" cx="1430" cy="390" r="22"/>
+  </g>
+
+  <!-- Alternative stations -->
+  <circle class="minor-node" cx="440" cy="265" r="17" stroke="#14b8a6"/>
+  <circle class="minor-node" cx="440" cy="515" r="17" stroke="#8b5cf6"/>
+  <circle class="minor-node" cx="895" cy="265" r="17" stroke="#8b5cf6"/>
+  <circle class="minor-node" cx="895" cy="515" r="17" stroke="#f59e0b"/>
+  <circle class="minor-node" cx="1360" cy="235" r="17" stroke="#ec4899"/>
+  <circle class="minor-node" cx="1360" cy="390" r="17" stroke="#a78bfa"/>
+  <circle class="minor-node" cx="1360" cy="545" r="17" stroke="#facc15"/>
+
+  <!-- Labels -->
+  <text x="110" y="345" text-anchor="middle" class="station">Manifest</text>
+  <text x="110" y="438" text-anchor="middle" class="detail">study + route</text>
+
+  <text x="310" y="345" text-anchor="middle" class="station">Locus breaker</text>
+  <text x="440" y="222" text-anchor="middle" class="line-label">Collector</text>
+  <text x="440" y="558" text-anchor="middle" class="line-label">Gentropy</text>
+
+  <text x="575" y="333" text-anchor="middle" class="station">Collect loci</text>
+  <text x="575" y="452" text-anchor="middle" class="detail">overlap by runId</text>
+
+  <text x="775" y="345" text-anchor="middle" class="station">Annotate LD</text>
+  <text x="895" y="222" text-anchor="middle" class="line-label">Gentropy · Spark/Hail</text>
+  <text x="895" y="558" text-anchor="middle" class="line-label">Hailing Ducks · native</text>
+
+  <text x="1060" y="345" text-anchor="middle" class="station">Validate</text>
+  <text x="1060" y="438" text-anchor="middle" class="detail">coverage + status</text>
+
+  <text x="1190" y="345" text-anchor="middle" class="station">Fine-map</text>
+  <text x="1360" y="195" text-anchor="middle" class="line-label">MultiSuSiE</text>
+  <text x="1360" y="350" text-anchor="middle" class="line-label">SuSiEx</text>
+  <text x="1360" y="588" text-anchor="middle" class="line-label">SuShiE</text>
+
+  <text x="1490" y="432" text-anchor="end" class="station">Publish</text>
+  <text x="1490" y="462" text-anchor="end" class="detail">StudyLocus · H5AD · status</text>
+
+  <!-- Operating principles -->
+  <g transform="translate(72 720)">
+    <rect width="1456" height="112" rx="22" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
+    <text x="32" y="45" class="station">Operational design</text>
+    <text x="32" y="78" class="detail">Scatter per study → regroup per run → scatter per locus set → compare methods on the same validated inputs</text>
+    <g transform="translate(1110 30)">
+      <circle cx="12" cy="12" r="8" fill="#22d3ee"/><text x="30" y="18" class="detail">stable contract</text>
+      <circle cx="12" cy="52" r="8" fill="#f59e0b"/><text x="30" y="58" class="detail">selectable backend</text>
+    </g>
+  </g>
+</svg>

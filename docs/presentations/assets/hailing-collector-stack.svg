@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+  <title id="title">Hailing Ducks and collector integration architecture</title>
+  <desc id="desc">Pan-UK Biobank HailTables and BlockMatrices feed Hailing Ducks native DuckDB queries. Collector adapts native results into the stable Gentropy pairwise LD and status contracts used by Nextflow.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#67e8f9"/></marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity="0.35"/></filter>
+    <style>
+      .title { font: 700 36px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .head { font: 700 24px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .body { font: 500 18px Inter, Arial, sans-serif; fill: #d2dbea; }
+      .tag { font: 700 15px Inter, Arial, sans-serif; fill: #07111f; }
+      .arrow { fill: none; stroke: #67e8f9; stroke-width: 7; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1600" height="760" rx="36" fill="#07111f"/>
+  <text x="70" y="72" class="title">A native data plane behind a stable pipeline contract</text>
+
+  <path class="arrow" d="M385 370 H475"/>
+  <path class="arrow" d="M825 370 H915"/>
+  <path class="arrow" d="M1265 370 H1355"/>
+
+  <g filter="url(#shadow)">
+    <rect x="65" y="150" width="320" height="440" rx="28" fill="#0f172a" stroke="#334155" stroke-width="3"/>
+    <rect x="475" y="150" width="350" height="440" rx="28" fill="#0f172a" stroke="#f59e0b" stroke-width="3"/>
+    <rect x="915" y="150" width="350" height="440" rx="28" fill="#0f172a" stroke="#14b8a6" stroke-width="3"/>
+    <rect x="1355" y="150" width="180" height="440" rx="28" fill="#0f172a" stroke="#8b5cf6" stroke-width="3"/>
+  </g>
+
+  <rect x="95" y="185" width="95" height="30" rx="15" fill="#67e8f9"/><text x="142" y="206" text-anchor="middle" class="tag">SOURCE</text>
+  <text x="95" y="260" class="head">Pan-UKBB</text>
+  <text x="95" y="300" class="body">Native HailTable (.ht)</text>
+  <text x="95" y="332" class="body">Native BlockMatrix (.bm)</text>
+  <text x="95" y="390" class="body">• ancestry-specific panels</text>
+  <text x="95" y="422" class="body">• public S3 resources</text>
+  <text x="95" y="454" class="body">• out-of-sample LD</text>
+
+  <rect x="505" y="185" width="122" height="30" rx="15" fill="#f59e0b"/><text x="566" y="206" text-anchor="middle" class="tag">NATIVE I/O</text>
+  <text x="505" y="260" class="head">Hailing Ducks</text>
+  <text x="505" y="300" class="body">DuckDB extension</text>
+  <text x="505" y="350" class="body">• partition-pruned HT lookup</text>
+  <text x="505" y="382" class="body">• exact + flipped alleles</text>
+  <text x="505" y="414" class="body">• bounded BM block cache</text>
+  <text x="505" y="446" class="body">• only requested LD pairs</text>
+  <rect x="505" y="500" width="180" height="36" rx="18" fill="#f59e0b"/><text x="595" y="524" text-anchor="middle" class="tag">NO JVM · NO SPARK</text>
+
+  <rect x="945" y="185" width="116" height="30" rx="15" fill="#2dd4bf"/><text x="1003" y="206" text-anchor="middle" class="tag">ADAPTER</text>
+  <text x="945" y="260" class="head">Collector</text>
+  <text x="945" y="300" class="body">Python + DuckDB boundary</text>
+  <text x="945" y="350" class="body">• build per-locus requests</text>
+  <text x="945" y="382" class="body">• restore pipeline IDs</text>
+  <text x="945" y="414" class="body">• preserve signed LD</text>
+  <text x="945" y="446" class="body">• add diagonals + ancestry</text>
+  <text x="945" y="478" class="body">• emit coverage/status</text>
+
+  <rect x="1382" y="185" width="126" height="30" rx="15" fill="#a78bfa"/><text x="1445" y="206" text-anchor="middle" class="tag">CONTRACT</text>
+  <text x="1382" y="260" class="head">Nextflow</text>
+  <text x="1382" y="320" class="body">Pairwise LD</text>
+  <text x="1382" y="352" class="body">Parquet</text>
+  <text x="1382" y="410" class="body">Status</text>
+  <text x="1382" y="442" class="body">JSONL</text>
+  <text x="1382" y="500" class="body">Same shape</text>
+  <text x="1382" y="532" class="body">as Gentropy</text>
+
+  <text x="800" y="685" text-anchor="middle" class="body">Hailing Ducks optimises access · Collector owns compatibility · methods stay backend-agnostic</text>
+</svg>

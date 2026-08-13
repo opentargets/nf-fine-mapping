@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+  <title id="title">Hailing Ducks versus Gentropy benchmark</title>
+  <desc id="desc">Bar charts compare wall time, peak memory and output size for the large chromosome 1 locus. Hailing Ducks is faster and smaller but has a 0.125 percent pair coverage gap caused by multiple requested variants at one position.</desc>
+  <defs>
+    <style>
+      .title { font: 700 36px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .metric { font: 700 22px Inter, Arial, sans-serif; fill: #e2e8f0; }
+      .value { font: 700 24px Inter, Arial, sans-serif; fill: #f8fafc; }
+      .body { font: 500 18px Inter, Arial, sans-serif; fill: #d2dbea; }
+      .small { font: 500 17px Inter, Arial, sans-serif; fill: #aab8cc; }
+    </style>
+  </defs>
+  <rect width="1600" height="760" rx="36" fill="#07111f"/>
+  <text x="70" y="70" class="title">Large chr1 locus: equivalent shared values, leaner execution</text>
+
+  <!-- Wall time -->
+  <g transform="translate(70 135)">
+    <text x="0" y="0" class="metric">Wall time</text>
+    <text x="0" y="42" class="body">Hailing Ducks</text><rect x="190" y="20" width="240" height="34" rx="17" fill="#f59e0b"/><text x="445" y="46" class="value">7m48s</text>
+    <text x="0" y="102" class="body">Gentropy</text><rect x="190" y="80" width="420" height="34" rx="17" fill="#8b5cf6"/><text x="625" y="106" class="value">15m15s+</text>
+  </g>
+
+  <!-- Memory -->
+  <g transform="translate(810 135)">
+    <text x="0" y="0" class="metric">Peak RSS</text>
+    <text x="0" y="42" class="body">Hailing Ducks</text><rect x="190" y="20" width="230" height="34" rx="17" fill="#f59e0b"/><text x="435" y="46" class="value">7.84 GiB</text>
+    <text x="0" y="102" class="body">Gentropy</text><rect x="190" y="80" width="380" height="34" rx="17" fill="#8b5cf6"/><text x="585" y="106" class="value">13.4–13.7 GiB</text>
+  </g>
+
+  <!-- Output size -->
+  <g transform="translate(70 350)">
+    <text x="0" y="0" class="metric">Output size</text>
+    <text x="0" y="42" class="body">Hailing Ducks</text><rect x="190" y="20" width="225" height="34" rx="17" fill="#f59e0b"/><text x="430" y="46" class="value">214 MiB</text>
+    <text x="0" y="102" class="body">Gentropy</text><rect x="190" y="80" width="430" height="34" rx="17" fill="#8b5cf6"/><text x="635" y="106" class="value">433 MiB</text>
+  </g>
+
+  <!-- Correctness card -->
+  <g transform="translate(810 320)">
+    <rect width="680" height="270" rx="28" fill="#0f172a" stroke="#22d3ee" stroke-width="3"/>
+    <text x="34" y="50" class="metric">Correctness boundary</text>
+    <text x="34" y="96" class="value">24,249,143 shared pairs</text>
+    <text x="34" y="132" class="body">0 shared-value mismatches · max |Δ| = 0.0</text>
+    <line x1="34" y1="158" x2="646" y2="158" stroke="#334155" stroke-width="2"/>
+    <text x="34" y="202" class="value">30,304 Gentropy-only pairs</text>
+    <text x="34" y="236" class="body">7 variants rejected at duplicated positions</text>
+    <text x="34" y="260" class="small">≈0.125% coverage gap → Gentropy remains the default</text>
+  </g>
+
+  <g transform="translate(70 650)">
+    <rect width="660" height="48" rx="24" fill="#052e2b" stroke="#14b8a6"/>
+    <text x="330" y="31" text-anchor="middle" class="body">Small locus: exact row + value parity across AFR, EAS and NFE</text>
+  </g>
+</svg>

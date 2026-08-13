@@ -17,6 +17,7 @@ disequilibrium resources.
    user-guide/fine-mapping-routes
    benchmarks/hailing-ducks-ld-annotation
    api/collector
+   presentations/index
 
 Indices and tables
 ------------------
