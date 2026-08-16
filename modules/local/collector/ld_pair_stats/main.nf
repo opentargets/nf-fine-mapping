@@ -17,7 +17,7 @@ process COLLECTOR_CHECK_LD_PAIR_STATS {
     file(("status/*.jsonl"), optional: true)
 
     topic:
-    tuple("${task.process}", "collector", "1.0.0") >> "versions"
+    tuple("${task.process}", "collector", "1.1.0") >> "versions"
 
     script:
     """

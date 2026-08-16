@@ -243,6 +243,29 @@ process MANIFEST_VALIDATION_REPORT {
 }
 
 
+process PIPELINE_VERSIONS_REPORT {
+    input:
+    version_records: List<String>
+
+    output:
+    versions = file("pipeline_info/software_versions.jsonl")
+
+    script:
+    def version_lines = version_records.collect { record -> "'${record}'" }.join(' ')
+    """
+    mkdir -p pipeline_info
+    printf '%s\\n' ${version_lines} > pipeline_info/software_versions.jsonl
+    """
+
+    stub:
+    def version_lines = version_records.collect { record -> "'${record}'" }.join(' ')
+    """
+    mkdir -p pipeline_info
+    printf '%s\\n' ${version_lines} > pipeline_info/software_versions.jsonl
+    """
+}
+
+
 workflow MANIFEST_VALIDATION {
     take:
     manifest_rows
@@ -338,9 +361,15 @@ workflow {
         { annotation_row -> annotation_row.fine_mapping_locus_set_path.toString().tokenize('/')[-1].replaceFirst(/\.parquet$/, '') },
     )
     fine_mapping_locus_sets = locus_annotation.map { annotation_row -> annotation_row.fine_mapping_locus_set_path }
-    multi_ancestry_pairwise_ld = locus_annotation.map { annotation_row -> annotation_row.multi_ancestry_pairwise_ld_path }
     ld_pair_stats = locus_annotation.map { annotation_row -> annotation_row.stats_path }
-    FINE_MAPPING(locus_annotation)
+    fine_mapping_out = FINE_MAPPING(locus_annotation)
+
+    ch_versions = channel.topic('versions')
+        .map { record -> groovy.json.JsonOutput.toJson([process: record[0], tool: record[1], version: record[2]]) }
+        .collect()
+        .map { records -> (records.unique()) as List<String> }
+    PIPELINE_VERSIONS_REPORT(ch_versions)
+    pipeline_versions = PIPELINE_VERSIONS_REPORT.out.versions
 
     publish:
     manifest_validation_status = manifest_validation_status
@@ -352,10 +381,12 @@ workflow {
     partial_overlap_loci = partial_overlap_loci
     non_overlap_loci     = non_overlap_loci
     collect_loci_stats   = collect_loci_stats
-    locus_annotation     = locus_annotation
     fine_mapping_locus_sets = fine_mapping_locus_sets
-    multi_ancestry_pairwise_ld = multi_ancestry_pairwise_ld
     ld_pair_stats         = ld_pair_stats
+    multisusie_results    = fine_mapping_out.ch_multisusie
+    susiex_results        = fine_mapping_out.ch_susiex
+    sushie_results        = fine_mapping_out.ch_sushie
+    pipeline_versions     = pipeline_versions
 
     onComplete:
     log.info('Pipeline complete!')
@@ -399,20 +430,28 @@ output {
         path 'status/locus_annotation'
         mode 'copy'
     }
-    locus_annotation {
-        path 'locus_annotation'
-        mode 'copy'
-    }
     fine_mapping_locus_sets {
-        path 'locus_annotation/fine_mapping_locus_sets'
-        mode 'copy'
-    }
-    multi_ancestry_pairwise_ld {
-        path 'locus_annotation/multi_ancestry_pairwise_ld'
+        path 'locus_annotation'
         mode 'copy'
     }
     ld_pair_stats {
         path 'locus_annotation/stats'
+        mode 'copy'
+    }
+    multisusie_results {
+        path 'multisusie'
+        mode 'copy'
+    }
+    susiex_results {
+        path 'susiex'
+        mode 'copy'
+    }
+    sushie_results {
+        path 'sushie'
+        mode 'copy'
+    }
+    pipeline_versions {
+        path 'pipeline_info'
         mode 'copy'
     }
 }

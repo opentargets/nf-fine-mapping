@@ -22,14 +22,14 @@ The root `.nf-core.yml` sets `repository_type: modules` with `org_path: opentarg
 ## Running the Pipeline
 
 ```bash
-# Run with test profile (uses testdata/ directory)
-nextflow run main.nf -profile test
+# Run the canonical local integration profile (uses testdata/manifest.full.tsv)
+make integration-test
 
 # Google Cloud profile
 nextflow run main.nf -profile googleCloud
 
-# Use -profile arm on Apple Silicon alongside docker
-nextflow run main.nf -profile test,arm
+# Run the canonical profile directly
+nextflow run main.nf -profile testFullCollectorHailingDucks
 ```
 
 ## Running Tests
@@ -83,7 +83,7 @@ The **`meta` map** carries `trait`, `sampleSize`, `ancestry` (and sometimes `lea
 ## Configuration
 
 - `conf/base.config` — Docker enabled by default; sets Python env vars
-- `conf/test.config` — Local executor, resource limits (4 CPUs, 15GB, 1h), paths to `testdata/`
+- `conf/test-full-collector-hailing-ducks.config` — Local full-data integration profile for the collector locus breaker and Hailing Ducks LD annotation
 - `conf/google-batch.config` — Google Cloud Batch profile
 
 Key pipeline parameters: `params.manifest`, `params.ld_reference`, `params.output_dir`, `params.chain`, `params.liftover`, `params.r2`.
@@ -108,4 +108,4 @@ All processes follow nf-core DSL2 patterns:
 - Always emit a `versions` channel with `versions.yml`
 - Use `task.ext.args` for extra CLI arguments
 - Include `stub:` block for dry-run testing
-- Process labels map to resource configs in `conf/test.config`
+- Process labels map to resource configs in `conf/test-full-collector-hailing-ducks.config`

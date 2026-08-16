@@ -65,7 +65,7 @@ nextflow_workflow {
                 { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2 },
                 { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2 },
                 { assert topics.versions.every { row -> row[1] == "collector" } },
-                { assert topics.versions.every { row -> row[2] == "1.0.0" } }
+                { assert topics.versions.every { row -> row[2] == "1.1.0" } }
             )
         }
     }
@@ -128,7 +128,7 @@ nextflow_workflow {
                 { assert topics.versions.count { row -> row[1] == "gentropy" } == 2 },
                 { assert topics.versions.count { row -> row[1] == "collector" } == 2 },
                 { assert topics.versions.count { row -> row[2] == "3.4.0-dev.1-ld-pair-extraction-v2" } == 2 },
-                { assert topics.versions.count { row -> row[2] == "1.0.0" } == 2 }
+                { assert topics.versions.count { row -> row[2] == "1.1.0" } == 2 }
             )
         }
     }

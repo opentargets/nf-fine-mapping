@@ -24,7 +24,7 @@ process COLLECTOR_LOCUS_BREAKER {
     )
 
     topic:
-    tuple("${task.process}", "collector", "1.0.0") >> "versions"
+    tuple("${task.process}", "collector", "1.1.0") >> "versions"
 
     script:
     def args = task.ext.args ?: ''

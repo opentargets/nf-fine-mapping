@@ -17,7 +17,7 @@ process COLLECTOR_EMPTY_STATUS {
     file(("status/*.jsonl"), optional: true)
 
     topic:
-    tuple("${task.process}", "collector", "1.0.0") >> "versions"
+    tuple("${task.process}", "collector", "1.1.0") >> "versions"
 
     script:
     def safe_logical_path = logical_path.replaceAll(/[^A-Za-z0-9._-]+/, "__")

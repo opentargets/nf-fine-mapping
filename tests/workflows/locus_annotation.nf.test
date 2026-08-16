@@ -1,6 +1,6 @@
 nextflow_workflow {
 
-    name "Test LOCUS_ANNOTATION Gentropy workflow"
+    name "Test LOCUS_ANNOTATION workflow backends"
     script "../../workflows/locus_annotation/main.nf"
     workflow "LOCUS_ANNOTATION"
     tag "workflow"
@@ -13,6 +13,7 @@ nextflow_workflow {
         when {
             params {
                 output_dir = "$outputDir"
+                ld_annotation_method = "gentropy"
                 ld_pair_stats_stub_emit = true
                 ld_registry = [
                     [ancestry: "nfe", vi_path: "${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
@@ -93,7 +94,7 @@ nextflow_workflow {
                 { assert workflow.out.ch_ld_pair_stats_status.every { path -> new File(path.toString()).text.contains('"fineMappingLocusSetId"') } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 2 },
                 { assert topics.versions.size() == 2 },
-                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.0.0" } },
+                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.1.0" } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 0 },
             )
         }
@@ -103,6 +104,7 @@ nextflow_workflow {
         when {
             params {
                 output_dir = "$outputDir"
+                ld_annotation_method = "gentropy"
             }
             workflow {
                 """

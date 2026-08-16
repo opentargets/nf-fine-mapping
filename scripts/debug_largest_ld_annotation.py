@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Profile one largest chr1 fine-mapping locus set LD extraction.
+"""Profile one largest fine-mapping locus set with the Gentropy LD backend.
 
-Run this inside the Gentropy container.  The default inputs match the local
-chr1 integration profile and select the largest split parquet under
-``testdata/work_gentropy``.  The script deliberately times the Hail stages
-separately so that BlockMatrix extraction can be distinguished from Spark
-startup, index filtering, and output writing.
+Run this inside the Gentropy container. The default inputs select the largest
+fine-mapping locus set parquet under ``testdata/work_full`` and pair it with
+the local full-test Pan-UKBB VariantIndex files so the Gentropy LD path can be
+profiled against canonical pipeline outputs. The script deliberately times the
+Hail stages separately so that BlockMatrix extraction can be distinguished from
+Spark startup, index filtering, and output writing.
 
 Example::
 
@@ -40,15 +41,15 @@ LOGGER = logging.getLogger(__name__)
 
 DEFAULT_LD_REFERENCES = {
     "nfe": {
-        "vi_path": "data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet",
+        "vi_path": "data/reference/panukbb/full_test/UKBB.EUR.aligned.parquet",
         "bm_path": "s3a://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm",
     },
     "eas": {
-        "vi_path": "data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet",
+        "vi_path": "data/reference/panukbb/full_test/UKBB.CSA.aligned.parquet",
         "bm_path": "s3a://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm",
     },
     "afr": {
-        "vi_path": "data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet",
+        "vi_path": "data/reference/panukbb/full_test/UKBB.AFR.aligned.parquet",
         "bm_path": "s3a://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm",
     },
 }
@@ -59,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--locus-root",
         type=Path,
-        default=Path("testdata/work_gentropy"),
+        default=Path("testdata/work_full"),
         help="Root containing fine_mapping_locus_sets parquet files.",
     )
     parser.add_argument(
@@ -70,7 +71,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=Path("testdata/manifest.tsv"),
+        default=Path("testdata/manifest.full.tsv"),
         help="Manifest used to resolve ancestry labels for study IDs.",
     )
     parser.add_argument(
@@ -84,8 +85,8 @@ def parse_args() -> argparse.Namespace:
         help="Output path used only with --stop-after write.",
     )
     parser.add_argument("--spark-uri", default="local[2]")
-    parser.add_argument("--driver-memory", default="12g")
-    parser.add_argument("--executor-memory", default="12g")
+    parser.add_argument("--driver-memory", default="24g")
+    parser.add_argument("--executor-memory", default="24g")
     parser.add_argument(
         "--stop-after",
         choices=("index", "bm_read", "entries_count", "spark_count", "write"),

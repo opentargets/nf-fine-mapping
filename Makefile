@@ -2,8 +2,7 @@
 .PHONY: help \
 	dev \
 	reference-data-filters reference-data-variant-index reference-data-download-panukbb-tables reference-data-panukbb-indexes reference-data-panukbb-chr1 reference-data-all-indexes \
-	run-test run-test-gentropy-local run-test-full \
-	integration-test integration-test-gentropy-local integration-test-full integration-test-all \
+	integration-test integration-test-image \
 	unit-test unit-test-pipeline unit-test-workflows unit-test-all \
 	collector-dev collector-lint collector-test collector-check docs docs-clean collector-docs collector-docs-clean collector-build
 
@@ -74,26 +73,12 @@ reference-data-panukbb-chr1: reference-data-filters reference-data-variant-index
 
 reference-data-all-indexes: reference-data-filters reference-data-variant-index reference-data-download-panukbb-tables reference-data-panukbb-indexes ## Build all local PanUKBB LD-index reference data
 
-integration-test: ## Run the collector Nextflow integration test profile
-	@echo "Running pipeline locally..."
-	@NXF_LOG_FILE=logs/.nextflow.log $(NEXTFLOW) run main.nf -resume -profile test
+integration-test: integration-test-image ## Build Collector 1.1.0 and run the full-data Collector + Hailing Ducks profile
+	@echo "Running full-data collector + Hailing Ducks pipeline locally..."
+	@NXF_LOG_FILE=logs/.nextflow.integration-test-full-collector-hailing-ducks.log $(NEXTFLOW) run main.nf -resume -profile testFullCollectorHailingDucks
 
-integration-test-gentropy-local: ## Run the Gentropy Nextflow integration test profile
-	@echo "Running chr1 Gentropy pipeline locally..."
-	@NXF_LOG_FILE=logs/.nextflow.gentropy-local.log $(NEXTFLOW) run main.nf -resume -profile testGentropyLocal
-
-integration-test-full: ## Run the full-data Nextflow integration test profile
-	@echo "Running full-data pipeline locally..."
-	@NXF_LOG_FILE=logs/.nextflow.full.log $(NEXTFLOW) run main.nf -resume -profile fullTest
-
-integration-test-all: ## Run all Nextflow integration test profiles
-integration-test-all: integration-test integration-test-gentropy-local integration-test-full
-
-run-test: integration-test ## Backward-compatible alias for integration-test
-
-run-test-gentropy-local: integration-test-gentropy-local ## Backward-compatible alias for Gentropy integration test
-
-run-test-full: integration-test-full ## Backward-compatible alias for full-data integration test
+integration-test-image: ## Build the Collector 1.1.0 image required by the integration profile
+	docker build --tag collector:1.1.0 -f tools/collector/Dockerfile tools/collector
 
 unit-test: ## Run all nf-test unit and workflow tests
 	$(NF_TEST) test

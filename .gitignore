@@ -28,7 +28,7 @@ testdata/output/*
 testdata/work/*
 testdata/output_full/*
 testdata/work_full/*
-.omx
+.omx/
 .nf-test
 .nf-test.log
 .worktrees/

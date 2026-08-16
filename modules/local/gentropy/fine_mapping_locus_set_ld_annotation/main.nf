@@ -8,7 +8,7 @@ process GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION {
     label "ld_annotation"
     maxForks 1
 
-    publishDir "${params.output_dir}", mode: 'copy', pattern: 'gentropy_ld_annotation/**/*'
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'gentropy_ld_annotation/**/stats.jsonl'
 
     input:
     tuple val(runId), val(metas), path(fine_mapping_locus_set_path), val(fine_mapping_locus_set_id), path(ld_variant_index_paths), val(ld_block_matrix_paths), val(ancestries)

@@ -10,25 +10,19 @@ The repository Makefile provides the main development and test entry points:
 
    make help
    make integration-test
-   make integration-test-gentropy-local
    make unit-test-all
-   make integration-test-full
 
-The default local profile uses the collector locus-breaker implementation.
-The ``testGentropyLocal`` profile runs the Gentropy implementation against the
-same chr1 test data for comparison.
+The canonical local integration entry point runs the full-data Collector +
+Hailing Ducks profile.
 
 Nextflow profiles
 -----------------
 
 The principal profiles are:
 
-``test``
-   Local chr1 test data using the collector implementation.
-``testGentropyLocal``
-   Local chr1 test data using Gentropy locus breaking.
-``fullTest``
-   Full summary-statistics data for performance and parity checks.
+``testFullCollectorHailingDucks``
+   Full summary-statistics test data using the collector locus breaker and
+   Hailing Ducks LD annotation.
 ``googleCloud`` / ``googleCloudTest``
    Google Cloud execution profiles.
 
@@ -36,7 +30,7 @@ To run a profile directly:
 
 .. code-block:: bash
 
-   nextflow run main.nf -profile test -resume
+   nextflow run main.nf -profile testFullCollectorHailingDucks -resume
 
 The ``-resume`` flag reuses successful tasks when their process inputs and
 commands have not changed.
@@ -76,19 +70,24 @@ suite on pull requests.
 Hailing Ducks LD validation
 ---------------------------
 
-Select the native DuckDB backend with:
+The canonical local integration profile already selects the native DuckDB
+backend:
 
 .. code-block:: bash
 
-   nextflow run main.nf \
-     -profile test \
-     --ld_annotation_method hailing_ducks \
-     --collector_container collector:hailing-ducks-dev \
-     -resume
+   make integration-test
 
-The collector image pins ``ghcr.io/project-defiant/hailing-ducks:v1.1.0`` as
-its native DuckDB base. The ordinary test suite remains network-independent.
-An explicit smoke target checks the public Pan-UKBB hg38 HT, BlockMatrix,
+To run the same profile directly:
+
+.. code-block:: bash
+
+   nextflow run main.nf -profile testFullCollectorHailingDucks -resume
+
+The integration target builds and runs the local ``collector:1.1.0`` image for
+collector-labelled processes and keeps the ordinary stub test suite
+network-independent. Pairwise LD files remain transient work artifacts for
+fine-mapping and are not published; only the compact LD statistics are retained.
+An explicit smoke target still checks the public Pan-UKBB hg38 HT, BlockMatrix,
 indel resolution, and signed LD extraction:
 
 .. code-block:: bash

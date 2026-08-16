@@ -6,14 +6,15 @@ nextflow_pipeline {
     tag "stub"
     options "-stub-run"
 
-    test("runs collector locus breaker and locus collection on chr1 test data") {
+    test("runs collector locus breaker, collection, and Hailing Ducks LD annotation on full test data") {
         tag "collector"
 
         when {
             params {
-                manifest = new File("testdata/manifest.tsv").canonicalPath
+                manifest = new File("testdata/manifest.full.tsv").canonicalPath
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
+                ld_annotation_method = "hailing_ducks"
             }
         }
 
@@ -22,20 +23,21 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 60 },
+                { assert workflow.trace.succeeded().size() == 61 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 8 }
             )
         }
     }
 
-    test("runs gentropy locus breaker and locus collection on chr1 test data") {
+    test("runs gentropy locus breaker and Gentropy LD annotation on chr1 test data") {
         tag "gentropy"
 
         when {
@@ -44,6 +46,12 @@ nextflow_pipeline {
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
                 locus_breaker_method = "gentropy"
+                ld_annotation_method = "gentropy"
+                ld_registry = [
+                    [ancestry: "nfe", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
+                    [ancestry: "eas", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
+                    [ancestry: "afr", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
+                ]
             }
         }
 
@@ -53,12 +61,13 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 60 },
+                { assert workflow.trace.succeeded().size() == 61 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 8 }
@@ -74,6 +83,7 @@ nextflow_pipeline {
                 manifest = new File("testdata/manifest.tsv").canonicalPath
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
+                ld_annotation_method = "hailing_ducks"
                 ld_pair_stats_stub_emit = true
                 ld_pair_stats_stub_empty_locus_set_ids = ["set-a"]
             }
@@ -84,7 +94,8 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 8 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 4 },
                 { assert new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-b.parquet").exists() },
@@ -102,10 +113,11 @@ nextflow_pipeline {
                 manifest = new File("testdata/manifest.invalid_run.tsv").canonicalPath
                 manifest_base_dir = new File(".").canonicalPath
                 output_dir = "$outputDir"
+                ld_annotation_method = "hailing_ducks"
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
-                    [ancestry: "eas", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
-                    [ancestry: "afr", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
+                    [ancestry: "nfe", ht_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.variant.b38.ht", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
+                    [ancestry: "eas", ht_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.variant.b38.ht", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
+                    [ancestry: "afr", ht_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.variant.b38.ht", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
                 ]
             }
         }
@@ -116,13 +128,14 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 12 },
+                { assert workflow.trace.succeeded().size() == 13 },
                 { assert succeededTasks.count { task -> task.startsWith("MANIFEST_VALIDATION:MANIFEST_VALIDATION_REPORT") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 2 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 2 },
                 { assert outputText.contains("RUN_INVALID.jsonl") },
                 { assert outputText.contains("RUN_VALID") },

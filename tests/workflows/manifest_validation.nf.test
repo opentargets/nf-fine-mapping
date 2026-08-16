@@ -13,6 +13,7 @@ nextflow_workflow {
     test("passes through supported rows without emitting status") {
         when {
             params {
+                ld_annotation_method = "gentropy"
                 ld_registry = [
                     [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
                     [ancestry: "eas", vi_path: "vi://eas", bm_path: "bm://eas"],
@@ -63,6 +64,7 @@ nextflow_workflow {
     test("emits one JSONL status file per invalid run and preserves supported rows") {
         when {
             params {
+                ld_annotation_method = "gentropy"
                 ld_registry = [
                     [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
                 ]
@@ -138,6 +140,7 @@ nextflow_workflow {
     test("fails when ld_registry is missing") {
         when {
             params {
+                ld_annotation_method = "gentropy"
                 ld_registry = null
             }
             workflow {
@@ -177,6 +180,7 @@ nextflow_workflow {
     test("fails when ld_registry is empty") {
         when {
             params {
+                ld_annotation_method = "gentropy"
                 ld_registry = []
             }
             workflow {
@@ -216,6 +220,7 @@ nextflow_workflow {
     test("fails when ld_registry contains duplicate ancestry labels") {
         when {
             params {
+                ld_annotation_method = "gentropy"
                 ld_registry = [
                     [ancestry: "nfe", vi_path: "vi://nfe-1", bm_path: "bm://nfe-1"],
                     [ancestry: "nfe", vi_path: "vi://nfe-2", bm_path: "bm://nfe-2"],

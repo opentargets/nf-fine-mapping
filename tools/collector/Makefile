@@ -1,6 +1,6 @@
 .PHONY: help dev lint test hailing-s3-smoke docs docs-clean build clean
 
-VERSION ?= 1.0.0
+VERSION ?= 1.1.0
 REGISTRY ?= ghcr.io/opentargets
 HAILING_DUCKS_IMAGE ?= collector:hailing-ducks-dev
 HAILING_DUCKS_S3_HT_PATH ?= s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.variant.b38.ht

@@ -8,7 +8,7 @@ process HAILING_DUCKS_LD_ANNOTATION {
     label "collector"
     label "ld_annotation"
 
-    publishDir "${params.output_dir}", mode: 'copy', pattern: 'hailing_ducks_ld_annotation/**/*'
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'hailing_ducks_ld_annotation/**/stats.jsonl'
 
     input:
     tuple(
@@ -37,7 +37,7 @@ process HAILING_DUCKS_LD_ANNOTATION {
     )
 
     topic:
-    tuple("${task.process}", "collector", "1.0.0") >> "versions"
+    tuple("${task.process}", "collector", "1.1.0") >> "versions"
 
     script:
     def args = task.ext.args ?: ''

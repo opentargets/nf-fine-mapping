@@ -85,7 +85,7 @@ nextflow_workflow {
                 { assert new File(workflow.out.ch_locus_collection_status[0].toString()).text.contains('"runId":"RUN_A"') },
                 { assert topics.versions.size() == 3 },
                 { assert topics.versions.every { row -> row[1] == "collector" } },
-                { assert topics.versions.every { row -> row[2] == "1.0.0" } },
+                { assert topics.versions.every { row -> row[2] == "1.1.0" } },
                 { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } },
                 { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:SPLIT_FINEMAPPING_LOCI") } },
                 { assert topics.versions.collect { row -> row[0] }.any { value -> value.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } }
