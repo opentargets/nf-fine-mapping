@@ -8,8 +8,7 @@ process MULTISUSIE_FINE_MAPPING {
     label "multisusie"
     container params.multisusie_container ?: 'multisusie:latest'
     containerOptions '--entrypoint=""'
-    maxForks 1
-    publishDir "${params.output_dir}/multisusie", mode: 'copy', pattern: 'multisusie/**/*', saveAs: { filename -> "${runId}/${fine_mapping_locus_set_id}/${filename}" }
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'multisusie/*', saveAs: { filename -> "multisusie/${runId}/${fine_mapping_locus_set_id}/${filename.replace('multisusie/', '')}" }
 
     input:
     tuple(

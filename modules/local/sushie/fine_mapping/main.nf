@@ -8,7 +8,7 @@ process SUSHIE_FINE_MAPPING {
     label "sushie"
     container params.sushie_container ?: 'sushie:latest'
     containerOptions '--entrypoint=""'
-    publishDir "${params.output_dir}/sushie", mode: 'copy', pattern: 'sushie/**/*', saveAs: { filename -> "${runId}/${fine_mapping_locus_set_id}/${filename}" }
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'sushie/*', saveAs: { filename -> "sushie/${runId}/${fine_mapping_locus_set_id}/${filename.replace('sushie/', '')}" }
 
     input:
     tuple(

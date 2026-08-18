@@ -8,7 +8,7 @@ process SUSIEX_FINE_MAPPING {
     label "susiex"
     container params.susiex_container ?: 'susiex:latest'
     containerOptions '--entrypoint=""'
-    publishDir "${params.output_dir}/susiex", mode: 'copy', pattern: 'susiex/**/*', saveAs: { filename -> "${runId}/${fine_mapping_locus_set_id}/${filename}" }
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'susiex/*', saveAs: { filename -> "susiex/${runId}/${fine_mapping_locus_set_id}/${filename.replace('susiex/', '')}" }
 
     input:
     tuple(
