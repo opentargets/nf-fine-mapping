@@ -44,6 +44,15 @@ uv run python scripts/compare_locus_breaker_outputs.py \
 
 The comparison normalizes Gentropy hive partitions into a real `studyLocusId` column, sorts top-level rows, sorts nested `locus` arrays, and compares logical values instead of Parquet metadata. It is strict by default; use `--float-abs-tolerance 1e-6` to ignore tiny FLOAT representation differences while still checking row membership and non-float values exactly.
 
+## Canonical region collection
+
+`collector collect_canonical_regions` receives aligned repeated
+`--locus_breaker_result`, `--ancestry`, and `--summary_statistics` options and
+writes a bounded canonical-region parquet dataset. This first slice validates
+the aligned tuple contract, sorts tuples deterministically by `studyId`, and
+merges inclusive source-locus overlaps up to `--max_region_span_bp`
+(default `3000000`).
+
 ## Hailing Ducks LD annotation
 
 The production collector image includes the native Hailing Ducks v1.1.0

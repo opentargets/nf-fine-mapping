@@ -116,6 +116,14 @@ COLLECTED_LOCUS_STRUCT_SCHEMA = StructSchema(
     )
 )
 
+CANONICAL_REGION_INPUT_LOCUS_SCHEMA = StructSchema(
+    fields=(
+        SchemaField(name="studyId", duckdb_type="VARCHAR"),
+        SchemaField(name="studyLocusId", duckdb_type="VARCHAR"),
+        SchemaField(name="ancestry", duckdb_type="VARCHAR"),
+    )
+)
+
 STUDY_LOCUS_SCHEMA = DatasetSchema(
     fields=(
         DatasetField(name="studyLocusId", duckdb_type="VARCHAR", nullable=False),
@@ -146,5 +154,46 @@ COLLECTED_LOCUS_SCHEMA = DatasetSchema(
         DatasetField(name="locusEnd", duckdb_type="INTEGER"),
         DatasetField(name="qualityControls", duckdb_type="VARCHAR[]"),
         DatasetField(name="locus", duckdb_type=ListSchema(item_schema=COLLECTED_LOCUS_STRUCT_SCHEMA)),
+    )
+)
+
+CANONICAL_INPUT_LOCUS_SCHEMA = StructSchema(
+    fields=(
+        SchemaField(name="studyId", duckdb_type="VARCHAR"),
+        SchemaField(name="studyLocusId", duckdb_type="VARCHAR"),
+    )
+)
+
+CANONICAL_COMPONENT_SCHEMA = StructSchema(
+    fields=(
+        SchemaField(name="studyId", duckdb_type="VARCHAR"),
+        SchemaField(name="studyLocusId", duckdb_type="VARCHAR"),
+        SchemaField(name="nVariants", duckdb_type="INTEGER"),
+        SchemaField(name="nVariantsBelowMafCutoff", duckdb_type="INTEGER"),
+        SchemaField(name="qualityControls", duckdb_type="VARCHAR[]"),
+    )
+)
+
+CANONICAL_REGION_STATS_SCHEMA = DatasetSchema(
+    fields=(
+        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="chromosome", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="locusStart", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="locusEnd", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="nVariants", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="nVariantsAboveMafCutoff", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="inputLoci", duckdb_type=ListSchema(item_schema=CANONICAL_INPUT_LOCUS_SCHEMA), nullable=False),
+        DatasetField(name="components", duckdb_type=ListSchema(item_schema=CANONICAL_COMPONENT_SCHEMA), nullable=False),
+    )
+)
+
+CANONICAL_REGION_SCHEMA = DatasetSchema(
+    fields=(
+        DatasetField(name="canonicalRegionId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="chromosome", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="regionStart", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="regionEnd", duckdb_type="INTEGER", nullable=False),
+        DatasetField(name="qualityControls", duckdb_type="VARCHAR[]", nullable=False),
+        DatasetField(name="inputLoci", duckdb_type=ListSchema(item_schema=CANONICAL_REGION_INPUT_LOCUS_SCHEMA), nullable=False),
     )
 )

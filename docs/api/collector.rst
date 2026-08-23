@@ -22,6 +22,12 @@ Locus collection
 .. automodule:: collector.collect_loci
    :members: CollectFineMappingLociConfig, run_collect_finemapping_loci
 
+Canonical regions
+-----------------
+
+.. automodule:: collector.canonical_regions
+   :members: CollectCanonicalRegionsConfig, run_collect_canonical_regions
+
 Schema contracts
 ----------------
 
