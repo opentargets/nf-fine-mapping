@@ -58,6 +58,51 @@ def _write_two_study_locus_set(path: Path) -> None:
         )
 
 
+def _write_multi_ancestry_locus_set(path: Path) -> None:
+    with duckdb.connect() as con:
+        con.execute(
+            f"""
+            COPY (
+                SELECT * FROM (VALUES
+                    (
+                        'set-1',
+                        'study-locus-1',
+                        'study-1',
+                        '1',
+                        100,
+                        200,
+                        [
+                            struct_pack(variantId := '1_100_A_G'),
+                            struct_pack(variantId := '1_150_A_AT')
+                        ]
+                    ),
+                    (
+                        'set-1',
+                        'study-locus-2',
+                        'study-2',
+                        '1',
+                        100,
+                        200,
+                        [
+                            struct_pack(variantId := '1_150_A_AT'),
+                            struct_pack(variantId := '1_180_G_C'),
+                            struct_pack(variantId := '1_200_C_T')
+                        ]
+                    )
+                ) AS loci(
+                    fineMappingLocusSetId,
+                    studyLocusId,
+                    studyId,
+                    chromosome,
+                    locusStart,
+                    locusEnd,
+                    locus
+                )
+            ) TO '{path}' (FORMAT PARQUET)
+            """
+        )
+
+
 def test_prepare_requests_uses_native_chr_ids_and_preserves_original_ids(tmp_path: Path) -> None:
     input_path = tmp_path / "locus_set.parquet"
     requests_path = tmp_path / "requests.parquet"
@@ -65,37 +110,77 @@ def test_prepare_requests_uses_native_chr_ids_and_preserves_original_ids(tmp_pat
     _write_locus_set(input_path)
 
     with duckdb.connect() as con:
-        _prepare_request_files(con, input_path, requests_path, mapping_path, "chr", ("study-1",))
+        _prepare_request_files(con, input_path, requests_path, mapping_path, "chr")
         request = con.execute(f"SELECT * FROM read_parquet('{requests_path}')").fetchone()
         mapping = con.execute(f"SELECT * FROM read_parquet('{mapping_path}') ORDER BY original_variant_id").fetchall()
 
     assert request == (
-        "study-locus-1",
+        "set-1",
         "chr1:100-200",
         ["chr1_100_A_G", "chr1_150_A_AT", "chr1_175_N_A", "chr1_180_G_C", "chr1_200_C_T"],
     )
     assert mapping == [
-        ("study-locus-1", "chr1_100_A_G", "1_100_A_G"),
-        ("study-locus-1", "chr1_150_A_AT", "1_150_A_AT"),
-        ("study-locus-1", "chr1_175_N_A", "1_175_N_A"),
-        ("study-locus-1", "chr1_180_G_C", "1_180_G_C"),
-        ("study-locus-1", "chr1_200_C_T", "1_200_C_T"),
+        ("set-1", "chr1_100_A_G", "1_100_A_G"),
+        ("set-1", "chr1_150_A_AT", "1_150_A_AT"),
+        ("set-1", "chr1_175_N_A", "1_175_N_A"),
+        ("set-1", "chr1_180_G_C", "1_180_G_C"),
+        ("set-1", "chr1_200_C_T", "1_200_C_T"),
     ]
 
 
-def test_prepare_requests_filters_study_loci_to_the_reference_ancestry(tmp_path: Path) -> None:
+def test_prepare_requests_keeps_study_locus_ids_when_no_locus_set_id_is_present(
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "locus_set.parquet"
     requests_path = tmp_path / "requests.parquet"
     mapping_path = tmp_path / "mapping.parquet"
     _write_two_study_locus_set(input_path)
 
     with duckdb.connect() as con:
-        _prepare_request_files(con, input_path, requests_path, mapping_path, "chr", ("study-2",))
-        request_ids = con.execute(f"SELECT locus_id FROM read_parquet('{requests_path}')").fetchall()
-        mapped_ids = con.execute(f"SELECT original_variant_id FROM read_parquet('{mapping_path}')").fetchall()
+        _prepare_request_files(con, input_path, requests_path, mapping_path, "chr")
+        request_ids = con.execute(
+            f"SELECT locus_id FROM read_parquet('{requests_path}') ORDER BY locus_id"
+        ).fetchall()
+        mapped_ids = con.execute(
+            f"SELECT original_variant_id FROM read_parquet('{mapping_path}') ORDER BY original_variant_id"
+        ).fetchall()
 
-    assert request_ids == [("study-locus-2",)]
-    assert mapped_ids == [("1_300_C_T",)]
+    assert request_ids == [("study-locus-1",), ("study-locus-2",)]
+    assert mapped_ids == [("1_100_A_G",), ("1_300_C_T",)]
+
+
+def test_prepare_requests_uses_full_locus_set_union_for_each_requested_ancestry(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "locus_set.parquet"
+    requests_path = tmp_path / "requests.parquet"
+    mapping_path = tmp_path / "mapping.parquet"
+    _write_multi_ancestry_locus_set(input_path)
+
+    with duckdb.connect() as con:
+        _prepare_request_files(con, input_path, requests_path, mapping_path, "chr")
+        request = con.execute(
+            f"SELECT locus_id, locus, variant_ids FROM read_parquet('{requests_path}')"
+        ).fetchone()
+        mapping = con.execute(
+            f"""
+            SELECT locus_id, native_variant_id, original_variant_id
+            FROM read_parquet('{mapping_path}')
+            ORDER BY native_variant_id
+            """
+        ).fetchall()
+
+    assert request == (
+        "set-1",
+        "chr1:100-200",
+        ["chr1_100_A_G", "chr1_150_A_AT", "chr1_180_G_C", "chr1_200_C_T"],
+    )
+    assert mapping == [
+        ("set-1", "chr1_100_A_G", "1_100_A_G"),
+        ("set-1", "chr1_150_A_AT", "1_150_A_AT"),
+        ("set-1", "chr1_180_G_C", "1_180_G_C"),
+        ("set-1", "chr1_200_C_T", "1_200_C_T"),
+    ]
 
 
 def test_materialize_passes_cache_size_as_named_hailing_ducks_argument(
@@ -144,10 +229,10 @@ def test_run_hailing_ld_adapts_pairs_adds_diagonals_and_writes_stats(tmp_path: P
                 f"""
                 COPY (
                     SELECT * FROM (VALUES
-                        ('study-locus-1', 10::BIGINT, 15::BIGINT, 0.10::DOUBLE),
-                        ('study-locus-1', 10::BIGINT, 20::BIGINT, -0.25::DOUBLE),
-                        ('study-locus-1', 10::BIGINT, 20::BIGINT, -0.25::DOUBLE),
-                        ('study-locus-1', 15::BIGINT, 20::BIGINT, -0.20::DOUBLE)
+                        ('set-1', 10::BIGINT, 15::BIGINT, 0.10::DOUBLE),
+                        ('set-1', 10::BIGINT, 20::BIGINT, -0.25::DOUBLE),
+                        ('set-1', 10::BIGINT, 20::BIGINT, -0.25::DOUBLE),
+                        ('set-1', 15::BIGINT, 20::BIGINT, -0.20::DOUBLE)
                     ) AS t(locus_id, idx_i, idx_j, r)
                 ) TO '{ld_path}' (FORMAT PARQUET)
                 """
@@ -156,11 +241,11 @@ def test_run_hailing_ld_adapts_pairs_adds_diagonals_and_writes_stats(tmp_path: P
                 f"""
                 COPY (
                     SELECT * FROM (VALUES
-                        ('study-locus-1', 'chr1_100_A_G', 10::BIGINT, 1, 0),
-                        ('study-locus-1', 'chr1_150_A_AT', 15::BIGINT, 1, 0),
-                        ('study-locus-1', 'chr1_175_N_A', NULL::BIGINT, NULL::INTEGER, 5),
-                        ('study-locus-1', 'chr1_180_G_C', NULL::BIGINT, NULL::INTEGER, 2),
-                        ('study-locus-1', 'chr1_200_C_T', 20::BIGINT, -1, 1)
+                        ('set-1', 'chr1_100_A_G', 10::BIGINT, 1, 0),
+                        ('set-1', 'chr1_150_A_AT', 15::BIGINT, 1, 0),
+                        ('set-1', 'chr1_175_N_A', NULL::BIGINT, NULL::INTEGER, 5),
+                        ('set-1', 'chr1_180_G_C', NULL::BIGINT, NULL::INTEGER, 2),
+                        ('set-1', 'chr1_200_C_T', 20::BIGINT, -1, 1)
                     ) AS t(locus_id, requested_variant_id, idx, allele_order, status_code)
                 ) TO '{status_path}' (FORMAT PARQUET)
                 """
@@ -263,8 +348,8 @@ def test_run_hailing_ld_rejects_conflicting_duplicate_pairs(tmp_path: Path) -> N
             f"""
             COPY (
                 SELECT * FROM (VALUES
-                    ('study-locus-1', 10::BIGINT, 20::BIGINT, 0.25::DOUBLE),
-                    ('study-locus-1', 10::BIGINT, 20::BIGINT, 0.50::DOUBLE)
+                    ('set-1', 10::BIGINT, 20::BIGINT, 0.25::DOUBLE),
+                    ('set-1', 10::BIGINT, 20::BIGINT, 0.50::DOUBLE)
                 ) AS t(locus_id, idx_i, idx_j, r)
             ) TO '{ld_path}' (FORMAT PARQUET)
             """
@@ -273,8 +358,8 @@ def test_run_hailing_ld_rejects_conflicting_duplicate_pairs(tmp_path: Path) -> N
             f"""
             COPY (
                 SELECT * FROM (VALUES
-                    ('study-locus-1', 'chr1_100_A_G', 10::BIGINT, 1, 0),
-                    ('study-locus-1', 'chr1_200_C_T', 20::BIGINT, -1, 1)
+                    ('set-1', 'chr1_100_A_G', 10::BIGINT, 1, 0),
+                    ('set-1', 'chr1_200_C_T', 20::BIGINT, -1, 1)
                 ) AS t(locus_id, requested_variant_id, idx, allele_order, status_code)
             ) TO '{status_path}' (FORMAT PARQUET)
             """
