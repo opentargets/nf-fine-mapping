@@ -8,7 +8,7 @@ LOCUS_COLLECTION_WORKFLOW = REPO_ROOT / "workflows" / "locus_collection" / "main
 LOCUS_ANNOTATION_WORKFLOW = REPO_ROOT / "workflows" / "locus_annotation" / "main.nf"
 COLLECTOR_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "locus_breaker" / "main.nf"
 GENTROPY_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "locus_breaker_clumping" / "main.nf"
-COLLECT_FINEMAPPING_LOCI_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "collect_finemapping_loci" / "main.nf"
+COLLECT_CANONICAL_REGIONS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "collect_canonical_regions" / "main.nf"
 EMPTY_STATUS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "empty_status" / "main.nf"
 GENTROPY_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "fine_mapping_locus_set_ld_annotation" / "main.nf"
 HAILING_DUCKS_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "hailing_ld" / "main.nf"
@@ -59,36 +59,34 @@ def test_locus_breaker_workflow_does_not_collect_loci():
     assert "ch_locus2" not in workflow
 
 
-def test_locus_collection_workflow_wires_collect_finemapping_loci_after_clumping():
+def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumping():
     workflow = LOCUS_COLLECTION_WORKFLOW.read_text()
-    module = COLLECT_FINEMAPPING_LOCI_MODULE.read_text()
+    module = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
     validation_module = EMPTY_STATUS_MODULE.read_text()
 
     assert "workflow LOCUS_COLLECTION" in workflow
-    assert "include { COLLECT_FINEMAPPING_LOCI }" in workflow
+    assert "include { COLLECT_CANONICAL_REGIONS }" in workflow
     assert "include { COLLECTOR_EMPTY_STATUS }" in workflow
-    assert "COLLECT_FINEMAPPING_LOCI(ch_collect_finemapping_loci_input)" in workflow
+    assert "COLLECT_CANONICAL_REGIONS(ch_input)" in workflow
     assert "COLLECTOR_EMPTY_STATUS(ch_collection_status_input)" in workflow
-    assert "process COLLECT_FINEMAPPING_LOCI" in module
+    assert "process COLLECT_CANONICAL_REGIONS" in module
     assert "process COLLECTOR_EMPTY_STATUS" in validation_module
     assert ".groupTuple(by: 0)" in workflow
-    assert "collector collect_finemapping_loci" in module
+    assert "collector collect_canonical_regions" in module
     assert "collector empty_status" in validation_module
     assert 'tuple("${task.process}", "collector", "1.1.0") >> "versions"' in module
     assert 'tuple("${task.process}", "collector", "1.1.0") >> "versions"' in validation_module
-    assert "--full_output collected_loci/full_overlaps/${prefix}.parquet" in module
-    assert "--partial_output collected_loci/partial_overlaps/${prefix}.parquet" in module
-    assert "--non_overlap_output collected_loci/non_overlaps/${prefix}.parquet" in module
-    assert "--stats_output collected_loci/stats/${prefix}.json" in module
+    assert "--run_id '${runId}'" in module
+    assert "--fine_mapping_locus_set_output_dir fine_mapping_locus_sets" in module
+    assert "--stats_parquet_output stats.parquet" in module
+    assert "--stats_json_output stats.json" in module
     assert "--run_id ${runId}" in validation_module
     assert "--path ${dataset_path}" in validation_module
     assert '"LOCUS_COLLECTION"' in workflow
-    assert "tuple(runId: String, metas: List, study_locus_paths: List<Path>)" in module
+    assert "tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)" in module
     assert "tuple(runId: String, logical_path: String, validation_stage: String, dataset_path: Path)" in validation_module
-    assert 'full_overlap = tuple(runId, metas, file("collected_loci/full_overlaps/*.parquet"))' in module
-    assert 'partial_overlap = tuple(runId, metas, file("collected_loci/partial_overlaps/*.parquet"))' in module
-    assert 'non_overlap = tuple(runId, metas, file("collected_loci/non_overlaps/*.parquet"))' in module
-    assert 'stats = tuple(runId, metas, file("collected_loci/stats/*.json"))' in module
+    assert 'loci = tuple(runId, metas, file("fine_mapping_locus_sets", type: \'dir\'))' in module
+    assert 'stats = tuple(runId, metas, file("stats.parquet"), file("stats.json"))' in module
     assert 'file(("status/*.jsonl"), optional: true' in validation_module
     assert "ch_locus_collection_status = ch_collection_status" in workflow
     assert ".filter { status_path -> status_path != null }" in workflow
@@ -281,10 +279,10 @@ def test_nf_test_pipeline_verifies_explicit_collector_hailing_and_gentropy_step_
     assert 'manifest = new File("testdata/manifest.full.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest = new File("testdata/manifest.tsv").canonicalPath' in nf_test_pipeline
     assert 'manifest_base_dir = new File(".").canonicalPath' in nf_test_pipeline
-    assert "workflow.trace.succeeded().size() == 61" in nf_test_pipeline
+    assert "workflow.trace.succeeded().size() == 57" in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12' in nf_test_pipeline
-    assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 4' in nf_test_pipeline
+    assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_CANONICAL_REGIONS") } == 4' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 8' in nf_test_pipeline
     assert 'task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 0' in nf_test_pipeline
@@ -313,7 +311,7 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert "${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet" in locus_collection_test
     assert 'task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2' in locus_breaker_test
     assert 'task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2' in locus_breaker_test
-    assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") } == 1' in locus_collection_test
+    assert 'task.startsWith("LOCUS_COLLECTION:COLLECT_CANONICAL_REGIONS") } == 1' in locus_collection_test
     assert 'task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1' in locus_collection_test
     assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2' in locus_annotation_test
     assert 'task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 1' in locus_annotation_test
@@ -328,7 +326,7 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'topics "versions"' in locus_annotation_test
     assert (
         "topics.versions.collect { row -> row[0] }.any { value -> "
-        'value.startsWith("LOCUS_COLLECTION:COLLECT_FINEMAPPING_LOCI") }' in locus_collection_test
+        'value.startsWith("LOCUS_COLLECTION:COLLECT_CANONICAL_REGIONS") }' in locus_collection_test
     )
     assert (
         "topics.versions.collect { row -> row[0] }.any { value -> "
@@ -337,8 +335,8 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert 'task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION")' in locus_annotation_test
     assert 'task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION")' in locus_annotation_test
     assert "workflow.out.ch_full_overlap_loci.size() == 2" in locus_collection_test
-    assert "workflow.out.ch_partial_overlap_loci.size() == 1" in locus_collection_test
-    assert "workflow.out.ch_non_overlap_loci.size() == 1" in locus_collection_test
+    assert "workflow.out.ch_partial_overlap_loci.size() == 0" in locus_collection_test
+    assert "workflow.out.ch_non_overlap_loci.size() == 0" in locus_collection_test
     assert "workflow.out.ch_collect_loci_stats.size() == 1" in locus_collection_test
     assert "workflow.out.ch_locus_collection_status.size() == 1" in locus_collection_test
     assert 'meta.studyId } == ["STUDY_A", "STUDY_B", "STUDY_C"]' in locus_collection_test

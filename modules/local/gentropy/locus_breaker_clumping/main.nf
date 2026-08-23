@@ -24,6 +24,7 @@ process GENTROPY_LOCUS_BREAKER_CLUMPING {
     output:
     record(
         meta: meta,
+        summary_statistics_path: summary_statistics_path,
         study_locus_path: file("gentropy_locus_breaker_clumped_study_locus/*", type: 'dir'),
     )
 
