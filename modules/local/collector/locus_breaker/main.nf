@@ -20,6 +20,7 @@ process COLLECTOR_LOCUS_BREAKER {
     output:
     record(
         meta: meta,
+        summary_statistics_path: summary_statistics_path,
         study_locus_path: file("locus_breaker_clumped_study_locus/*.parquet"),
     )
 
