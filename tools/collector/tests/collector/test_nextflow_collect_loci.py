@@ -83,7 +83,10 @@ def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumpin
     assert "--run_id ${runId}" in validation_module
     assert "--path ${dataset_path}" in validation_module
     assert '"LOCUS_COLLECTION"' in workflow
-    assert "tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)" in module
+    assert (
+        "tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, "
+        "summary_statistics_paths: List<Path>)" in module
+    )
     assert "tuple(runId: String, logical_path: String, validation_stage: String, dataset_path: Path)" in validation_module
     assert 'loci = tuple(runId, metas, file("fine_mapping_locus_sets", type: \'dir\'))' in module
     assert 'stats = tuple(runId, metas, file("stats.parquet"), file("stats.json"))' in module
@@ -339,7 +342,10 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert "workflow.out.ch_non_overlap_loci.size() == 0" in locus_collection_test
     assert "workflow.out.ch_collect_loci_stats.size() == 1" in locus_collection_test
     assert "workflow.out.ch_locus_collection_status.size() == 1" in locus_collection_test
-    assert 'meta.studyId } == ["STUDY_A", "STUDY_B", "STUDY_C"]' in locus_collection_test
+    assert (
+        'workflow.out.ch_full_overlap_loci.collect { r -> r.metas.collect { meta -> meta.studyId } }.flatten() '
+        '== ["STUDY_A", "STUDY_B", "STUDY_C", "STUDY_A", "STUDY_B", "STUDY_C"]' in locus_collection_test
+    )
     assert "workflow.out.ch_locus_annotation.size() == 2" in locus_annotation_test
     assert 'workflow.out.ch_locus_annotation[0].runId == "RUN_A"' in locus_annotation_test
 
@@ -356,31 +362,31 @@ def test_locus_breaker_clumping_passes_profile_spark_settings_to_gentropy():
 def test_local_modules_support_process_ext_args():
     collector_locus_breaker = COLLECTOR_LOCUS_BREAKER_MODULE.read_text()
     gentropy_locus_breaker = GENTROPY_LOCUS_BREAKER_MODULE.read_text()
-    collect_finemapping_loci = COLLECT_FINEMAPPING_LOCI_MODULE.read_text()
+    collect_canonical_regions = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
     gentropy_ld_annotation = GENTROPY_LD_ANNOTATION_MODULE.read_text()
 
     assert "def args = task.ext.args ?: ''" in collector_locus_breaker
     assert "def args = task.ext.args ?: ''" in gentropy_locus_breaker
-    assert "def args = task.ext.args ?: ''" in collect_finemapping_loci
+    assert "def args = task.ext.args ?: ''" in collect_canonical_regions
     assert "def args = task.ext.args ?: ''" in gentropy_ld_annotation
     assert "        ${args}" in collector_locus_breaker
     assert "        ${args}" in gentropy_locus_breaker
-    assert "        ${args}" in collect_finemapping_loci
+    assert "        ${args}" in collect_canonical_regions
     assert "        ${args}" in gentropy_ld_annotation
 
 
 def test_local_modules_support_process_ext_prefix():
     collector_locus_breaker = COLLECTOR_LOCUS_BREAKER_MODULE.read_text()
     gentropy_locus_breaker = GENTROPY_LOCUS_BREAKER_MODULE.read_text()
-    collect_finemapping_loci = COLLECT_FINEMAPPING_LOCI_MODULE.read_text()
+    collect_canonical_regions = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
     gentropy_ld_annotation = GENTROPY_LD_ANNOTATION_MODULE.read_text()
 
     assert "def prefix = task.ext.prefix ?: meta.studyId" in collector_locus_breaker
     assert "def prefix = task.ext.prefix ?: meta.studyId" in gentropy_locus_breaker
-    assert "def prefix = task.ext.prefix ?: runId" in collect_finemapping_loci
+    assert "--run_id '${runId}'" in collect_canonical_regions
     assert 'def prefix = task.ext.prefix ? "${task.ext.prefix}_${locus_set_id}" : "${runId}_${locus_set_id}"' in gentropy_ld_annotation
     assert "${prefix}.parquet" in collector_locus_breaker
     assert "${prefix}" in gentropy_locus_breaker
-    assert "${prefix}.parquet" in collect_finemapping_loci
-    assert "${prefix}.json" in collect_finemapping_loci
+    assert "stats.parquet" in collect_canonical_regions
+    assert "stats.json" in collect_canonical_regions
     assert "gentropy_ld_annotation/${prefix}" in gentropy_ld_annotation
