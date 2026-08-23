@@ -75,39 +75,50 @@ def _prepare_request_files(
     requests_path: Path,
     mapping_path: Path,
     native_contig_prefix: str,
-    study_ids: tuple[str, ...],
 ) -> None:
     """Create the batch request and original-ID mapping files."""
-    if not study_ids:
-        raise ValueError("At least one studyId is required for an ancestry request")
     source = _quote_sql_string(_parquet_glob(input_path))
-    study_filter = ", ".join(_quote_sql_string(study_id) for study_id in study_ids)
-    native_chromosome = _native_contig_sql("chromosome", native_contig_prefix)
     native_variant = _native_variant_sql("locus_variant.variantId", native_contig_prefix)
     read_sql = f"read_parquet({source}, union_by_name = true, hive_partitioning = true)"
+    input_columns = {row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {read_sql}").fetchall()}
+    locus_id_sql = "CAST(fineMappingLocusSetId AS VARCHAR)" if "fineMappingLocusSetId" in input_columns else "CAST(studyLocusId AS VARCHAR)"
     con.execute(
         f"""
         COPY (
+            WITH expanded AS (
+                SELECT DISTINCT
+                    {locus_id_sql} AS locus_id,
+                    CAST(chromosome AS VARCHAR) AS chromosome,
+                    CAST(locusStart AS INTEGER) AS locusStart,
+                    CAST(locusEnd AS INTEGER) AS locusEnd,
+                    {native_variant} AS native_variant_id
+                FROM {read_sql}, UNNEST(locus) AS expanded(locus_variant)
+                WHERE locus IS NOT NULL
+            )
             SELECT
-                CAST(studyLocusId AS VARCHAR) AS locus_id,
-                concat({native_chromosome}, ':', CAST(locusStart AS VARCHAR), '-', CAST(locusEnd AS VARCHAR)) AS locus,
-                list_transform(locus, locus_variant -> {native_variant}) AS variant_ids
-            FROM {read_sql}
-            WHERE locus IS NOT NULL
-              AND CAST(studyId AS VARCHAR) IN ({study_filter})
+                locus_id,
+                concat(
+                    {_native_contig_sql("chromosome", native_contig_prefix)},
+                    ':',
+                    CAST(min(locusStart) AS VARCHAR),
+                    '-',
+                    CAST(max(locusEnd) AS VARCHAR)
+                ) AS locus,
+                list(native_variant_id ORDER BY native_variant_id) AS variant_ids
+            FROM expanded
+            GROUP BY locus_id, chromosome
         ) TO {_quote_sql_string(requests_path.as_posix())} (FORMAT PARQUET)
         """
     )
     con.execute(
         f"""
         COPY (
-            SELECT
-                CAST(studyLocusId AS VARCHAR) AS locus_id,
+            SELECT DISTINCT
+                {locus_id_sql} AS locus_id,
                 {native_variant} AS native_variant_id,
                 CAST(locus_variant.variantId AS VARCHAR) AS original_variant_id
             FROM {read_sql}, UNNEST(locus) AS expanded(locus_variant)
             WHERE locus IS NOT NULL
-              AND CAST(studyId AS VARCHAR) IN ({study_filter})
         ) TO {_quote_sql_string(mapping_path.as_posix())} (FORMAT PARQUET)
         """
     )
@@ -256,6 +267,15 @@ def run_hailing_ld(config: HailingLdConfig, materialize: Callable[..., None] = _
             if missing_ancestries:
                 raise ValueError(f"Hailing LD references are missing ancestry(s): {', '.join(missing_ancestries)}")
 
+            requests_path = temporary_path / "combined.requests.parquet"
+            mapping_path = temporary_path / "combined.mapping.parquet"
+            _prepare_request_files(
+                con,
+                config.input_path,
+                requests_path,
+                mapping_path,
+                config.native_contig_prefix,
+            )
             statistics: list[dict[str, float | int | str]] = []
             adapted_paths: list[Path] = []
             for reference in config.references:
@@ -275,16 +295,6 @@ def run_hailing_ld(config: HailingLdConfig, materialize: Callable[..., None] = _
                         }
                     )
                     continue
-                requests_path = temporary_path / f"{reference.ancestry}.requests.parquet"
-                mapping_path = temporary_path / f"{reference.ancestry}.mapping.parquet"
-                _prepare_request_files(
-                    con,
-                    config.input_path,
-                    requests_path,
-                    mapping_path,
-                    config.native_contig_prefix,
-                    study_ids,
-                )
                 ld_path = temporary_path / f"{reference.ancestry}.ld.parquet"
                 status_path = temporary_path / f"{reference.ancestry}.status.parquet"
                 adapted_path = temporary_path / f"{reference.ancestry}.adapted.parquet"

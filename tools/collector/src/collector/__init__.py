@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 
+from collector.canonical_regions import CollectCanonicalRegionsConfig, run_collect_canonical_regions
 from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.empty_status import ValidationStage, emit_empty_status
 from collector.hailing_ld import HailingLdConfig, HailingLdReference, run_hailing_ld
@@ -262,6 +264,55 @@ def collect_finemapping_loci(
     try:
         run_collect_finemapping_loci(config)
     except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@app.command(name="collect_canonical_regions")
+def collect_canonical_regions(
+    run_id: Annotated[str, typer.Option("--run_id", help="Pipeline run identifier for canonical-region collection.")],
+    locus_breaker: Annotated[
+        list[Path],
+        typer.Option(
+            "--locus_breaker",
+            help="Input LocusBreaker Parquet file or directory dataset. Can be provided multiple times.",
+        ),
+    ],
+    ancestry: Annotated[list[str], typer.Option("--ancestry", help="Aligned ancestry label for each locus-breaker result.")],
+    summary_statistics: Annotated[
+        list[Path],
+        typer.Option("--summary_statistics", help="Aligned original summary-statistics parquet file or directory dataset."),
+    ],
+    fine_mapping_locus_set_output_dir: Annotated[
+        Path,
+        typer.Option("--fine_mapping_locus_set_output_dir", help="Output directory for per-locus-set Parquet files."),
+    ],
+    stats_parquet_output: Annotated[
+        Path,
+        typer.Option("--stats_parquet_output", help="Candidate-level canonical-region statistics Parquet output path."),
+    ],
+    stats_json_output: Annotated[
+        Path,
+        typer.Option("--stats_json_output", help="Run-level canonical-region statistics JSON output path."),
+    ],
+    max_region_span_bp: Annotated[
+        int, typer.Option("--max_region_span_bp", min=1, help="Inclusive maximum span for one merged canonical region in base pairs.")
+    ] = 3_000_000,
+):
+    """Validate and normalize canonical-region collector inputs."""
+    try:
+        run_collect_canonical_regions(
+            CollectCanonicalRegionsConfig(
+                run_id=run_id,
+                locus_breaker_paths=tuple(locus_breaker),
+                ancestries=tuple(ancestry),
+                summary_statistics_paths=tuple(summary_statistics),
+                fine_mapping_locus_set_output_dir=fine_mapping_locus_set_output_dir,
+                stats_parquet_output=stats_parquet_output,
+                stats_json_output=stats_json_output,
+                max_region_span_bp=max_region_span_bp,
+            )
+        )
+    except (FileNotFoundError, ValidationError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
 
