@@ -6,13 +6,15 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import duckdb
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_SCHEMA
+from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
+MAF_CUTOFF = 0.01
 
 
 class CanonicalRegionInput(BaseModel):
@@ -119,6 +121,8 @@ def _read_parquet_sql(path: Path) -> str:
 
 def _prepare_output_paths(config: CollectCanonicalRegionsConfig) -> None:
     config.fine_mapping_locus_set_output_dir.mkdir(parents=True, exist_ok=True)
+    for output_path in config.fine_mapping_locus_set_output_dir.glob("*.parquet"):
+        output_path.unlink()
     for output_path in (config.stats_parquet_output, config.stats_json_output):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         if output_path.exists():
@@ -336,12 +340,135 @@ def _write_stats_json(path: Path, config: CollectCanonicalRegionsConfig, regions
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
+def _deterministic_study_locus_id(study_id: str, variant_id: str) -> str:
+    return hashlib.md5(f"{study_id}{variant_id}".encode(), usedforsecurity=False).hexdigest()
+
+
+def _deterministic_fine_mapping_locus_set_id(study_locus_ids: list[str]) -> str:
+    payload = "|".join(sorted(study_locus_ids))
+    return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
+
+
+def _materialize_variants(
+    con: duckdb.DuckDBPyConnection,
+    summary_statistics_path: Path,
+    region: CanonicalRegion,
+) -> list[tuple[str, float, int, float | None, float | None]]:
+    return con.execute(
+        f"""
+        SELECT
+            CAST(variantId AS VARCHAR) AS variantId,
+            CAST(pValueMantissa AS FLOAT) AS pValueMantissa,
+            CAST(pValueExponent AS INTEGER) AS pValueExponent,
+            CAST(beta AS DOUBLE) AS beta,
+            CAST(standardError AS DOUBLE) AS standardError
+        FROM {_read_parquet_sql(summary_statistics_path)}
+        WHERE CAST(chromosome AS VARCHAR) = {_quote_sql_string(region.chromosome)}
+          AND CAST(position AS INTEGER) BETWEEN {region.region_start} AND {region.region_end}
+          AND effectAlleleFrequencyFromSource IS NOT NULL
+          AND least(
+                CAST(effectAlleleFrequencyFromSource AS DOUBLE),
+                1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)
+          ) > {MAF_CUTOFF}
+        ORDER BY CAST(position AS INTEGER), variantId
+        """
+    ).fetchall()
+
+
+def _write_fine_mapping_locus_sets(
+    config: CollectCanonicalRegionsConfig,
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
+    regions: list[CanonicalRegion],
+) -> int:
+    published_count = 0
+    locus_type = COLLECTED_LOCUS_SCHEMA.fields[-1].sql_type()
+
+    with duckdb.connect() as con:
+        for region in regions:
+            materialized_rows: list[dict[str, object]] = []
+            for prepared in prepared_inputs:
+                variants = _materialize_variants(con, prepared.summary_statistics_path, region)
+                if not variants:
+                    materialized_rows = []
+                    break
+
+                lead_variant_id, _lead_mantissa, _lead_exponent, _lead_beta, _lead_standard_error = min(
+                    variants,
+                    key=lambda row: (
+                        row[2],
+                        row[1],
+                        row[0],
+                    ),
+                )
+                materialized_rows.append(
+                    {
+                        "studyId": prepared.study_id,
+                        "studyLocusId": _deterministic_study_locus_id(prepared.study_id, lead_variant_id),
+                        "variants": variants,
+                    }
+                )
+
+            if not materialized_rows:
+                continue
+
+            fine_mapping_locus_set_id = _deterministic_fine_mapping_locus_set_id(
+                [row["studyLocusId"] for row in materialized_rows if isinstance(row["studyLocusId"], str)]
+            )
+            quality_controls_sql = "[" + ", ".join(_quote_sql_string(item) for item in region.quality_controls) + "]::VARCHAR[]"
+            row_sql = []
+            for row in materialized_rows:
+                variants = cast(list[tuple[str, float, int, float | None, float | None]], row["variants"])
+                variants_sql = ", ".join(
+                    [
+                        "struct_pack("
+                        f"variantId := {_quote_sql_string(variant_id)}, "
+                        f"pValueMantissa := {pvalue_mantissa}::FLOAT, "
+                        f"pValueExponent := {pvalue_exponent}::INTEGER, "
+                        f"beta := {beta if beta is not None else 'NULL'}::DOUBLE, "
+                        f"standardError := {standard_error if standard_error is not None else 'NULL'}::DOUBLE"
+                        ")"
+                        for variant_id, pvalue_mantissa, pvalue_exponent, beta, standard_error in variants
+                    ]
+                )
+                row_sql.append(
+                    f"""
+                    SELECT
+                        {_quote_sql_string(fine_mapping_locus_set_id)} AS fineMappingLocusSetId,
+                        {_quote_sql_string(str(row["studyLocusId"]))} AS studyLocusId,
+                        {_quote_sql_string(str(row["studyId"]))} AS studyId,
+                        {_quote_sql_string(region.chromosome)} AS chromosome,
+                        {region.region_start}::INTEGER AS locusStart,
+                        {region.region_end}::INTEGER AS locusEnd,
+                        {quality_controls_sql} AS qualityControls,
+                        [{variants_sql}]::{locus_type} AS locus
+                    """
+                )
+
+            output_path = config.fine_mapping_locus_set_output_dir / f"{fine_mapping_locus_set_id}.parquet"
+            con.execute(
+                f"""
+                COPY (
+                    {" UNION ALL ".join(row_sql)}
+                    ORDER BY studyId, studyLocusId
+                ) TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)
+                """
+            )
+            published_count += 1
+
+    return published_count
+
+
 def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tuple[CanonicalRegionInput, ...]:
     """Validate inputs, sweep bounded canonical regions, and emit provisional outputs."""
     _prepare_output_paths(config)
     prepared_inputs = prepare_collect_canonical_region_inputs(config)
     source_loci = _read_source_loci(prepared_inputs)
     regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
+    published_count = _write_fine_mapping_locus_sets(config, prepared_inputs, regions)
     _write_stats_parquet(config.stats_parquet_output, regions)
     _write_stats_json(config.stats_json_output, config, regions)
+    if config.stats_json_output.exists():
+        payload = json.loads(config.stats_json_output.read_text())
+        payload["nPublishedLocusSets"] = published_count
+        config.stats_json_output.write_text(json.dumps(payload, indent=2) + "\n")
     return prepared_inputs

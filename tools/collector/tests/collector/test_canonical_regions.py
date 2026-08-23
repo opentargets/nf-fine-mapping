@@ -1,12 +1,13 @@
-"""Tests for canonical-region collector validation and bounded sweep behavior."""
-
+import hashlib
+import json
 from pathlib import Path
 
 import duckdb
+import pytest
 from typer.testing import CliRunner
 
 from collector import app
-from collector.canonical_regions import CollectCanonicalRegionsConfig, OVERSIZED_SOURCE_LOCUS_QC, prepare_collect_canonical_region_inputs
+from collector.canonical_regions import OVERSIZED_SOURCE_LOCUS_QC, CollectCanonicalRegionsConfig, prepare_collect_canonical_region_inputs
 
 runner = CliRunner()
 
@@ -116,6 +117,34 @@ def _write_single_sumstats_dataset(path: Path, *, study_id: str) -> Path:
     return _write_sumstats_dataset(path, study_ids=[study_id])
 
 
+def _write_sumstats_dataset_with_rows(
+    path: Path,
+    *,
+    study_id: str,
+    rows: list[tuple[str, int, float, int, float, float, float]],
+) -> Path:
+    selects = []
+    for variant_id, position, beta, pvalue_exponent, pvalue_mantissa, effect_allele_frequency, standard_error in rows:
+        selects.append(
+            f"""
+            SELECT
+                '{study_id}'::VARCHAR AS studyId,
+                '{variant_id}'::VARCHAR AS variantId,
+                '1'::VARCHAR AS chromosome,
+                {position}::INTEGER AS position,
+                {beta}::DOUBLE AS beta,
+                1000::INTEGER AS sampleSize,
+                {pvalue_mantissa}::FLOAT AS pValueMantissa,
+                {pvalue_exponent}::INTEGER AS pValueExponent,
+                {effect_allele_frequency}::FLOAT AS effectAlleleFrequencyFromSource,
+                {standard_error}::DOUBLE AS standardError
+            """
+        )
+    with duckdb.connect() as con:
+        con.execute(f"COPY ({' UNION ALL '.join(selects)}) TO '{path}' (FORMAT PARQUET)")
+    return path
+
+
 def _valid_config(tmp_path: Path) -> CollectCanonicalRegionsConfig:
     locus_breaker_a = _write_locus_breaker_dataset(tmp_path / "study_b.locus.parquet", study_ids=["STUDY_B"])
     locus_breaker_b = _write_locus_breaker_dataset(tmp_path / "study_a.locus.parquet", study_ids=["STUDY_A"])
@@ -146,13 +175,9 @@ def test_prepare_collect_canonical_region_inputs_rejects_multiple_studies_per_lo
     multi_study_path = _write_locus_breaker_dataset(tmp_path / "multi.locus.parquet", study_ids=["STUDY_A", "STUDY_X"])
     config = config.model_copy(update={"locus_breaker_paths": (multi_study_path, config.locus_breaker_paths[1])})
 
-    try:
+    with pytest.raises(ValueError, match="exactly one distinct studyId") as excinfo:
         prepare_collect_canonical_region_inputs(config)
-    except ValueError as error:
-        assert "exactly one distinct studyId" in str(error)
-        assert "LocusBreaker input" in str(error)
-    else:
-        raise AssertionError("Expected ValueError")
+    assert "LocusBreaker input" in str(excinfo.value)
 
 
 def test_prepare_collect_canonical_region_inputs_rejects_mismatched_study_ids(tmp_path: Path) -> None:
@@ -160,14 +185,10 @@ def test_prepare_collect_canonical_region_inputs_rejects_mismatched_study_ids(tm
     wrong_sumstats = _write_sumstats_dataset(tmp_path / "wrong.sumstats.parquet", study_ids=["STUDY_X"])
     config = config.model_copy(update={"summary_statistics_paths": (wrong_sumstats, config.summary_statistics_paths[1])})
 
-    try:
+    with pytest.raises(ValueError, match="matching studyId") as excinfo:
         prepare_collect_canonical_region_inputs(config)
-    except ValueError as error:
-        assert "matching studyId" in str(error)
-        assert "STUDY_X" in str(error)
-        assert "STUDY_B" in str(error)
-    else:
-        raise AssertionError("Expected ValueError")
+    assert "STUDY_X" in str(excinfo.value)
+    assert "STUDY_B" in str(excinfo.value)
 
 
 def test_collect_canonical_regions_cli_rejects_fewer_than_two_input_triples(tmp_path: Path) -> None:
@@ -448,3 +469,111 @@ def test_collect_canonical_regions_cli_emits_oversized_source_locus_as_standalon
         (100, 260, [OVERSIZED_SOURCE_LOCUS_QC], ["a_large"]),
         (150, 180, [], ["b_small"]),
     ]
+
+
+def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_strict_maf_and_deterministic_ids(
+    tmp_path: Path,
+) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 180, 220)])
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_110_A_G", 110, 0.20, -8, 5.0, 0.20, 0.02),
+            ("1_140_C_T", 140, 0.10, -8, 5.0, 0.30, 0.03),
+            ("1_150_G_A", 150, 0.30, -9, 1.0, 0.01, 0.02),
+        ],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[
+            ("1_125_A_C", 125, -0.40, -7, 2.0, 0.40, 0.04),
+            ("1_130_A_G", 130, -0.50, -7, 2.0, 0.30, 0.05),
+            ("1_210_T_C", 210, 0.60, -6, 8.0, 0.99, 0.06),
+        ],
+    )
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(tmp_path / "stats" / "run-1.stat.parquet"),
+            "--stats_json_output",
+            str(stats_json_output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    files = sorted(output_dir.glob("*.parquet"))
+    assert len(files) == 1
+
+    expected_study_locus_ids = {
+        "STUDY_A": hashlib.md5(b"STUDY_A1_110_A_G", usedforsecurity=False).hexdigest(),
+        "STUDY_B": hashlib.md5(b"STUDY_B1_125_A_C", usedforsecurity=False).hexdigest(),
+    }
+    expected_locus_set_id = hashlib.md5(
+        "|".join(sorted(expected_study_locus_ids.values())).encode(),
+        usedforsecurity=False,
+    ).hexdigest()
+
+    with duckdb.connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                studyId,
+                studyLocusId,
+                chromosome,
+                locusStart,
+                locusEnd,
+                list_transform(locus, item -> item.variantId) AS locusVariants
+            FROM read_parquet('{files[0]}')
+            ORDER BY studyId
+            """
+        ).fetchall()
+
+    assert rows == [
+        (
+            expected_locus_set_id,
+            "STUDY_A",
+            expected_study_locus_ids["STUDY_A"],
+            "1",
+            100,
+            220,
+            ["1_110_A_G", "1_140_C_T"],
+        ),
+        (
+            expected_locus_set_id,
+            "STUDY_B",
+            expected_study_locus_ids["STUDY_B"],
+            "1",
+            100,
+            220,
+            ["1_125_A_C", "1_130_A_G"],
+        ),
+    ]
+
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nPublishedLocusSets"] == 1
