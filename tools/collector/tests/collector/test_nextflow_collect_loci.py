@@ -84,11 +84,10 @@ def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumpin
     assert "--path ${dataset_path}" in validation_module
     assert '"LOCUS_COLLECTION"' in workflow
     assert (
-        "tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, "
-        "summary_statistics_paths: List<Path>)" in module
+        "tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)" in module
     )
     assert "tuple(runId: String, logical_path: String, validation_stage: String, dataset_path: Path)" in validation_module
-    assert 'loci = tuple(runId, metas, file("fine_mapping_locus_sets", type: \'dir\'))' in module
+    assert "loci = tuple(runId, metas, file(\"fine_mapping_locus_sets\", type: 'dir'))" in module
     assert 'stats = tuple(runId, metas, file("stats.parquet"), file("stats.json"))' in module
     assert 'file(("status/*.jsonl"), optional: true' in validation_module
     assert "ch_locus_collection_status = ch_collection_status" in workflow
@@ -343,7 +342,7 @@ def test_nf_test_workflows_verify_locus_breaker_and_collection_contracts():
     assert "workflow.out.ch_collect_loci_stats.size() == 1" in locus_collection_test
     assert "workflow.out.ch_locus_collection_status.size() == 1" in locus_collection_test
     assert (
-        'workflow.out.ch_full_overlap_loci.collect { r -> r.metas.collect { meta -> meta.studyId } }.flatten() '
+        "workflow.out.ch_full_overlap_loci.collect { r -> r.metas.collect { meta -> meta.studyId } }.flatten() "
         '== ["STUDY_A", "STUDY_B", "STUDY_C", "STUDY_A", "STUDY_B", "STUDY_C"]' in locus_collection_test
     )
     assert "workflow.out.ch_locus_annotation.size() == 2" in locus_annotation_test
