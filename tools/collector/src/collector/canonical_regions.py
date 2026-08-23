@@ -337,9 +337,25 @@ def _write_stats_parquet(path: Path, prepared_inputs: tuple[CanonicalRegionInput
                     lead_ids.append(_deterministic_study_locus_id(prepared.study_id, lead))
                 components.append((prepared.study_id, source_locus.study_locus_id, raw, raw - above, controls))
             locus_set_id = _deterministic_fine_mapping_locus_set_id(lead_ids) if len(lead_ids) == len(prepared_inputs) else None
-            input_sql = "[" + ", ".join(f"struct_pack(studyId := {_quote_sql_string(source.study_id)}, studyLocusId := {_quote_sql_string(source.study_locus_id)})" for source in region.input_loci) + "]"
-            component_sql = "[" + ", ".join(f"struct_pack(studyId := {_quote_sql_string(study_id)}, studyLocusId := {_quote_sql_string(study_locus_id)}, nVariants := {raw}, nVariantsBelowMafCutoff := {below}, qualityControls := [{', '.join(_quote_sql_string(q) for q in controls)}]::VARCHAR[])" for study_id, study_locus_id, raw, below, controls in components) + "]"
-            stats.append(f"SELECT {(_quote_sql_string(locus_set_id) if locus_set_id else 'CAST(NULL AS VARCHAR)')} AS fineMappingLocusSetId, {_quote_sql_string(region.chromosome)} AS chromosome, {region.region_start}::INTEGER AS locusStart, {region.region_end}::INTEGER AS locusEnd, {total_raw}::INTEGER AS nVariants, {total_above}::INTEGER AS nVariantsAboveMafCutoff, {input_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[6].sql_type()} AS inputLoci, {component_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[7].sql_type()} AS components")
+            input_sql = (
+                "["
+                + ", ".join(
+                    f"struct_pack(studyId := {_quote_sql_string(source.study_id)}, studyLocusId := {_quote_sql_string(source.study_locus_id)})"
+                    for source in region.input_loci
+                )
+                + "]"
+            )
+            component_sql = (
+                "["
+                + ", ".join(
+                    f"struct_pack(studyId := {_quote_sql_string(study_id)}, studyLocusId := {_quote_sql_string(study_locus_id)}, nVariants := {raw}, nVariantsBelowMafCutoff := {below}, qualityControls := [{', '.join(_quote_sql_string(q) for q in controls)}]::VARCHAR[])"
+                    for study_id, study_locus_id, raw, below, controls in components
+                )
+                + "]"
+            )
+            stats.append(
+                f"SELECT {(_quote_sql_string(locus_set_id) if locus_set_id else 'CAST(NULL AS VARCHAR)')} AS fineMappingLocusSetId, {_quote_sql_string(region.chromosome)} AS chromosome, {region.region_start}::INTEGER AS locusStart, {region.region_end}::INTEGER AS locusEnd, {total_raw}::INTEGER AS nVariants, {total_above}::INTEGER AS nVariantsAboveMafCutoff, {input_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[6].sql_type()} AS inputLoci, {component_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[7].sql_type()} AS components"
+            )
         region_sql = " UNION ALL ".join(stats)
         con.execute(
             f"""

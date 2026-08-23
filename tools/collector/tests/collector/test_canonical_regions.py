@@ -702,6 +702,8 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
     stats = json.loads(stats_json_output.read_text())
     assert stats["nCandidateLocusSets"] == 1
     assert stats["nPublishedLocusSets"] == 0
+
+
 def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishing(tmp_path: Path) -> None:
     locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a", 100, 200)])
     locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b", 150, 250)])
@@ -715,13 +717,27 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
     result = runner.invoke(
         app,
         [
-            "collect_canonical_regions", "--run_id", "run-1",
-            "--locus_breaker", str(locus_a), "--locus_breaker", str(locus_b),
-            "--ancestry", "EUR", "--ancestry", "AFR",
-            "--summary_statistics", str(sum_a), "--summary_statistics", str(sum_b),
-            "--fine_mapping_locus_set_output_dir", str(output_dir),
-            "--stats_parquet_output", str(tmp_path / "stats.parquet"),
-            "--stats_json_output", str(tmp_path / "stats.json"),
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_a),
+            "--locus_breaker",
+            str(locus_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sum_a),
+            "--summary_statistics",
+            str(sum_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(tmp_path / "stats.parquet"),
+            "--stats_json_output",
+            str(tmp_path / "stats.json"),
         ],
     )
     assert result.exit_code == 0, result.output
