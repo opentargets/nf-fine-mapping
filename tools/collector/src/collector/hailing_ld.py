@@ -80,15 +80,8 @@ def _prepare_request_files(
     source = _quote_sql_string(_parquet_glob(input_path))
     native_variant = _native_variant_sql("locus_variant.variantId", native_contig_prefix)
     read_sql = f"read_parquet({source}, union_by_name = true, hive_partitioning = true)"
-    input_columns = {
-        row[0]
-        for row in con.execute(f"DESCRIBE SELECT * FROM {read_sql}").fetchall()
-    }
-    locus_id_sql = (
-        "CAST(fineMappingLocusSetId AS VARCHAR)"
-        if "fineMappingLocusSetId" in input_columns
-        else "CAST(studyLocusId AS VARCHAR)"
-    )
+    input_columns = {row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {read_sql}").fetchall()}
+    locus_id_sql = "CAST(fineMappingLocusSetId AS VARCHAR)" if "fineMappingLocusSetId" in input_columns else "CAST(studyLocusId AS VARCHAR)"
     con.execute(
         f"""
         COPY (
@@ -274,6 +267,15 @@ def run_hailing_ld(config: HailingLdConfig, materialize: Callable[..., None] = _
             if missing_ancestries:
                 raise ValueError(f"Hailing LD references are missing ancestry(s): {', '.join(missing_ancestries)}")
 
+            requests_path = temporary_path / "combined.requests.parquet"
+            mapping_path = temporary_path / "combined.mapping.parquet"
+            _prepare_request_files(
+                con,
+                config.input_path,
+                requests_path,
+                mapping_path,
+                config.native_contig_prefix,
+            )
             statistics: list[dict[str, float | int | str]] = []
             adapted_paths: list[Path] = []
             for reference in config.references:
@@ -293,15 +295,6 @@ def run_hailing_ld(config: HailingLdConfig, materialize: Callable[..., None] = _
                         }
                     )
                     continue
-                requests_path = temporary_path / f"{reference.ancestry}.requests.parquet"
-                mapping_path = temporary_path / f"{reference.ancestry}.mapping.parquet"
-                _prepare_request_files(
-                    con,
-                    config.input_path,
-                    requests_path,
-                    mapping_path,
-                    config.native_contig_prefix,
-                )
                 ld_path = temporary_path / f"{reference.ancestry}.ld.parquet"
                 status_path = temporary_path / f"{reference.ancestry}.status.parquet"
                 adapted_path = temporary_path / f"{reference.ancestry}.adapted.parquet"
