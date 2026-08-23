@@ -1,5 +1,7 @@
 """Canonical-region collector input validation and bounded region sweep."""
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +13,7 @@ from typing import cast
 import duckdb
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_SCHEMA, COLLECTED_LOCUS_SCHEMA
+from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_STATS_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
 MAF_CUTOFF = 0.01
@@ -286,37 +288,64 @@ def _input_loci_sql(region: CanonicalRegion) -> str:
     return f"[{items_sql}]::{input_locus_type}[]"
 
 
-def _write_stats_parquet(path: Path, regions: list[CanonicalRegion]) -> None:
+def _write_stats_parquet(path: Path, prepared_inputs: tuple[CanonicalRegionInput, ...], regions: list[CanonicalRegion]) -> None:
     with duckdb.connect() as con:
         if not regions:
             con.execute(
                 f"""
                 COPY (
-                    {CANONICAL_REGION_SCHEMA.empty_select_sql()}
+                    {CANONICAL_REGION_STATS_SCHEMA.empty_select_sql()}
                 ) TO {_quote_sql_string(path.as_posix())} (FORMAT PARQUET)
                 """
             )
             return
 
-        region_sql = " UNION ALL ".join(
-            [
-                f"""
-                SELECT
-                    {_quote_sql_string(region.canonical_region_id)} AS canonicalRegionId,
-                    {_quote_sql_string(region.chromosome)} AS chromosome,
-                    {region.region_start}::INTEGER AS regionStart,
-                    {region.region_end}::INTEGER AS regionEnd,
-                    [{", ".join(_quote_sql_string(item) for item in region.quality_controls)}]::VARCHAR[] AS qualityControls,
-                    {_input_loci_sql(region)} AS inputLoci
-                """
-                for region in regions
-            ]
-        )
+        stats = []
+        for region in regions:
+            components = []
+            total_raw = 0
+            total_above = 0
+            lead_ids = []
+            source_loci_by_study = {locus.study_id: locus for locus in region.input_loci}
+            for prepared in prepared_inputs:
+                source_locus = source_loci_by_study.get(prepared.study_id)
+                if source_locus is None:
+                    continue
+                raw, above = con.execute(
+                    f"""
+                    SELECT count(DISTINCT variantId), count(DISTINCT variantId) FILTER (WHERE least(effectAlleleFrequencyFromSource, 1.0 - effectAlleleFrequencyFromSource) > {MAF_CUTOFF})  -- noqa: E501
+                    FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+                    WHERE CAST(chromosome AS VARCHAR) = {_quote_sql_string(region.chromosome)}
+                      AND CAST(position AS INTEGER) BETWEEN {region.region_start} AND {region.region_end}
+                    """
+                ).fetchone() or (0, 0)
+                raw, above = int(raw or 0), int(above or 0)
+                total_raw += raw
+                total_above += above
+                controls = ["NO_VARIANTS_IN_LOCUS"] if above == 0 else []
+                if above:
+                    lead_row = con.execute(
+                        f"""SELECT variantId FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+                        WHERE CAST(chromosome AS VARCHAR) = {_quote_sql_string(region.chromosome)}
+                          AND CAST(position AS INTEGER) BETWEEN {region.region_start} AND {region.region_end}
+                          AND least(effectAlleleFrequencyFromSource, 1.0 - effectAlleleFrequencyFromSource) > {MAF_CUTOFF}
+                        ORDER BY pValueExponent, pValueMantissa, variantId LIMIT 1"""
+                    ).fetchone() or (None,)
+                    lead = lead_row[0]
+                    if lead is None:
+                        continue
+                    lead_ids.append(_deterministic_study_locus_id(prepared.study_id, lead))
+                components.append((prepared.study_id, source_locus.study_locus_id, raw, raw - above, controls))
+            locus_set_id = _deterministic_fine_mapping_locus_set_id(lead_ids) if len(lead_ids) == len(prepared_inputs) else None
+            input_sql = "[" + ", ".join(f"struct_pack(studyId := {_quote_sql_string(source.study_id)}, studyLocusId := {_quote_sql_string(source.study_locus_id)})" for source in region.input_loci) + "]"
+            component_sql = "[" + ", ".join(f"struct_pack(studyId := {_quote_sql_string(study_id)}, studyLocusId := {_quote_sql_string(study_locus_id)}, nVariants := {raw}, nVariantsBelowMafCutoff := {below}, qualityControls := [{', '.join(_quote_sql_string(q) for q in controls)}]::VARCHAR[])" for study_id, study_locus_id, raw, below, controls in components) + "]"
+            stats.append(f"SELECT {(_quote_sql_string(locus_set_id) if locus_set_id else 'CAST(NULL AS VARCHAR)')} AS fineMappingLocusSetId, {_quote_sql_string(region.chromosome)} AS chromosome, {region.region_start}::INTEGER AS locusStart, {region.region_end}::INTEGER AS locusEnd, {total_raw}::INTEGER AS nVariants, {total_above}::INTEGER AS nVariantsAboveMafCutoff, {input_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[6].sql_type()} AS inputLoci, {component_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[7].sql_type()} AS components")
+        region_sql = " UNION ALL ".join(stats)
         con.execute(
             f"""
             COPY (
                 {region_sql}
-                ORDER BY chromosome, regionStart, regionEnd, canonicalRegionId
+                ORDER BY chromosome, locusStart, locusEnd, fineMappingLocusSetId
             ) TO {_quote_sql_string(path.as_posix())} (FORMAT PARQUET)
             """
         )
@@ -335,6 +364,54 @@ def _write_stats_json(path: Path, config: CollectCanonicalRegionsConfig, regions
             for prepared in prepare_collect_canonical_region_inputs(config)
         ],
         "nCandidateLocusSets": len(regions),
+        "nPublishedLocusSets": 0,
+        "studiesWithMissingEAF": [],
+        "runQualityControls": [],
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def _studies_with_missing_eaf(
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
+) -> list[str]:
+    """Return studies whose source summary statistics contain a null EAF."""
+    missing: list[str] = []
+    with duckdb.connect() as con:
+        for prepared in prepared_inputs:
+            count_row = con.execute(
+                f"""
+                SELECT count(*)
+                FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+                WHERE effectAlleleFrequencyFromSource IS NULL
+                """
+            ).fetchone() or (0,)
+            count = count_row[0]
+            if count:
+                missing.append(prepared.study_id)
+    return sorted(missing)
+
+
+def _write_invalid_run_stats(
+    path: Path,
+    config: CollectCanonicalRegionsConfig,
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
+    studies_with_missing_eaf: list[str],
+) -> None:
+    """Emit the compact run report for a fatal preflight QC result."""
+    payload = {
+        "runId": config.run_id,
+        "inputTuples": [
+            {
+                "studyId": prepared.study_id,
+                "ancestry": prepared.ancestry,
+                "locusBreakerPath": str(prepared.locus_breaker_path),
+                "summaryStatisticsPath": str(prepared.summary_statistics_path),
+            }
+            for prepared in prepared_inputs
+        ],
+        "studiesWithMissingEAF": studies_with_missing_eaf,
+        "runQualityControls": ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"],
+        "nCandidateLocusSets": 0,
         "nPublishedLocusSets": 0,
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
@@ -462,10 +539,15 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     """Validate inputs, sweep bounded canonical regions, and emit provisional outputs."""
     _prepare_output_paths(config)
     prepared_inputs = prepare_collect_canonical_region_inputs(config)
+    studies_with_missing_eaf = _studies_with_missing_eaf(prepared_inputs)
+    if studies_with_missing_eaf:
+        _write_stats_parquet(config.stats_parquet_output, prepared_inputs, [])
+        _write_invalid_run_stats(config.stats_json_output, config, prepared_inputs, studies_with_missing_eaf)
+        return prepared_inputs
     source_loci = _read_source_loci(prepared_inputs)
     regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
     published_count = _write_fine_mapping_locus_sets(config, prepared_inputs, regions)
-    _write_stats_parquet(config.stats_parquet_output, regions)
+    _write_stats_parquet(config.stats_parquet_output, prepared_inputs, regions)
     _write_stats_json(config.stats_json_output, config, regions)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())

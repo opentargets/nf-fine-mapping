@@ -1,4 +1,6 @@
 import hashlib
+
+# ruff: noqa: E501
 import json
 from pathlib import Path
 
@@ -7,7 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from collector import app
-from collector.canonical_regions import OVERSIZED_SOURCE_LOCUS_QC, CollectCanonicalRegionsConfig, prepare_collect_canonical_region_inputs
+from collector.canonical_regions import CollectCanonicalRegionsConfig, prepare_collect_canonical_region_inputs
 
 runner = CliRunner()
 
@@ -342,18 +344,18 @@ def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_st
             f"""
             SELECT
                 chromosome,
-                regionStart,
-                regionEnd,
+                locusStart,
+                locusEnd,
                 list_transform(inputLoci, item -> item.studyId) AS studyIds,
                 list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds,
-                qualityControls
+                list_transform(components, item -> item.studyId) AS componentStudies
             FROM read_parquet('{stats_parquet_output}')
-            ORDER BY chromosome, regionStart, regionEnd
+            ORDER BY chromosome, locusStart, locusEnd
             """
         ).fetchall()
 
     assert rows == [
-        ("1", 100, 320, ["STUDY_A", "STUDY_B", "STUDY_C"], ["a_locus", "b_locus", "c_locus"], []),
+        ("1", 100, 320, ["STUDY_A", "STUDY_B", "STUDY_C"], ["a_locus", "b_locus", "c_locus"], ["STUDY_A", "STUDY_B", "STUDY_C"]),
     ]
 
 
@@ -406,9 +408,9 @@ def test_collect_canonical_regions_cli_splits_overlap_chain_before_cap_exceedanc
     with duckdb.connect() as con:
         rows = con.execute(
             f"""
-            SELECT regionStart, regionEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds
+            SELECT locusStart, locusEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds
             FROM read_parquet('{stats_parquet_output}')
-            ORDER BY regionStart, regionEnd
+            ORDER BY locusStart, locusEnd
             """
         ).fetchall()
 
@@ -459,15 +461,15 @@ def test_collect_canonical_regions_cli_emits_oversized_source_locus_as_standalon
     with duckdb.connect() as con:
         rows = con.execute(
             f"""
-            SELECT regionStart, regionEnd, qualityControls, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds
+            SELECT locusStart, locusEnd, list_transform(components, item -> item.qualityControls) AS qualityControls, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds  -- noqa: E501
             FROM read_parquet('{stats_parquet_output}')
-            ORDER BY regionStart, regionEnd
+            ORDER BY locusStart, locusEnd
             """
         ).fetchall()
 
     assert rows == [
-        (100, 260, [OVERSIZED_SOURCE_LOCUS_QC], ["a_large"]),
-        (150, 180, [], ["b_small"]),
+        (100, 260, [[]], ["a_large"]),
+        (150, 180, [["NO_VARIANTS_IN_LOCUS"]], ["b_small"]),
     ]
 
 
@@ -577,3 +579,153 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
 
     stats = json.loads(stats_json_output.read_text())
     assert stats["nPublishedLocusSets"] == 1
+
+
+def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_when_publication_is_blocked(
+    tmp_path: Path,
+) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_a.locus.parquet",
+        study_id="STUDY_A",
+        loci=[("a_locus", 100, 200)],
+    )
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_b.locus.parquet",
+        study_id="STUDY_B",
+        loci=[("b_locus", 180, 220)],
+    )
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_110_A_G", 110, 0.20, -8, 5.0, 0.20, 0.02),
+            ("1_140_C_T", 140, 0.10, -8, 5.0, 0.30, 0.03),
+            ("1_150_G_A", 150, 0.30, -9, 1.0, 0.01, 0.02),
+        ],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[
+            ("1_125_A_C", 125, -0.40, -7, 2.0, 0.009, 0.04),
+            ("1_130_A_G", 130, -0.50, -7, 2.0, 0.991, 0.05),
+            ("1_210_T_C", 210, 0.60, -6, 8.0, 0.99, 0.06),
+        ],
+    )
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(stats_json_output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert list(output_dir.glob("*.parquet")) == []
+
+    with duckdb.connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                chromosome,
+                locusStart,
+                locusEnd,
+                nVariants,
+                nVariantsAboveMafCutoff,
+                list_transform(inputLoci, item -> item.studyLocusId) AS inputStudyLocusIds,
+                list_transform(
+                    components,
+                    item -> struct_pack(
+                        studyId := item.studyId,
+                        studyLocusId := item.studyLocusId,
+                        nVariants := item.nVariants,
+                        nVariantsBelowMafCutoff := item.nVariantsBelowMafCutoff,
+                        qualityControls := item.qualityControls
+                    )
+                ) AS componentStats
+            FROM read_parquet('{stats_parquet_output}')
+            """
+        ).fetchall()
+
+    assert rows == [
+        (
+            None,
+            "1",
+            100,
+            220,
+            6,
+            2,
+            ["a_locus", "b_locus"],
+            [
+                {
+                    "studyId": "STUDY_A",
+                    "studyLocusId": "a_locus",
+                    "nVariants": 3,
+                    "nVariantsBelowMafCutoff": 1,
+                    "qualityControls": [],
+                },
+                {
+                    "studyId": "STUDY_B",
+                    "studyLocusId": "b_locus",
+                    "nVariants": 3,
+                    "nVariantsBelowMafCutoff": 3,
+                    "qualityControls": ["NO_VARIANTS_IN_LOCUS"],
+                },
+            ],
+        )
+    ]
+
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nCandidateLocusSets"] == 1
+    assert stats["nPublishedLocusSets"] == 0
+def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishing(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a", 100, 200)])
+    locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b", 150, 250)])
+    sum_a = _write_single_sumstats_dataset(tmp_path / "a.sumstats.parquet", study_id="STUDY_A")
+    sum_b = tmp_path / "b.sumstats.parquet"
+    with duckdb.connect() as con:
+        con.execute(
+            f"COPY (SELECT 'STUDY_B' AS studyId, '1_160_A_G' AS variantId, '1' AS chromosome, 160 AS position, 1.0 AS pValueMantissa, -8 AS pValueExponent, NULL::FLOAT AS effectAlleleFrequencyFromSource, 0.1 AS beta, 0.01 AS standardError) TO '{sum_b}' (FORMAT PARQUET)"
+        )
+    output_dir = tmp_path / "sets"
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions", "--run_id", "run-1",
+            "--locus_breaker", str(locus_a), "--locus_breaker", str(locus_b),
+            "--ancestry", "EUR", "--ancestry", "AFR",
+            "--summary_statistics", str(sum_a), "--summary_statistics", str(sum_b),
+            "--fine_mapping_locus_set_output_dir", str(output_dir),
+            "--stats_parquet_output", str(tmp_path / "stats.parquet"),
+            "--stats_json_output", str(tmp_path / "stats.json"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert not list(output_dir.glob("*.parquet"))
+    report = json.loads((tmp_path / "stats.json").read_text())
+    assert report["studiesWithMissingEAF"] == ["STUDY_B"]
+    assert report["runQualityControls"] == ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"]
