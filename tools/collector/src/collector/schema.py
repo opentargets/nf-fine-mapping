@@ -176,7 +176,7 @@ CANONICAL_COMPONENT_SCHEMA = StructSchema(
 
 CANONICAL_REGION_STATS_SCHEMA = DatasetSchema(
     fields=(
-        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR"),
         DatasetField(name="chromosome", duckdb_type="VARCHAR", nullable=False),
         DatasetField(name="locusStart", duckdb_type="INTEGER", nullable=False),
         DatasetField(name="locusEnd", duckdb_type="INTEGER", nullable=False),

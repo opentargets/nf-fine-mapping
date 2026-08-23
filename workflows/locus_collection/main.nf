@@ -28,12 +28,12 @@ workflow LOCUS_COLLECTION {
         }
 
     collected = COLLECT_CANONICAL_REGIONS(ch_input)
-    ch_collection_status_input = collected.stats.map { runId, metas, stats_parquet, stats_json ->
+    ch_collection_status_input = collected.loci.map { runId, metas, locus_dir ->
         tuple(
             runId,
-            "collected_loci/stats/${runId}.parquet",
+            "collected_loci/fine_mapping_locus_sets/${runId}",
             "LOCUS_COLLECTION",
-            stats_parquet,
+            locus_dir,
         )
     }
     ch_collection_status = COLLECTOR_EMPTY_STATUS(ch_collection_status_input)

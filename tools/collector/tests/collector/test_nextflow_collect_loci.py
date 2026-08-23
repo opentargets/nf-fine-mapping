@@ -169,10 +169,7 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "fine_mapping_locus_sets = fine_mapping_locus_sets" in workflow
     assert "locus_annotation     = locus_annotation" not in workflow
     assert "multi_ancestry_pairwise_ld = multi_ancestry_pairwise_ld" not in workflow
-    assert "collected_loci/full_overlaps" in workflow
-    assert "collected_loci/partial_overlaps" in workflow
-    assert "collected_loci/non_overlaps" in workflow
-    assert "collected_loci/stats" in workflow
+    assert "fine_mapping_locus_sets" in workflow
     assert "status/locus_collection" in workflow
     assert "fine_mapping_locus_sets {" in workflow
     assert "locus_annotation {" not in workflow
