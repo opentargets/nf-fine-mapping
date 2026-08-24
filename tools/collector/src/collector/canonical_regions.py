@@ -9,7 +9,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import cast
 
 import duckdb
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -187,6 +186,82 @@ def create_regional_variants_table(
         """
     )
     return table_name
+
+
+def _create_region_metadata_tables(
+    con: duckdb.DuckDBPyConnection,
+    regions: list[CanonicalRegion],
+    metadata_table_name: str = "canonical_region_metadata",
+    inputs_table_name: str = "canonical_region_inputs",
+) -> tuple[str, str]:
+    """Materialize canonical-region metadata once for downstream SQL output generation."""
+    con.execute(f"DROP TABLE IF EXISTS {metadata_table_name}")
+    con.execute(f"DROP TABLE IF EXISTS {inputs_table_name}")
+    if not regions:
+        con.execute(
+            f"""
+            CREATE TEMP TABLE {metadata_table_name} AS
+            SELECT
+                CAST(NULL AS VARCHAR) AS canonicalRegionId,
+                CAST(NULL AS VARCHAR) AS chromosome,
+                CAST(NULL AS INTEGER) AS locusStart,
+                CAST(NULL AS INTEGER) AS locusEnd,
+                CAST(NULL AS VARCHAR[]) AS qualityControls,
+                CAST(NULL AS {CANONICAL_REGION_STATS_SCHEMA.fields[6].sql_type()}) AS inputLoci
+            WHERE false
+            """
+        )
+        con.execute(
+            f"""
+            CREATE TEMP TABLE {inputs_table_name} AS
+            SELECT
+                CAST(NULL AS VARCHAR) AS canonicalRegionId,
+                CAST(NULL AS VARCHAR) AS studyId,
+                CAST(NULL AS VARCHAR) AS studyLocusId,
+                CAST(NULL AS VARCHAR) AS ancestry
+            WHERE false
+            """
+        )
+        return metadata_table_name, inputs_table_name
+
+    metadata_rows = []
+    input_rows = []
+    for region in regions:
+        quality_controls_sql = "[" + ", ".join(_quote_sql_string(item) for item in region.quality_controls) + "]::VARCHAR[]"
+        metadata_rows.append(
+            f"""
+            SELECT
+                {_quote_sql_string(region.canonical_region_id)} AS canonicalRegionId,
+                {_quote_sql_string(region.chromosome)} AS chromosome,
+                {region.region_start}::INTEGER AS locusStart,
+                {region.region_end}::INTEGER AS locusEnd,
+                {quality_controls_sql} AS qualityControls,
+                {_input_loci_sql(region)} AS inputLoci
+            """
+        )
+        input_rows.extend(
+            f"""
+            SELECT
+                {_quote_sql_string(region.canonical_region_id)} AS canonicalRegionId,
+                {_quote_sql_string(locus.study_id)} AS studyId,
+                {_quote_sql_string(locus.study_locus_id)} AS studyLocusId,
+                {_quote_sql_string(locus.ancestry)} AS ancestry
+            """
+            for locus in region.input_loci
+        )
+    con.execute(
+        f"""
+        CREATE TEMP TABLE {metadata_table_name} AS
+        {" UNION ALL ".join(metadata_rows)}
+        """
+    )
+    con.execute(
+        f"""
+        CREATE TEMP TABLE {inputs_table_name} AS
+        {" UNION ALL ".join(input_rows)}
+        """
+    )
+    return metadata_table_name, inputs_table_name
 
 
 def _assert_distinct(values: tuple[object, ...], label: str) -> None:
@@ -374,83 +449,159 @@ def _input_loci_sql(region: CanonicalRegion) -> str:
     return f"[{items_sql}]::{input_locus_type}[]"
 
 
-def _write_stats_parquet(path: Path, prepared_inputs: tuple[CanonicalRegionInput, ...], regions: list[CanonicalRegion]) -> None:
-    with duckdb.connect() as con:
-        if not regions:
-            con.execute(
-                f"""
-                COPY (
-                    {CANONICAL_REGION_STATS_SCHEMA.empty_select_sql()}
-                ) TO {_quote_sql_string(path.as_posix())} (FORMAT PARQUET)
-                """
-            )
-            return
+def build_regional_output_tables(
+    con: duckdb.DuckDBPyConnection,
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
+    regions: list[CanonicalRegion],
+    region_variants_table: str = "region_variants",
+    stats_table_name: str = "canonical_region_stats_output",
+    loci_table_name: str = "published_locus_rows",
+) -> tuple[str, str]:
+    """Derive canonical-region stats and published-locus rows from staged variants."""
+    con.execute(f"DROP TABLE IF EXISTS {stats_table_name}")
+    con.execute(f"DROP TABLE IF EXISTS {loci_table_name}")
+    if not regions:
+        con.execute(f"CREATE TEMP TABLE {stats_table_name} AS {CANONICAL_REGION_STATS_SCHEMA.empty_select_sql()}")
+        con.execute(f"CREATE TEMP TABLE {loci_table_name} AS {COLLECTED_LOCUS_SCHEMA.empty_select_sql()}")
+        return stats_table_name, loci_table_name
 
-        stats = []
-        for region in regions:
-            components = []
-            total_raw = 0
-            total_above = 0
-            lead_ids = []
-            source_loci_by_study = {locus.study_id: locus for locus in region.input_loci}
-            for prepared in prepared_inputs:
-                source_locus = source_loci_by_study.get(prepared.study_id)
-                if source_locus is None:
-                    continue
-                raw, above = con.execute(
-                    f"""
-                    SELECT count(DISTINCT variantId), count(DISTINCT variantId) FILTER (WHERE least(effectAlleleFrequencyFromSource, 1.0 - effectAlleleFrequencyFromSource) > {MAF_CUTOFF})  -- noqa: E501
-                    FROM {_read_parquet_sql(prepared.summary_statistics_path)}
-                    WHERE CAST(chromosome AS VARCHAR) = {_quote_sql_string(region.chromosome)}
-                      AND CAST(position AS INTEGER) BETWEEN {region.region_start} AND {region.region_end}
-                    """
-                ).fetchone() or (0, 0)
-                raw, above = int(raw or 0), int(above or 0)
-                total_raw += raw
-                total_above += above
-                controls = ["NO_VARIANTS_IN_LOCUS"] if above == 0 else []
-                if above:
-                    lead_row = con.execute(
-                        f"""SELECT variantId FROM {_read_parquet_sql(prepared.summary_statistics_path)}
-                        WHERE CAST(chromosome AS VARCHAR) = {_quote_sql_string(region.chromosome)}
-                          AND CAST(position AS INTEGER) BETWEEN {region.region_start} AND {region.region_end}
-                          AND least(effectAlleleFrequencyFromSource, 1.0 - effectAlleleFrequencyFromSource) > {MAF_CUTOFF}
-                        ORDER BY pValueExponent, pValueMantissa, variantId LIMIT 1"""
-                    ).fetchone() or (None,)
-                    lead = lead_row[0]
-                    if lead is None:
-                        continue
-                    lead_ids.append(_deterministic_study_locus_id(prepared.study_id, lead))
-                components.append((prepared.study_id, source_locus.study_locus_id, raw, raw - above, controls))
-            locus_set_id = _deterministic_fine_mapping_locus_set_id(lead_ids) if len(lead_ids) == len(prepared_inputs) else None
-            input_sql = (
-                "["
-                + ", ".join(
-                    f"struct_pack(studyId := {_quote_sql_string(source.study_id)}, studyLocusId := {_quote_sql_string(source.study_locus_id)})"
-                    for source in region.input_loci
+    metadata_table_name, inputs_table_name = _create_region_metadata_tables(con, regions)
+    maf_sql = (
+        "least("
+        "CAST(staged.effectAlleleFrequencyFromSource AS DOUBLE), "
+        "1.0::DOUBLE - CAST(staged.effectAlleleFrequencyFromSource AS DOUBLE)"
+        f") > {MAF_CUTOFF}"
+    )
+    required_components = len(prepared_inputs)
+    locus_type = COLLECTED_LOCUS_SCHEMA.fields[-1].sql_type()
+    component_type = CANONICAL_REGION_STATS_SCHEMA.fields[7].sql_type()
+    con.execute("DROP TABLE IF EXISTS canonical_region_component_stats")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_component_stats AS
+        SELECT
+            inputs.canonicalRegionId,
+            inputs.studyId,
+            inputs.studyLocusId,
+            count(DISTINCT staged.variantId)::INTEGER AS nVariants,
+            count(DISTINCT staged.variantId) FILTER (WHERE {maf_sql})::INTEGER AS nVariantsAboveMafCutoff,
+            (
+                list(staged.variantId ORDER BY staged.pValueExponent, staged.pValueMantissa, staged.variantId)
+                FILTER (WHERE {maf_sql})
+            )[1] AS leadVariantId
+        FROM {inputs_table_name} AS inputs
+        LEFT JOIN {region_variants_table} AS staged
+          ON staged.canonicalRegionId = inputs.canonicalRegionId
+         AND staged.studyId = inputs.studyId
+        GROUP BY inputs.canonicalRegionId, inputs.studyId, inputs.studyLocusId
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS canonical_region_status")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_status AS
+        SELECT
+            metadata.canonicalRegionId,
+            metadata.chromosome,
+            metadata.locusStart,
+            metadata.locusEnd,
+            metadata.qualityControls,
+            metadata.inputLoci,
+            sum(components.nVariants)::INTEGER AS nVariants,
+            sum(components.nVariantsAboveMafCutoff)::INTEGER AS nVariantsAboveMafCutoff,
+            list(
+                struct_pack(
+                    studyId := components.studyId,
+                    studyLocusId := components.studyLocusId,
+                    nVariants := components.nVariants,
+                    nVariantsBelowMafCutoff := components.nVariants - components.nVariantsAboveMafCutoff,
+                    qualityControls := CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
                 )
-                + "]"
-            )
-            component_sql = (
-                "["
-                + ", ".join(
-                    f"struct_pack(studyId := {_quote_sql_string(study_id)}, studyLocusId := {_quote_sql_string(study_locus_id)}, nVariants := {raw}, nVariantsBelowMafCutoff := {below}, qualityControls := [{', '.join(_quote_sql_string(q) for q in controls)}]::VARCHAR[])"
-                    for study_id, study_locus_id, raw, below, controls in components
+                ORDER BY components.studyId, components.studyLocusId
+            )::{component_type} AS components,
+                CASE
+                    WHEN count(*) = {required_components}
+                     AND count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = {required_components}
+                    THEN md5(
+                        array_to_string(
+                            list_sort(
+                                list(md5(components.studyId || components.leadVariantId))
+                                FILTER (WHERE components.leadVariantId IS NOT NULL)
+                            ),
+                            '|'
+                        )
+                    )
+                    ELSE NULL
+                END AS fineMappingLocusSetId
+        FROM {metadata_table_name} AS metadata
+        INNER JOIN canonical_region_component_stats AS components
+          ON components.canonicalRegionId = metadata.canonicalRegionId
+        GROUP BY
+            metadata.canonicalRegionId,
+            metadata.chromosome,
+            metadata.locusStart,
+            metadata.locusEnd,
+            metadata.qualityControls,
+            metadata.inputLoci
+        """
+    )
+    con.execute(
+        f"""
+        CREATE TEMP TABLE {stats_table_name} AS
+        SELECT
+            fineMappingLocusSetId,
+            chromosome,
+            locusStart,
+            locusEnd,
+            nVariants,
+            nVariantsAboveMafCutoff,
+            inputLoci,
+            components
+        FROM canonical_region_status
+        ORDER BY chromosome, locusStart, locusEnd, fineMappingLocusSetId
+        """
+    )
+    con.execute(
+        f"""
+        CREATE TEMP TABLE {loci_table_name} AS
+        SELECT
+            status.fineMappingLocusSetId,
+            md5(components.studyId || components.leadVariantId) AS studyLocusId,
+            components.studyId,
+            status.chromosome,
+            status.locusStart,
+            status.locusEnd,
+            status.qualityControls,
+            list(
+                struct_pack(
+                    variantId := staged.variantId,
+                    pValueMantissa := staged.pValueMantissa,
+                    pValueExponent := staged.pValueExponent,
+                    beta := staged.beta,
+                    standardError := staged.standardError
                 )
-                + "]"
-            )
-            stats.append(
-                f"SELECT {(_quote_sql_string(locus_set_id) if locus_set_id else 'CAST(NULL AS VARCHAR)')} AS fineMappingLocusSetId, {_quote_sql_string(region.chromosome)} AS chromosome, {region.region_start}::INTEGER AS locusStart, {region.region_end}::INTEGER AS locusEnd, {total_raw}::INTEGER AS nVariants, {total_above}::INTEGER AS nVariantsAboveMafCutoff, {input_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[6].sql_type()} AS inputLoci, {component_sql}::{CANONICAL_REGION_STATS_SCHEMA.fields[7].sql_type()} AS components"
-            )
-        region_sql = " UNION ALL ".join(stats)
-        con.execute(
-            f"""
-            COPY (
-                {region_sql}
-                ORDER BY chromosome, locusStart, locusEnd, fineMappingLocusSetId
-            ) TO {_quote_sql_string(path.as_posix())} (FORMAT PARQUET)
-            """
-        )
+                ORDER BY staged.position, staged.variantId
+            )::{locus_type} AS locus
+        FROM canonical_region_status AS status
+        INNER JOIN canonical_region_component_stats AS components
+          ON components.canonicalRegionId = status.canonicalRegionId
+        INNER JOIN {region_variants_table} AS staged
+          ON staged.canonicalRegionId = components.canonicalRegionId
+         AND staged.studyId = components.studyId
+        WHERE status.fineMappingLocusSetId IS NOT NULL
+          AND {maf_sql}
+        GROUP BY
+            status.fineMappingLocusSetId,
+            components.studyId,
+            components.leadVariantId,
+            status.chromosome,
+            status.locusStart,
+            status.locusEnd,
+            status.qualityControls
+        ORDER BY fineMappingLocusSetId, studyId, studyLocusId
+        """
+    )
+    return stats_table_name, loci_table_name
 
 
 def _write_stats_json(
@@ -488,13 +639,17 @@ def _studies_with_missing_eaf(
         for prepared in prepared_inputs:
             count_row = con.execute(
                 f"""
-                SELECT count(*)
+                SELECT
+                    count(*)::BIGINT AS n_rows,
+                    count(effectAlleleFrequencyFromSource)::BIGINT AS n_eaf,
+                    (count(*) - count(DISTINCT CAST(variantId AS VARCHAR)))::BIGINT AS n_duplicate_variants
                 FROM {_read_parquet_sql(prepared.summary_statistics_path)}
-                WHERE effectAlleleFrequencyFromSource IS NULL
                 """
-            ).fetchone() or (0,)
-            count = count_row[0]
-            if count:
+            ).fetchone() or (0, 0, 0)
+            n_rows, n_eaf, n_duplicate_variants = (int(value or 0) for value in count_row)
+            if n_duplicate_variants:
+                raise ValueError(f"Summary statistics for {prepared.study_id} contain duplicate variantId rows")
+            if n_rows and n_eaf != n_rows:
                 missing.append(prepared.study_id)
     return sorted(missing)
 
@@ -534,113 +689,55 @@ def _deterministic_fine_mapping_locus_set_id(study_locus_ids: list[str]) -> str:
     return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
-def _materialize_variants(
-    con: duckdb.DuckDBPyConnection,
-    summary_statistics_path: Path,
-    region: CanonicalRegion,
-) -> list[tuple[str, float, int, float | None, float | None]]:
-    return con.execute(
-        f"""
-        SELECT
-            CAST(variantId AS VARCHAR) AS variantId,
-            CAST(pValueMantissa AS FLOAT) AS pValueMantissa,
-            CAST(pValueExponent AS INTEGER) AS pValueExponent,
-            CAST(beta AS DOUBLE) AS beta,
-            CAST(standardError AS DOUBLE) AS standardError
-        FROM {_read_parquet_sql(summary_statistics_path)}
-        WHERE CAST(chromosome AS VARCHAR) = {_quote_sql_string(region.chromosome)}
-          AND CAST(position AS INTEGER) BETWEEN {region.region_start} AND {region.region_end}
-          AND effectAlleleFrequencyFromSource IS NOT NULL
-          AND least(
-                CAST(effectAlleleFrequencyFromSource AS DOUBLE),
-                1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)
-          ) > {MAF_CUTOFF}
-        ORDER BY CAST(position AS INTEGER), variantId
-        """
-    ).fetchall()
-
-
-def _write_fine_mapping_locus_sets(
-    config: CollectCanonicalRegionsConfig,
-    prepared_inputs: tuple[CanonicalRegionInput, ...],
-    regions: list[CanonicalRegion],
-) -> int:
-    published_count = 0
-    locus_type = COLLECTED_LOCUS_SCHEMA.fields[-1].sql_type()
-
+def _write_empty_stats_parquet(path: Path) -> None:
     with duckdb.connect() as con:
-        for region in regions:
-            materialized_rows: list[dict[str, object]] = []
-            for prepared in prepared_inputs:
-                variants = _materialize_variants(con, prepared.summary_statistics_path, region)
-                if not variants:
-                    materialized_rows = []
-                    break
+        con.execute(
+            f"""
+            COPY (
+                {CANONICAL_REGION_STATS_SCHEMA.empty_select_sql()}
+            ) TO {_quote_sql_string(path.as_posix())} (FORMAT PARQUET)
+            """
+        )
 
-                lead_variant_id, _lead_mantissa, _lead_exponent, _lead_beta, _lead_standard_error = min(
-                    variants,
-                    key=lambda row: (
-                        row[2],
-                        row[1],
-                        row[0],
-                    ),
-                )
-                materialized_rows.append(
-                    {
-                        "studyId": prepared.study_id,
-                        "studyLocusId": _deterministic_study_locus_id(prepared.study_id, lead_variant_id),
-                        "variants": variants,
-                    }
-                )
 
-            if not materialized_rows:
-                continue
+def _write_stats_parquet_from_table(con: duckdb.DuckDBPyConnection, stats_table_name: str, path: Path) -> None:
+    con.execute(
+        f"""
+        COPY (
+            SELECT * FROM {stats_table_name}
+            ORDER BY chromosome, locusStart, locusEnd, fineMappingLocusSetId
+        ) TO {_quote_sql_string(path.as_posix())} (FORMAT PARQUET)
+        """
+    )
 
-            fine_mapping_locus_set_id = _deterministic_fine_mapping_locus_set_id(
-                [row["studyLocusId"] for row in materialized_rows if isinstance(row["studyLocusId"], str)]
-            )
-            quality_controls_sql = "[" + ", ".join(_quote_sql_string(item) for item in region.quality_controls) + "]::VARCHAR[]"
-            row_sql = []
-            for row in materialized_rows:
-                variants = cast(list[tuple[str, float, int, float | None, float | None]], row["variants"])
-                variants_sql = ", ".join(
-                    [
-                        "struct_pack("
-                        f"variantId := {_quote_sql_string(variant_id)}, "
-                        f"pValueMantissa := {pvalue_mantissa}::FLOAT, "
-                        f"pValueExponent := {pvalue_exponent}::INTEGER, "
-                        f"beta := {beta if beta is not None else 'NULL'}::DOUBLE, "
-                        f"standardError := {standard_error if standard_error is not None else 'NULL'}::DOUBLE"
-                        ")"
-                        for variant_id, pvalue_mantissa, pvalue_exponent, beta, standard_error in variants
-                    ]
-                )
-                row_sql.append(
-                    f"""
-                    SELECT
-                        {_quote_sql_string(fine_mapping_locus_set_id)} AS fineMappingLocusSetId,
-                        {_quote_sql_string(str(row["studyLocusId"]))} AS studyLocusId,
-                        {_quote_sql_string(str(row["studyId"]))} AS studyId,
-                        {_quote_sql_string(region.chromosome)} AS chromosome,
-                        {region.region_start}::INTEGER AS locusStart,
-                        {region.region_end}::INTEGER AS locusEnd,
-                        {quality_controls_sql} AS qualityControls,
-                        [{variants_sql}]::{locus_type} AS locus
-                    """
-                )
 
-            output_path = config.fine_mapping_locus_set_output_dir / f"{fine_mapping_locus_set_id}.parquet"
-            con.execute(
-                f"""
-                COPY (
-                    {" UNION ALL ".join(row_sql)}
-                    ORDER BY studyId, studyLocusId
-                ) TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)
-                """
-            )
-            published_count += 1
-
-    return published_count
+def _write_fine_mapping_locus_sets_from_table(
+    con: duckdb.DuckDBPyConnection,
+    output_dir: Path,
+    loci_table_name: str,
+) -> int:
+    published_ids = [
+        row[0]
+        for row in con.execute(
+            f"""
+            SELECT DISTINCT fineMappingLocusSetId
+            FROM {loci_table_name}
+            ORDER BY fineMappingLocusSetId
+            """
+        ).fetchall()
+    ]
+    for fine_mapping_locus_set_id in published_ids:
+        output_path = output_dir / f"{fine_mapping_locus_set_id}.parquet"
+        con.execute(
+            f"""
+            COPY (
+                SELECT * FROM {loci_table_name}
+                WHERE fineMappingLocusSetId = {_quote_sql_string(fine_mapping_locus_set_id)}
+                ORDER BY studyId, studyLocusId
+            ) TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)
+            """
+        )
+    return len(published_ids)
 
 
 def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tuple[CanonicalRegionInput, ...]:
@@ -650,7 +747,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     prepared_inputs = prepare_collect_canonical_region_inputs(config)
     studies_with_missing_eaf = _studies_with_missing_eaf(prepared_inputs)
     if studies_with_missing_eaf:
-        _write_stats_parquet(config.stats_parquet_output, prepared_inputs, [])
+        _write_empty_stats_parquet(config.stats_parquet_output)
         _write_invalid_run_stats(config.stats_json_output, config, prepared_inputs, studies_with_missing_eaf)
         return prepared_inputs
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
@@ -659,10 +756,22 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
-    published_count = _write_fine_mapping_locus_sets(config, prepared_inputs, regions)
-    timings["locusMaterialization"] = round(perf_counter() - started, 6)
-    started = perf_counter()
-    _write_stats_parquet(config.stats_parquet_output, prepared_inputs, regions)
+    with duckdb.connect() as con:
+        region_variants_table = create_regional_variants_table(con, prepared_inputs, regions) if regions else ""
+        stats_table_name, loci_table_name = build_regional_output_tables(
+            con,
+            prepared_inputs,
+            regions,
+            region_variants_table=region_variants_table or "region_variants",
+        )
+        published_count = _write_fine_mapping_locus_sets_from_table(
+            con,
+            config.fine_mapping_locus_set_output_dir,
+            loci_table_name,
+        )
+        timings["locusMaterialization"] = round(perf_counter() - started, 6)
+        started = perf_counter()
+        _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
     _write_stats_json(config.stats_json_output, config, regions, timings)
     if config.stats_json_output.exists():
