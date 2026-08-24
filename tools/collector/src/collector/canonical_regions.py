@@ -746,6 +746,8 @@ def _write_invalid_run_stats(
         "runQualityControls": ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"],
         "nCandidateLocusSets": 0,
         "nPublishedLocusSets": 0,
+        "candidateLocusSizeBp": {"n": 0, "mean": None, "min": None, "max": None},
+        "publishedLocusSizeBp": {"n": 0, "mean": None, "min": None, "max": None},
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
