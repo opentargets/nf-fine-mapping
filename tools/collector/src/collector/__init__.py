@@ -294,9 +294,26 @@ def collect_canonical_regions(
         Path,
         typer.Option("--stats_json_output", help="Run-level canonical-region statistics JSON output path."),
     ],
-    max_region_span_bp: Annotated[
-        int, typer.Option("--max_region_span_bp", min=1, help="Inclusive maximum span for one merged canonical region in base pairs.")
+    canonical_region_min_maf: Annotated[
+        float,
+        typer.Option(
+            "--canonical_region_min_maf",
+            min=0,
+            max=0.499999,
+            help="Strict minimum minor allele frequency for canonical-region variants.",
+        ),
+    ] = 0.01,
+    canonical_region_max_region_span_bp: Annotated[
+        int,
+        typer.Option(
+            "--canonical_region_max_region_span_bp",
+            min=1,
+            help="Inclusive maximum span for one merged canonical region in base pairs.",
+        ),
     ] = 3_000_000,
+    max_region_span_bp: Annotated[
+        int | None, typer.Option("--max_region_span_bp", min=1, hidden=True, help="Deprecated alias for canonical_region_max_region_span_bp.")
+    ] = None,
 ):
     """Validate and normalize canonical-region collector inputs."""
     try:
@@ -309,6 +326,8 @@ def collect_canonical_regions(
                 fine_mapping_locus_set_output_dir=fine_mapping_locus_set_output_dir,
                 stats_parquet_output=stats_parquet_output,
                 stats_json_output=stats_json_output,
+                canonical_region_min_maf=canonical_region_min_maf,
+                canonical_region_max_region_span_bp=canonical_region_max_region_span_bp,
                 max_region_span_bp=max_region_span_bp,
             )
         )

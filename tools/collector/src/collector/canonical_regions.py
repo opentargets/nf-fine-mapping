@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_STATS_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
-MAF_CUTOFF = 0.01
+DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
 DISK_EXHAUSTION_EXIT_CODE = 75
 
 
@@ -80,10 +80,14 @@ class CollectCanonicalRegionsConfig(BaseModel):
     fine_mapping_locus_set_output_dir: Path
     stats_parquet_output: Path
     stats_json_output: Path
-    max_region_span_bp: int = Field(default=3_000_000, ge=1)
+    canonical_region_min_maf: float = Field(default=DEFAULT_CANONICAL_REGION_MIN_MAF, ge=0, lt=0.5)
+    canonical_region_max_region_span_bp: int = Field(default=3_000_000, ge=1)
+    max_region_span_bp: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _validate_parallel_arrays(self) -> CollectCanonicalRegionsConfig:
+        if self.max_region_span_bp is not None:
+            object.__setattr__(self, "canonical_region_max_region_span_bp", self.max_region_span_bp)
         if len(self.locus_breaker_paths) < 2:
             raise ValueError("At least two input triples are required")
         expected_length = len(self.locus_breaker_paths)
@@ -510,6 +514,7 @@ def build_regional_output_tables(
     region_variants_table: str = "region_variants",
     stats_table_name: str = "canonical_region_stats_output",
     loci_table_name: str = "published_locus_rows",
+    min_maf: float = DEFAULT_CANONICAL_REGION_MIN_MAF,
 ) -> tuple[str, str]:
     """Derive canonical-region stats and published-locus rows from staged variants."""
     con.execute(f"DROP TABLE IF EXISTS {stats_table_name}")
@@ -524,7 +529,7 @@ def build_regional_output_tables(
         "least("
         "CAST(staged.effectAlleleFrequencyFromSource AS DOUBLE), "
         "1.0::DOUBLE - CAST(staged.effectAlleleFrequencyFromSource AS DOUBLE)"
-        f") > {MAF_CUTOFF}"
+        f") > {min_maf}"
     )
     required_components = len(prepared_inputs)
     locus_type = COLLECTED_LOCUS_SCHEMA.fields[-1].sql_type()
@@ -667,6 +672,8 @@ def _write_stats_json(
 ) -> None:
     payload = {
         "runId": config.run_id,
+        "canonicalRegionMinMaf": config.canonical_region_min_maf,
+        "canonicalRegionMaxRegionSpanBp": config.canonical_region_max_region_span_bp,
         "inputTuples": [
             {
                 "studyId": prepared.study_id,
@@ -808,7 +815,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
     source_loci = _read_source_loci(prepared_inputs)
-    regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
+    regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
     with _managed_duckdb() as con:
@@ -818,6 +825,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
             prepared_inputs,
             regions,
             region_variants_table=region_variants_table or "region_variants",
+            min_maf=config.canonical_region_min_maf,
         )
         published_count = _write_fine_mapping_locus_sets_from_table(
             con,

@@ -36,6 +36,8 @@ process COLLECT_CANONICAL_REGIONS {
         --fine_mapping_locus_set_output_dir fine_mapping_locus_sets \\
         --stats_parquet_output stats.parquet \\
         --stats_json_output stats.json \\
+        --canonical_region_min_maf '${params.canonical_region_min_maf}' \\
+        --canonical_region_max_region_span_bp ${params.canonical_region_max_region_span_bp} \\
         ${args}
     """
 
