@@ -507,8 +507,7 @@ def test_collect_canonical_regions_cli_emits_oversized_source_locus_as_standalon
         ).fetchall()
 
     assert rows == [
-        (100, 260, [[]], ["a_large"]),
-        (150, 180, [["NO_VARIANTS_IN_LOCUS"]], ["b_small"]),
+        (100, 260, [[], []], ["a_large"]),
     ]
 
 
@@ -712,37 +711,13 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
             """
         ).fetchall()
 
-    assert rows == [
-        (
-            None,
-            "1",
-            100,
-            220,
-            6,
-            2,
-            ["a_locus", "b_locus"],
-            [
-                {
-                    "studyId": "STUDY_A",
-                    "studyLocusId": "a_locus",
-                    "nVariants": 3,
-                    "nVariantsBelowMafCutoff": 1,
-                    "qualityControls": [],
-                },
-                {
-                    "studyId": "STUDY_B",
-                    "studyLocusId": "b_locus",
-                    "nVariants": 3,
-                    "nVariantsBelowMafCutoff": 3,
-                    "qualityControls": ["NO_VARIANTS_IN_LOCUS"],
-                },
-            ],
-        )
-    ]
+    assert rows == []
 
     stats = json.loads(stats_json_output.read_text())
     assert stats["nCandidateLocusSets"] == 1
     assert stats["nPublishedLocusSets"] == 0
+    assert stats["nNotPromotedLocusSets"] == 1
+    assert stats["notPromotedReasons"] == {"NO_VARIANTS_IN_LOCUS": 1}
     assert set(stats["timingsSeconds"]) == {"inputValidation", "regionDiscovery", "locusMaterialization", "statistics"}
     assert all(value >= 0 for value in stats["timingsSeconds"].values())
     assert stats["candidateLocusSizeBp"]["n"] == 1
@@ -902,14 +877,14 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
             [
                 {
                     "studyId": "STUDY_A",
-                    "studyLocusId": "a_locus",
+                    "studyLocusId": expected_study_locus_ids["STUDY_A"],
                     "nVariants": 3,
                     "nVariantsBelowMafCutoff": 1,
                     "qualityControls": [],
                 },
                 {
                     "studyId": "STUDY_B",
-                    "studyLocusId": "b_locus",
+                    "studyLocusId": expected_study_locus_ids["STUDY_B"],
                     "nVariants": 3,
                     "nVariantsBelowMafCutoff": 1,
                     "qualityControls": [],
@@ -959,3 +934,65 @@ def test_summary_validation_rejects_all_null_eaf(tmp_path: Path) -> None:
     prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
     with duckdb.connect() as con, pytest.raises(ValueError, match="incomplete effectAlleleFrequencyFromSource"):
         validate_summary_statistics_inputs(con, prepared)
+
+
+def test_collect_canonical_regions_materializes_all_inputs_for_single_ancestry_boundary(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)]
+    )
+    locus_b = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 1000, 1100)]
+    )
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_120_A_G", 120, 0.1, -8, 1.0, 0.2, 0.01)],
+    )
+    sum_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_130_A_G", 130, 0.1, -8, 1.0, 0.2, 0.01)],
+    )
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_path = tmp_path / "stats.parquet"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_a),
+            "--locus_breaker",
+            str(locus_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sum_a),
+            "--summary_statistics",
+            str(sum_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(stats_path),
+            "--stats_json_output",
+            str(tmp_path / "stats.json"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    with duckdb.connect() as con:
+        stats = con.execute(
+            f"SELECT fineMappingLocusSetId, list_transform(components, item -> item.studyId) FROM read_parquet('{stats_path}')"
+        ).fetchall()
+        output_rows = con.execute(
+            f"SELECT studyId FROM read_parquet('{next(output_dir.glob('*.parquet'))}') ORDER BY studyId"
+        ).fetchall()
+
+    assert len(stats) == 1
+    assert stats[0][0] is not None
+    assert stats[0][1] == ["STUDY_A", "STUDY_B"]
+    assert output_rows == [("STUDY_A",), ("STUDY_B",)]
