@@ -39,13 +39,15 @@ def _connect_duckdb() -> duckdb.DuckDBPyConnection:
 @contextmanager
 def _managed_duckdb():
     """Convert temporary-storage DuckDB failures to the retryable collector error."""
-    con = _connect_duckdb()
+    con = None
     try:
+        con = _connect_duckdb()
         yield con
-    except duckdb.Error as error:
+    except (duckdb.Error, OSError) as error:
         _raise_disk_error(error)
     finally:
-        con.close()
+        if con is not None:
+            con.close()
 
 
 def _raise_disk_error(error: Exception) -> None:
@@ -177,6 +179,7 @@ def create_regional_variants_table(
         f"SELECT {_quote_sql_string(region.canonical_region_id)} AS canonicalRegionId, {_quote_sql_string(region.chromosome)} AS chromosome, {region.region_start}::INTEGER AS locusStart, {region.region_end}::INTEGER AS locusEnd"
         for region in regions
     )
+    con.execute("DROP TABLE IF EXISTS _canonical_regions_for_join")
     con.execute(
         f"""
         CREATE TEMP TABLE _canonical_regions_for_join AS

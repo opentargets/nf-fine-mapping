@@ -19,7 +19,7 @@ Benchmark date: 2026-08-24
 
 The optimized path was approximately **9.3–9.9× faster** on this fixture, depending on the run.
 
-Logical Parquet comparison reported **0 differing rows** for the locus-set outputs. The optimized `stat.json` phase timings were:
+Logical Parquet comparison reported **0 differing rows** for the locus-set outputs. The optimized `stats.json` phase timings were:
 
 - input validation: 0.054 s
 - region discovery: 0.021 s
