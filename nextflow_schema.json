@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/opentargets/nf-fine-mapping/main/nextflow_schema.json",
   "title": "Open Targets multi-ancestry fine-mapping pipeline parameters",
   "description": "Parameters for the Open Targets multi-ancestry fine-mapping Nextflow pipeline.",
@@ -35,6 +35,8 @@
     "ld_pair_stats_stub_empty_locus_set_ids": {"type": "array", "default": [], "hidden": true, "description": "Locus-set IDs receiving empty-LD status in stub tests.", "items": {"type": "string"}},
     "publish_dir_mode": {"type": "string", "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"], "default": "copy", "hidden": true, "description": "Nextflow publishDir mode."},
     "trace_report_suffix": {"type": "string", "description": "Suffix for trace, report, timeline, and DAG filenames."},
-    "validate_params": {"type": "boolean", "default": true, "hidden": true, "description": "Validate pipeline parameters against this schema."}
+    "validate_params": {"type": "boolean", "default": true, "hidden": true, "description": "Validate pipeline parameters against this schema."},
+    "modules_testdata_base_path": {"type": "string", "hidden": true, "description": "Base path for nf-test module test data."},
+    "pipelines_testdata_base_path": {"type": "string", "hidden": true, "description": "Base path for nf-test pipeline test data."}
   }
 }

@@ -7,6 +7,7 @@ include { LOCUS_BREAKER    } from './workflows/locus_breaker/main.nf'
 include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'
 include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'
 include { FINE_MAPPING     } from './workflows/fine_mapping/main.nf'
+include { validateParameters; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 params {
     manifest: String
@@ -18,6 +19,7 @@ params {
     hailing_ducks_container: String = 'ghcr.io/project-defiant/hailing-ducks:v1.1.0'
     hailing_ducks_max_cached_blocks: Integer = 8
     fine_mapping_methods: List = ['multisusie']
+    validate_params: Boolean = true
 }
 
 def intro() -> Void {
@@ -300,6 +302,10 @@ workflow {
 
     main:
     intro()
+    if (params.validate_params) {
+        validateParameters()
+    }
+    log.info paramsSummaryLog(workflow)
     manifest_ch = read_manifest(params.manifest)
     filtered_ch = filter_manifest_by_route(manifest_ch, params.route)
     manifest_validation_out = MANIFEST_VALIDATION(filtered_ch)

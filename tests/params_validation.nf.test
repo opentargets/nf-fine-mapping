@@ -1,0 +1,69 @@
+nextflow_pipeline {
+
+    name "Test nf-schema parameter validation"
+    script "../main.nf"
+    tag "pipeline"
+    tag "stub"
+    tag "validation"
+    options "-stub-run"
+
+    test("fails when a known parameter has the wrong type") {
+        when {
+            params {
+                canonical_region_min_maf = "notanumber"
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("canonical_region_min_maf") },
+                { assert output.contains("should be") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails when a known parameter violates its minimum") {
+        when {
+            params {
+                hailing_ducks_max_cached_blocks = -5
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("hailing_ducks_max_cached_blocks") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds and logs a parameter summary when parameters are valid") {
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 },
+                { assert output.contains("manifest") }
+            )
+        }
+    }
+}

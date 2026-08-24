@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a monorepo for multi-ancestry GWAS fine-mapping using SuShiE. Two components:
 
-1. **Root-level Nextflow pipeline** — `main.nf` + `conf/` + `tests/`. Runs `FINE_MAPPING` workflow orchestrating the full pipeline. Requires Nextflow `>=24.10.5`.
+1. **Root-level Nextflow pipeline** — `main.nf` + `conf/` + `tests/`. Runs `FINE_MAPPING` workflow orchestrating the full pipeline. Requires Nextflow `>=25.10.0` (the `nf-schema` plugin's minimum).
 
 2. **`modules/`** — Standalone Nextflow process modules:
    - `collect/` — Merges per-trait/ancestry parquet directory into a single parquet file
