@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -17,6 +18,28 @@ from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGI
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
 MAF_CUTOFF = 0.01
+DISK_EXHAUSTION_EXIT_CODE = 75
+
+
+class DiskExhaustionError(RuntimeError):
+    """Raised when DuckDB cannot allocate/write temporary storage."""
+
+
+def _connect_duckdb() -> duckdb.DuckDBPyConnection:
+    """Open DuckDB and direct temporary files to task-local storage when configured."""
+    con = duckdb.connect()
+    temp_directory = os.environ.get("DUCKDB_TMPDIR") or os.environ.get("TMPDIR")
+    if temp_directory:
+        Path(temp_directory).mkdir(parents=True, exist_ok=True)
+        con.execute(f"SET temp_directory = {_quote_sql_string(temp_directory)}")
+    return con
+
+
+def _raise_disk_error(error: Exception) -> None:
+    message = str(error).lower()
+    if any(marker in message for marker in ("no space left", "out of disk", "disk full", "could not write")):
+        raise DiskExhaustionError(str(error)) from error
+    raise error
 
 
 class CanonicalRegionInput(BaseModel):
@@ -313,7 +336,7 @@ def _single_study_id(con: duckdb.DuckDBPyConnection, path: Path, dataset_label: 
 def prepare_collect_canonical_region_inputs(config: CollectCanonicalRegionsConfig) -> tuple[CanonicalRegionInput, ...]:
     """Validate, align, and sort the canonical-region input triples by studyId."""
     prepared: list[CanonicalRegionInput] = []
-    with duckdb.connect() as con:
+    with _connect_duckdb() as con:
         for locus_breaker_path, ancestry, summary_statistics_path in zip(
             config.locus_breaker_paths,
             config.ancestries,
@@ -347,7 +370,7 @@ def _chromosome_sort_key(chromosome: str) -> tuple[int, int | str]:
 
 def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list[SourceLocus]:
     loci: list[SourceLocus] = []
-    with duckdb.connect() as con:
+    with _connect_duckdb() as con:
         for prepared_input in prepared_inputs:
             rows = con.execute(
                 f"""
@@ -635,7 +658,7 @@ def _studies_with_missing_eaf(
 ) -> list[str]:
     """Return studies whose source summary statistics contain a null EAF."""
     missing: list[str] = []
-    with duckdb.connect() as con:
+    with _connect_duckdb() as con:
         for prepared in prepared_inputs:
             count_row = con.execute(
                 f"""
@@ -690,7 +713,7 @@ def _deterministic_fine_mapping_locus_set_id(study_locus_ids: list[str]) -> str:
 
 
 def _write_empty_stats_parquet(path: Path) -> None:
-    with duckdb.connect() as con:
+    with _connect_duckdb() as con:
         con.execute(
             f"""
             COPY (
@@ -756,7 +779,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
-    with duckdb.connect() as con:
+    with _connect_duckdb() as con:
         region_variants_table = create_regional_variants_table(con, prepared_inputs, regions) if regions else ""
         stats_table_name, loci_table_name = build_regional_output_tables(
             con,

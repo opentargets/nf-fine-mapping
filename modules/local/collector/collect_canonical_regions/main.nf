@@ -23,6 +23,9 @@ process COLLECT_CANONICAL_REGIONS {
     def ancestry_args = ancestries.collect { "--ancestry '${it}'" }.join(' ')
     def ss_args = summary_statistics_paths.collect { "--summary_statistics ${it}" }.join(' ')
     """
+    export DUCKDB_TMPDIR="\$PWD/duckdb_tmp"
+    export TMPDIR="\$DUCKDB_TMPDIR"
+    mkdir -p "\$DUCKDB_TMPDIR"
     mkdir -p fine_mapping_locus_sets
 
     collector collect_canonical_regions \\
