@@ -52,7 +52,13 @@ nextflow_pipeline {
         }
     }
 
-    test("succeeds and logs a parameter summary when parameters are valid") {
+    test("fails when an unrecognized parameter is passed") {
+        when {
+            params {
+                bogus_typo_param = 1
+            }
+        }
+
         then {
             def output = [workflow.stdout, workflow.stderr]
                 .findAll { stream -> stream != null && stream.toString() }
@@ -60,9 +66,29 @@ nextflow_pipeline {
                 .join("\n")
 
             assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("bogus_typo_param") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds and logs a parameter summary when parameters are valid") {
+        then {
+            // nf-test always runs Nextflow with `-quiet`, so `log.info` output
+            // (which is what `paramsSummaryLog()` uses) never reaches
+            // workflow.stdout/workflow.stderr. nf-test still writes the full,
+            // unfiltered Nextflow log to meta/nextflow.log under the test's
+            // launchDir regardless of `-quiet`, so read that instead to confirm
+            // paramsSummaryLog() actually ran (as opposed to just asserting on
+            // text that happens to appear in the workflow's own output summary).
+            def nextflowLog = new File("${launchDir}/meta/nextflow.log").text
+
+            assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert output.contains("manifest") }
+                { assert nextflowLog.contains("Core Nextflow options") }
             )
         }
     }

@@ -86,7 +86,7 @@ The **`meta` map** carries `trait`, `sampleSize`, `ancestry` (and sometimes `lea
 - `conf/test-full-collector-hailing-ducks.config` — Local full-data integration profile for the collector locus breaker and Hailing Ducks LD annotation
 - `conf/google-batch.config` — Google Cloud Batch profile
 
-Key pipeline parameters: `params.manifest`, `params.ld_reference`, `params.output_dir`, `params.chain`, `params.liftover`, `params.r2`.
+Key pipeline parameters: `params.manifest`, `params.ld_registry`, `params.output_dir`. See `nextflow_schema.json` for the full, authoritative parameter list — `validateParameters()` (nf-schema) rejects any parameter not declared there.
 
 ## Test Data
 

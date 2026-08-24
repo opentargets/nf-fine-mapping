@@ -7,9 +7,11 @@ on:
     paths:
       - "*.nf"
       - "*.config"
+      - "*.json"
       - "conf/**"
       - "modules/**"
       - "workflows/**"
+      - "assets/**"
       - "docs/**"
       - "tests/**"
       - "testdata/**"
