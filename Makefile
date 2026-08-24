@@ -4,10 +4,14 @@
 	reference-data-filters reference-data-variant-index reference-data-download-panukbb-tables reference-data-panukbb-indexes reference-data-panukbb-chr1 reference-data-all-indexes \
 	integration-test integration-test-image \
 	unit-test unit-test-pipeline unit-test-workflows unit-test-all \
-	collector-dev collector-lint collector-test collector-check docs docs-clean collector-docs collector-docs-clean collector-build
+	collector-dev collector-lint collector-test collector-check docs docs-clean collector-docs collector-docs-clean collector-build \
+	docs-metro-map
 
 NEXTFLOW ?= nextflow
 NF_TEST ?= nf-test
+UVX ?= uvx
+METRO_MAP_SRC ?= docs/architecture/pipeline-metro-map.mmd
+METRO_MAP_SVG ?= docs/architecture/pipeline-metro-map.svg
 JAVA_MIN_VERSION ?= 17
 
 help: ## Show available development and test targets
@@ -103,8 +107,12 @@ collector-test:
 
 collector-check: collector-lint collector-test
 
-docs: ## Build the full pipeline documentation
+docs: docs-metro-map ## Build the full pipeline documentation
 	$(MAKE) -C tools/collector docs
+
+docs-metro-map: ## Regenerate the pipeline metro-map SVG from its nf-metro source
+	$(UVX) nf-metro render $(METRO_MAP_SRC) -o $(METRO_MAP_SVG) \
+		--theme nfcore --embed-font --validate --strict
 
 docs-clean: ## Remove generated pipeline documentation
 	$(MAKE) -C tools/collector docs-clean

@@ -16,6 +16,15 @@ The major stages are:
 The pipeline can run locally for development or on Google Cloud through the
 provided Nextflow profiles.
 
+.. image:: ../architecture/pipeline-metro-map.svg
+   :alt: Metro map of the nf-fine-mapping pipeline, from manifest input through
+         locus breaking, locus collection, LD annotation and fine-mapping to
+         published outputs.
+
+Regenerate this diagram with ``make docs-metro-map`` after changing
+``main.nf`` or its subworkflows; the source lives at
+``docs/architecture/pipeline-metro-map.mmd``.
+
 Data resolution
 ---------------
 
