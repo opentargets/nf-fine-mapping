@@ -8,6 +8,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import cast
 
 import duckdb
@@ -367,7 +368,12 @@ def _write_stats_parquet(path: Path, prepared_inputs: tuple[CanonicalRegionInput
         )
 
 
-def _write_stats_json(path: Path, config: CollectCanonicalRegionsConfig, regions: list[CanonicalRegion]) -> None:
+def _write_stats_json(
+    path: Path,
+    config: CollectCanonicalRegionsConfig,
+    regions: list[CanonicalRegion],
+    timings_seconds: dict[str, float] | None = None,
+) -> None:
     payload = {
         "runId": config.run_id,
         "inputTuples": [
@@ -383,6 +389,7 @@ def _write_stats_json(path: Path, config: CollectCanonicalRegionsConfig, regions
         "nPublishedLocusSets": 0,
         "studiesWithMissingEAF": [],
         "runQualityControls": [],
+        "timingsSeconds": timings_seconds or {},
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -554,17 +561,25 @@ def _write_fine_mapping_locus_sets(
 def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tuple[CanonicalRegionInput, ...]:
     """Validate inputs, sweep bounded canonical regions, and emit provisional outputs."""
     _prepare_output_paths(config)
+    validation_started = perf_counter()
     prepared_inputs = prepare_collect_canonical_region_inputs(config)
     studies_with_missing_eaf = _studies_with_missing_eaf(prepared_inputs)
     if studies_with_missing_eaf:
         _write_stats_parquet(config.stats_parquet_output, prepared_inputs, [])
         _write_invalid_run_stats(config.stats_json_output, config, prepared_inputs, studies_with_missing_eaf)
         return prepared_inputs
+    timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
+    started = perf_counter()
     source_loci = _read_source_loci(prepared_inputs)
     regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
+    timings["regionDiscovery"] = round(perf_counter() - started, 6)
+    started = perf_counter()
     published_count = _write_fine_mapping_locus_sets(config, prepared_inputs, regions)
+    timings["locusMaterialization"] = round(perf_counter() - started, 6)
+    started = perf_counter()
     _write_stats_parquet(config.stats_parquet_output, prepared_inputs, regions)
-    _write_stats_json(config.stats_json_output, config, regions)
+    timings["statistics"] = round(perf_counter() - started, 6)
+    _write_stats_json(config.stats_json_output, config, regions, timings)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count
