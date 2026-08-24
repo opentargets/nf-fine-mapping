@@ -454,8 +454,7 @@ def test_collect_canonical_regions_cli_splits_overlap_chain_before_cap_exceedanc
         ).fetchall()
 
     assert rows == [
-        (100, 200, ["a_locus"]),
-        (180, 319, ["b_locus", "c_locus"]),
+        (180, 200, ["a_locus", "b_locus", "c_locus"]),
     ]
 
 
@@ -996,3 +995,62 @@ def test_collect_canonical_regions_materializes_all_inputs_for_single_ancestry_b
     assert stats[0][0] is not None
     assert stats[0][1] == ["STUDY_A", "STUDY_B"]
     assert output_rows == [("STUDY_A",), ("STUDY_B",)]
+
+
+def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_intersection(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a", 100, 200)])
+    locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b", 100, 200)])
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_160_A_G", 160, 0.1, -9, 1.0, 0.2, 0.01),
+            ("1_180_A_G", 180, 0.1, -8, 1.0, 0.2, 0.01),
+        ],
+    )
+    sum_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[
+            ("1_160_C_T", 160, 0.1, -9, 1.0, 0.2, 0.01),
+            ("1_180_C_T", 180, 0.1, -8, 1.0, 0.2, 0.01),
+        ],
+    )
+    prepared = (
+        CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),
+        CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=locus_b, summary_statistics_path=sum_b),
+    )
+    regions = [
+        CanonicalRegion(
+            chromosome="1",
+            region_start=100,
+            region_end=200,
+            quality_controls=(),
+            input_loci=(SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200), SourceLocus("STUDY_B", "b1", "AFR", "1", 100, 200)),
+        ),
+        CanonicalRegion(
+            chromosome="1",
+            region_start=150,
+            region_end=250,
+            quality_controls=(),
+            input_loci=(SourceLocus("STUDY_A", "a2", "EUR", "1", 150, 250), SourceLocus("STUDY_B", "b2", "AFR", "1", 150, 250)),
+        ),
+    ]
+
+    with duckdb.connect() as con:
+        validate_summary_statistics_inputs(con, prepared)
+        staged = create_regional_variants_table(con, prepared, regions)
+        stats_table, loci_table = build_regional_output_tables(con, prepared, regions, staged)
+        stats = con.execute(
+            f"SELECT fineMappingLocusSetId, locusStart, locusEnd, list_transform(components, item -> item.qualityControls) FROM {stats_table}"
+        ).fetchall()
+        loci = con.execute(
+            f"SELECT locusStart, locusEnd, qualityControls, list_transform(locus, item -> item.variantId) FROM {loci_table} ORDER BY studyId"
+        ).fetchall()
+
+    assert len(stats) == 1
+    assert stats[0][1:3] == (150, 200)
+    assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in qc for qc in stats[0][3])
+    assert all(row[0:2] == (150, 200) for row in loci)
+    assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in row[2] for row in loci)
+    assert [row[3] for row in loci] == [["1_160_A_G", "1_180_A_G"], ["1_160_C_T", "1_180_C_T"]]

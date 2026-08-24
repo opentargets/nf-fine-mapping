@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_STATS_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
+DUPLICATE_FINE_MAPPING_SET_QC = "MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL"
 DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
 DISK_EXHAUSTION_EXIT_CODE = 75
 
@@ -606,11 +607,113 @@ def build_regional_output_tables(
             metadata.inputLoci
         """
     )
+    con.execute("DROP TABLE IF EXISTS canonical_region_merged_bounds")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_merged_bounds AS
+        SELECT
+            fineMappingLocusSetId,
+            any_value(chromosome) AS chromosome,
+            max(locusStart)::INTEGER AS locusStart,
+            min(locusEnd)::INTEGER AS locusEnd,
+            list_sort(list_distinct(flatten(list(inputLoci)))) AS inputLoci,
+            CASE
+                WHEN count(*) > 1 THEN ['{DUPLICATE_FINE_MAPPING_SET_QC}']::VARCHAR[]
+                ELSE list_sort(list_distinct(flatten(list(qualityControls))))
+            END AS qualityControls
+        FROM canonical_region_status
+        WHERE fineMappingLocusSetId IS NOT NULL
+        GROUP BY fineMappingLocusSetId
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS canonical_region_final_variants")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_final_variants AS
+        SELECT DISTINCT
+            merged.fineMappingLocusSetId,
+            staged.studyId,
+            staged.variantId,
+            staged.chromosome,
+            staged.position,
+            staged.pValueMantissa,
+            staged.pValueExponent,
+            staged.effectAlleleFrequencyFromSource,
+            staged.beta,
+            staged.standardError
+        FROM canonical_region_merged_bounds AS merged
+        INNER JOIN canonical_region_status AS original
+          ON original.fineMappingLocusSetId = merged.fineMappingLocusSetId
+        INNER JOIN {region_variants_table} AS staged
+          ON staged.canonicalRegionId = original.canonicalRegionId
+         AND staged.position BETWEEN merged.locusStart AND merged.locusEnd
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS canonical_region_final_components")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_final_components AS
+        SELECT DISTINCT
+            merged.fineMappingLocusSetId,
+            prepared.studyId
+        FROM canonical_region_merged_bounds AS merged
+        INNER JOIN canonical_region_status AS original
+          ON original.fineMappingLocusSetId = merged.fineMappingLocusSetId
+        CROSS JOIN (VALUES {", ".join(f"({_quote_sql_string(prepared.study_id)})" for prepared in prepared_inputs)}) AS prepared(studyId)
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS canonical_region_final_component_stats")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_final_component_stats AS
+        SELECT
+            components.fineMappingLocusSetId,
+            components.studyId,
+            count(DISTINCT variants.variantId)::INTEGER AS nVariants,
+            count(DISTINCT variants.variantId) FILTER (WHERE least(CAST(variants.effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(variants.effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf})::INTEGER AS nVariantsAboveMafCutoff,
+            (list(variants.variantId ORDER BY variants.pValueExponent, variants.pValueMantissa, variants.variantId) FILTER (WHERE least(CAST(variants.effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(variants.effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf}))[1] AS leadVariantId
+        FROM canonical_region_final_components AS components
+        LEFT JOIN canonical_region_final_variants AS variants
+          ON variants.fineMappingLocusSetId = components.fineMappingLocusSetId
+         AND variants.studyId = components.studyId
+        GROUP BY components.fineMappingLocusSetId, components.studyId
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS canonical_region_final_status")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_final_status AS
+        SELECT
+            merged.fineMappingLocusSetId,
+            merged.chromosome,
+            merged.locusStart,
+            merged.locusEnd,
+            merged.qualityControls,
+            merged.inputLoci,
+            sum(components.nVariants)::INTEGER AS nVariants,
+            sum(components.nVariantsAboveMafCutoff)::INTEGER AS nVariantsAboveMafCutoff,
+            list(struct_pack(
+                studyId := components.studyId,
+                studyLocusId := md5(components.studyId || components.leadVariantId),
+                nVariants := components.nVariants,
+                nVariantsBelowMafCutoff := components.nVariants - components.nVariantsAboveMafCutoff,
+                qualityControls := list_distinct(list_concat(
+                    CASE WHEN list_contains(merged.qualityControls, '{DUPLICATE_FINE_MAPPING_SET_QC}') THEN ['{DUPLICATE_FINE_MAPPING_SET_QC}']::VARCHAR[] ELSE []::VARCHAR[] END,
+                    CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
+                ))
+            ) ORDER BY components.studyId)::{component_type} AS components,
+            CASE WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) THEN merged.fineMappingLocusSetId ELSE NULL END AS publishedFineMappingLocusSetId
+        FROM canonical_region_merged_bounds AS merged
+        INNER JOIN canonical_region_final_component_stats AS components
+          ON components.fineMappingLocusSetId = merged.fineMappingLocusSetId
+        GROUP BY merged.fineMappingLocusSetId, merged.chromosome, merged.locusStart, merged.locusEnd, merged.qualityControls, merged.inputLoci
+        """
+    )
     con.execute(
         f"""
         CREATE TEMP TABLE {stats_table_name} AS
         SELECT
-            fineMappingLocusSetId,
+            publishedFineMappingLocusSetId AS fineMappingLocusSetId,
             chromosome,
             locusStart,
             locusEnd,
@@ -618,45 +721,45 @@ def build_regional_output_tables(
             nVariantsAboveMafCutoff,
             inputLoci,
             components
-        FROM canonical_region_status
-        WHERE fineMappingLocusSetId IS NOT NULL
-        ORDER BY chromosome, locusStart, locusEnd, fineMappingLocusSetId
+        FROM canonical_region_final_status
+        WHERE publishedFineMappingLocusSetId IS NOT NULL
+        ORDER BY locusStart, locusEnd, fineMappingLocusSetId
         """
     )
     con.execute(
         f"""
         CREATE TEMP TABLE {loci_table_name} AS
         SELECT
-            status.fineMappingLocusSetId,
+            status.publishedFineMappingLocusSetId AS fineMappingLocusSetId,
             md5(components.studyId || components.leadVariantId) AS studyLocusId,
             components.studyId,
-            status.chromosome,
+            variants.chromosome,
             status.locusStart,
             status.locusEnd,
             status.qualityControls,
             list(
                 struct_pack(
-                    variantId := staged.variantId,
-                    pValueMantissa := staged.pValueMantissa,
-                    pValueExponent := staged.pValueExponent,
-                    beta := staged.beta,
-                    standardError := staged.standardError
+                    variantId := variants.variantId,
+                    pValueMantissa := variants.pValueMantissa,
+                    pValueExponent := variants.pValueExponent,
+                    beta := variants.beta,
+                    standardError := variants.standardError
                 )
-                ORDER BY staged.position, staged.variantId
+                ORDER BY variants.position, variants.variantId
             )::{locus_type} AS locus
-        FROM canonical_region_status AS status
-        INNER JOIN canonical_region_component_stats AS components
-          ON components.canonicalRegionId = status.canonicalRegionId
-        INNER JOIN {region_variants_table} AS staged
-          ON staged.canonicalRegionId = components.canonicalRegionId
-         AND staged.studyId = components.studyId
-        WHERE status.fineMappingLocusSetId IS NOT NULL
-          AND {maf_sql}
+        FROM canonical_region_final_status AS status
+        INNER JOIN canonical_region_final_component_stats AS components
+          ON components.fineMappingLocusSetId = status.fineMappingLocusSetId
+        INNER JOIN canonical_region_final_variants AS variants
+          ON variants.fineMappingLocusSetId = status.fineMappingLocusSetId
+         AND variants.studyId = components.studyId
+         AND least(CAST(variants.effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(variants.effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf}
+        WHERE status.publishedFineMappingLocusSetId IS NOT NULL
         GROUP BY
-            status.fineMappingLocusSetId,
+            status.publishedFineMappingLocusSetId,
             components.studyId,
             components.leadVariantId,
-            status.chromosome,
+            variants.chromosome,
             status.locusStart,
             status.locusEnd,
             status.qualityControls
