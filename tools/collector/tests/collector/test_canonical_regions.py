@@ -618,6 +618,8 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
 
     stats = json.loads(stats_json_output.read_text())
     assert stats["nPublishedLocusSets"] == 1
+    assert stats["candidateLocusSizeBp"] == {"n": 1, "mean": 121.0, "min": 121, "max": 121}
+    assert stats["publishedLocusSizeBp"] == {"n": 1, "mean": 121.0, "min": 121, "max": 121}
 
 
 def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_when_publication_is_blocked(
@@ -743,6 +745,8 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
     assert stats["nPublishedLocusSets"] == 0
     assert set(stats["timingsSeconds"]) == {"inputValidation", "regionDiscovery", "locusMaterialization", "statistics"}
     assert all(value >= 0 for value in stats["timingsSeconds"].values())
+    assert stats["candidateLocusSizeBp"]["n"] == 1
+    assert stats["publishedLocusSizeBp"] == {"n": 0, "mean": None, "min": None, "max": None}
 
 
 def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishing(tmp_path: Path) -> None:

@@ -669,7 +669,13 @@ def _write_stats_json(
     prepared_inputs: tuple[CanonicalRegionInput, ...],
     regions: list[CanonicalRegion],
     timings_seconds: dict[str, float] | None = None,
+    published_locus_sizes: list[int] | None = None,
 ) -> None:
+    def size_summary(sizes: list[int]) -> dict[str, float | int | None]:
+        if not sizes:
+            return {"n": 0, "mean": None, "min": None, "max": None}
+        return {"n": len(sizes), "mean": sum(sizes) / len(sizes), "min": min(sizes), "max": max(sizes)}
+
     payload = {
         "runId": config.run_id,
         "canonicalRegionMinMaf": config.canonical_region_min_maf,
@@ -688,6 +694,8 @@ def _write_stats_json(
         "studiesWithMissingEAF": [],
         "runQualityControls": [],
         "timingsSeconds": timings_seconds or {},
+        "candidateLocusSizeBp": size_summary([region.region_end - region.region_start + 1 for region in regions]),
+        "publishedLocusSizeBp": size_summary(published_locus_sizes or []),
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -777,7 +785,7 @@ def _write_fine_mapping_locus_sets_from_table(
     con: duckdb.DuckDBPyConnection,
     output_dir: Path,
     loci_table_name: str,
-) -> int:
+) -> tuple[int, list[int]]:
     published_ids = [
         row[0]
         for row in con.execute(
@@ -799,7 +807,13 @@ def _write_fine_mapping_locus_sets_from_table(
             ) TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)
             """
         )
-    return len(published_ids)
+    published_sizes = [
+        int(row[0])
+        for row in con.execute(
+            f"SELECT max(locusEnd) - min(locusStart) + 1 FROM {loci_table_name} GROUP BY fineMappingLocusSetId ORDER BY 1"
+        ).fetchall()
+    ]
+    return len(published_ids), published_sizes
 
 
 def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tuple[CanonicalRegionInput, ...]:
@@ -827,7 +841,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
             region_variants_table=region_variants_table or "region_variants",
             min_maf=config.canonical_region_min_maf,
         )
-        published_count = _write_fine_mapping_locus_sets_from_table(
+        published_count, published_locus_sizes = _write_fine_mapping_locus_sets_from_table(
             con,
             config.fine_mapping_locus_set_output_dir,
             loci_table_name,
@@ -836,7 +850,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings)
+    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings, published_locus_sizes)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count
