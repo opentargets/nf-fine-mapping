@@ -9,9 +9,48 @@ import pytest
 from typer.testing import CliRunner
 
 from collector import app
-from collector.canonical_regions import CollectCanonicalRegionsConfig, prepare_collect_canonical_region_inputs
+from collector.canonical_regions import (
+    CanonicalRegion,
+    CanonicalRegionInput,
+    CollectCanonicalRegionsConfig,
+    SourceLocus,
+    build_regional_output_tables,
+    create_regional_variants_table,
+    prepare_collect_canonical_region_inputs,
+    validate_summary_statistics_inputs,
+)
 
 runner = CliRunner()
+
+
+def _regional_test_inputs(tmp_path: Path) -> tuple[tuple[CanonicalRegionInput, ...], list[CanonicalRegion]]:
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01), ("1_500_A_G", 500, 0.1, -7, 1.0, 0.2, 0.01)],
+    )
+    sum_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_120_A_G", 120, 0.1, -8, 1.0, 0.3, 0.01)],
+    )
+    prepared = (
+        CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=sum_a, summary_statistics_path=sum_a),
+        CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=sum_b, summary_statistics_path=sum_b),
+    )
+    regions = [
+        CanonicalRegion(
+            chromosome="1",
+            region_start=100,
+            region_end=200,
+            quality_controls=(),
+            input_loci=(
+                SourceLocus("STUDY_A", "a-locus", "EUR", "1", 100, 150),
+                SourceLocus("STUDY_B", "b-locus", "AFR", "1", 110, 160),
+            ),
+        )
+    ]
+    return prepared, regions
 
 
 def _write_locus_breaker_dataset(path: Path, *, study_ids: list[str]) -> Path:
@@ -702,6 +741,8 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
     stats = json.loads(stats_json_output.read_text())
     assert stats["nCandidateLocusSets"] == 1
     assert stats["nPublishedLocusSets"] == 0
+    assert set(stats["timingsSeconds"]) == {"inputValidation", "regionDiscovery", "locusMaterialization", "statistics"}
+    assert all(value >= 0 for value in stats["timingsSeconds"].values())
 
 
 def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishing(tmp_path: Path) -> None:
@@ -745,3 +786,172 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
     report = json.loads((tmp_path / "stats.json").read_text())
     assert report["studiesWithMissingEAF"] == ["STUDY_B"]
     assert report["runQualityControls"] == ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"]
+
+
+def test_regional_staging_keeps_only_projected_variants_inside_regions(tmp_path: Path) -> None:
+    prepared, regions = _regional_test_inputs(tmp_path)
+    with duckdb.connect() as con:
+        validate_summary_statistics_inputs(con, prepared)
+        table_name = create_regional_variants_table(con, prepared, regions)
+        rows = con.execute(f"SELECT studyId, ancestry, variantId, position FROM {table_name} ORDER BY studyId, position").fetchall()
+    assert rows == [("STUDY_A", "EUR", "1_110_A_G", 110), ("STUDY_B", "AFR", "1_120_A_G", 120)]
+
+
+def test_build_regional_output_tables_derives_stats_and_published_loci_from_staged_variants(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 180, 220)])
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_110_A_G", 110, 0.20, -8, 5.0, 0.20, 0.02),
+            ("1_140_C_T", 140, 0.10, -8, 5.0, 0.30, 0.03),
+            ("1_150_G_A", 150, 0.30, -9, 1.0, 0.01, 0.02),
+        ],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[
+            ("1_125_A_C", 125, -0.40, -7, 2.0, 0.40, 0.04),
+            ("1_130_A_G", 130, -0.50, -7, 2.0, 0.30, 0.05),
+            ("1_210_T_C", 210, 0.60, -6, 8.0, 0.99, 0.06),
+        ],
+    )
+    prepared = (
+        CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_breaker_a, summary_statistics_path=sumstats_a),
+        CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=locus_breaker_b, summary_statistics_path=sumstats_b),
+    )
+    regions = [
+        CanonicalRegion(
+            chromosome="1",
+            region_start=100,
+            region_end=220,
+            quality_controls=(),
+            input_loci=(
+                SourceLocus("STUDY_A", "a_locus", "EUR", "1", 100, 200),
+                SourceLocus("STUDY_B", "b_locus", "AFR", "1", 180, 220),
+            ),
+        )
+    ]
+
+    expected_study_locus_ids = {
+        "STUDY_A": hashlib.md5(b"STUDY_A1_110_A_G", usedforsecurity=False).hexdigest(),
+        "STUDY_B": hashlib.md5(b"STUDY_B1_125_A_C", usedforsecurity=False).hexdigest(),
+    }
+    expected_locus_set_id = hashlib.md5(
+        "|".join(sorted(expected_study_locus_ids.values())).encode(),
+        usedforsecurity=False,
+    ).hexdigest()
+
+    with duckdb.connect() as con:
+        validate_summary_statistics_inputs(con, prepared)
+        staged_variants = create_regional_variants_table(con, prepared, regions)
+        stats_table, loci_table = build_regional_output_tables(con, prepared, regions, staged_variants)
+        stats_rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                chromosome,
+                locusStart,
+                locusEnd,
+                nVariants,
+                nVariantsAboveMafCutoff,
+                list_transform(inputLoci, item -> item.studyLocusId) AS inputStudyLocusIds,
+                list_transform(
+                    components,
+                    item -> struct_pack(
+                        studyId := item.studyId,
+                        studyLocusId := item.studyLocusId,
+                        nVariants := item.nVariants,
+                        nVariantsBelowMafCutoff := item.nVariantsBelowMafCutoff,
+                        qualityControls := item.qualityControls
+                    )
+                ) AS componentStats
+            FROM {stats_table}
+            """
+        ).fetchall()
+        locus_rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                studyId,
+                studyLocusId,
+                chromosome,
+                locusStart,
+                locusEnd,
+                list_transform(locus, item -> item.variantId) AS locusVariants
+            FROM {loci_table}
+            ORDER BY studyId
+            """
+        ).fetchall()
+
+    assert stats_rows == [
+        (
+            expected_locus_set_id,
+            "1",
+            100,
+            220,
+            6,
+            4,
+            ["a_locus", "b_locus"],
+            [
+                {
+                    "studyId": "STUDY_A",
+                    "studyLocusId": "a_locus",
+                    "nVariants": 3,
+                    "nVariantsBelowMafCutoff": 1,
+                    "qualityControls": [],
+                },
+                {
+                    "studyId": "STUDY_B",
+                    "studyLocusId": "b_locus",
+                    "nVariants": 3,
+                    "nVariantsBelowMafCutoff": 1,
+                    "qualityControls": [],
+                },
+            ],
+        )
+    ]
+    assert locus_rows == [
+        (
+            expected_locus_set_id,
+            "STUDY_A",
+            expected_study_locus_ids["STUDY_A"],
+            "1",
+            100,
+            220,
+            ["1_110_A_G", "1_140_C_T"],
+        ),
+        (
+            expected_locus_set_id,
+            "STUDY_B",
+            expected_study_locus_ids["STUDY_B"],
+            "1",
+            100,
+            220,
+            ["1_125_A_C", "1_130_A_G"],
+        ),
+    ]
+
+
+def test_summary_validation_rejects_duplicate_variants(tmp_path: Path) -> None:
+    path = _write_sumstats_dataset_with_rows(
+        tmp_path / "duplicate.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01), ("1_110_A_G", 110, 0.2, -7, 1.0, 0.2, 0.01)],
+    )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
+    with duckdb.connect() as con, pytest.raises(ValueError, match="duplicate variantId"):
+        validate_summary_statistics_inputs(con, prepared)
+
+
+def test_summary_validation_rejects_all_null_eaf(tmp_path: Path) -> None:
+    path = tmp_path / "null-eaf.sumstats.parquet"
+    with duckdb.connect() as con:
+        con.execute(
+            f"COPY (SELECT 'STUDY_A'::VARCHAR AS studyId, '1_110_A_G'::VARCHAR AS variantId, '1'::VARCHAR AS chromosome, 110::INTEGER AS position, 1.0::FLOAT AS pValueMantissa, -8::INTEGER AS pValueExponent, NULL::FLOAT AS effectAlleleFrequencyFromSource, 0.1::DOUBLE AS beta, 0.01::DOUBLE AS standardError) TO '{path}' (FORMAT PARQUET)"
+        )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
+    with duckdb.connect() as con, pytest.raises(ValueError, match="incomplete effectAlleleFrequencyFromSource"):
+        validate_summary_statistics_inputs(con, prepared)

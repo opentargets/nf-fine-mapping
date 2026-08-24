@@ -229,7 +229,7 @@ def test_full_data_profile_uses_a_single_explicit_collector_hailing_ducks_profil
     assert "gentropy_ld_annotation_spark_conf" not in full_config
     assert "withLabel: gentropy" not in full_config
     assert "gentropy:3.4.0-dev.1-ld-pair-extraction-v2" not in full_config
-    assert "memory = { 16.GB * (task.attempt + 1) }" in normalized_full_config
+    assert "memory = 8.GB" in normalized_full_config
     assert "maxForks = 2" in normalized_full_config
     assert "maxRetries = 2" in normalized_full_config
     assert "task.exitStatus == 137 ? 'retry' : 'terminate'" in normalized_full_config

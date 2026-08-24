@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 
-from collector.canonical_regions import CollectCanonicalRegionsConfig, run_collect_canonical_regions
+from collector.canonical_regions import DISK_EXHAUSTION_EXIT_CODE, CollectCanonicalRegionsConfig, DiskExhaustionError, run_collect_canonical_regions
 from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.empty_status import ValidationStage, emit_empty_status
 from collector.hailing_ld import HailingLdConfig, HailingLdReference, run_hailing_ld
@@ -312,6 +312,9 @@ def collect_canonical_regions(
                 max_region_span_bp=max_region_span_bp,
             )
         )
+    except DiskExhaustionError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=DISK_EXHAUSTION_EXIT_CODE) from error
     except (FileNotFoundError, ValidationError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
