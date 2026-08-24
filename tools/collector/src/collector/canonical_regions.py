@@ -82,12 +82,9 @@ class CollectCanonicalRegionsConfig(BaseModel):
     stats_json_output: Path
     canonical_region_min_maf: float = Field(default=DEFAULT_CANONICAL_REGION_MIN_MAF, ge=0, lt=0.5)
     canonical_region_max_region_span_bp: int = Field(default=3_000_000, ge=1)
-    max_region_span_bp: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _validate_parallel_arrays(self) -> CollectCanonicalRegionsConfig:
-        if self.max_region_span_bp is not None:
-            object.__setattr__(self, "canonical_region_max_region_span_bp", self.max_region_span_bp)
         if len(self.locus_breaker_paths) < 2:
             raise ValueError("At least two input triples are required")
         expected_length = len(self.locus_breaker_paths)
@@ -733,6 +730,8 @@ def _write_invalid_run_stats(
     """Emit the compact run report for a fatal preflight QC result."""
     payload = {
         "runId": config.run_id,
+        "canonicalRegionMinMaf": config.canonical_region_min_maf,
+        "canonicalRegionMaxRegionSpanBp": config.canonical_region_max_region_span_bp,
         "inputTuples": [
             {
                 "studyId": prepared.study_id,
@@ -811,9 +810,7 @@ def _write_fine_mapping_locus_sets_from_table(
         )
     published_sizes = [
         int(row[0])
-        for row in con.execute(
-            f"SELECT max(locusEnd) - min(locusStart) + 1 FROM {loci_table_name} GROUP BY fineMappingLocusSetId ORDER BY 1"
-        ).fetchall()
+        for row in con.execute(f"SELECT max(locusEnd) - min(locusStart) + 1 FROM {loci_table_name} GROUP BY fineMappingLocusSetId").fetchall()
     ]
     return len(published_ids), published_sizes
 

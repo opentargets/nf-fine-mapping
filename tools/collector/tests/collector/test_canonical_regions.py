@@ -437,7 +437,7 @@ def test_collect_canonical_regions_cli_splits_overlap_chain_before_cap_exceedanc
             str(stats_parquet_output),
             "--stats_json_output",
             str(tmp_path / "stats" / "run-1.stat.json"),
-            "--max_region_span_bp",
+            "--canonical_region_max_region_span_bp",
             "140",
         ],
     )
@@ -490,7 +490,7 @@ def test_collect_canonical_regions_cli_emits_oversized_source_locus_as_standalon
             str(stats_parquet_output),
             "--stats_json_output",
             str(tmp_path / "stats" / "run-1.stat.json"),
-            "--max_region_span_bp",
+            "--canonical_region_max_region_span_bp",
             "100",
         ],
     )
