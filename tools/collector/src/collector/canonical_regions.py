@@ -440,11 +440,18 @@ def _build_region(input_loci: list[SourceLocus], quality_controls: tuple[str, ..
 def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp: int) -> list[CanonicalRegion]:
     regions: list[CanonicalRegion] = []
     current: list[SourceLocus] = []
+    current_chromosome: str | None = None
+    current_start: int | None = None
+    current_end: int | None = None
 
     def flush_current() -> None:
+        nonlocal current_chromosome, current_start, current_end
         if current:
             regions.append(_build_region(current))
             current.clear()
+        current_chromosome = None
+        current_start = None
+        current_end = None
 
     for locus in source_loci:
         if locus.inclusive_span_bp > max_region_span_bp:
@@ -454,17 +461,25 @@ def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp:
 
         if not current:
             current.append(locus)
+            current_chromosome = locus.chromosome
+            current_start = locus.locus_start
+            current_end = locus.locus_end
             continue
 
-        current_region = _build_region(current)
-        overlaps_current = locus.chromosome == current_region.chromosome and locus.locus_start <= current_region.region_end
-        merged_span_bp = max(current_region.region_end, locus.locus_end) - min(current_region.region_start, locus.locus_start) + 1
+        if current_chromosome is None or current_start is None or current_end is None:
+            raise RuntimeError("Canonical-region sweep lost the active region bounds")
+        overlaps_current = locus.chromosome == current_chromosome and locus.locus_start <= current_end
+        merged_span_bp = max(current_end, locus.locus_end) - min(current_start, locus.locus_start) + 1
         if overlaps_current and merged_span_bp <= max_region_span_bp:
             current.append(locus)
+            current_end = max(current_end, locus.locus_end)
             continue
 
         flush_current()
         current.append(locus)
+        current_chromosome = locus.chromosome
+        current_start = locus.locus_start
+        current_end = locus.locus_end
 
     flush_current()
     return regions
