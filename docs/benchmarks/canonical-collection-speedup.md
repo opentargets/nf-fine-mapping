@@ -15,9 +15,9 @@ Benchmark date: 2026-08-24
 | Implementation | Wall time | Published rows | Stats rows |
 |---|---:|---:|---:|
 | `main` baseline | 25.76 s | 2,997 | 1,000 |
-| optimized branch | 2.59 s | 2,997 | 1,000 |
+| optimized branch | 2.59 s (2.77 s after sweep-only refinement) | 2,997 | 1,000 |
 
-The optimized path was approximately **9.9× faster** on this fixture.
+The optimized path was approximately **9.3–9.9× faster** on this fixture, depending on the run.
 
 Logical Parquet comparison reported **0 differing rows** for the locus-set outputs. The optimized `stat.json` phase timings were:
 
