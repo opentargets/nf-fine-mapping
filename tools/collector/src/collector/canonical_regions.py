@@ -104,6 +104,91 @@ class CanonicalRegion:
         return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
+def validate_summary_statistics_inputs(
+    con: duckdb.DuckDBPyConnection,
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
+) -> None:
+    """Validate complete EAF coverage and unique study/variant rows in one pass per input."""
+    for prepared in prepared_inputs:
+        row = con.execute(
+            f"""
+            SELECT
+                count(*)::BIGINT AS n_rows,
+                count(effectAlleleFrequencyFromSource)::BIGINT AS n_eaf,
+                (count(*) - count(DISTINCT CAST(variantId AS VARCHAR)))::BIGINT AS n_duplicate_variants
+            FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+            """
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Unable to validate summary statistics for {prepared.study_id}")
+        n_rows, n_eaf, n_duplicate_variants = (int(value or 0) for value in row)
+        if n_duplicate_variants:
+            raise ValueError(f"Summary statistics for {prepared.study_id} contain duplicate variantId rows")
+        if n_rows and n_eaf != n_rows:
+            raise ValueError(f"Summary statistics for {prepared.study_id} have incomplete effectAlleleFrequencyFromSource")
+
+
+def create_regional_variants_table(
+    con: duckdb.DuckDBPyConnection,
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
+    regions: list[CanonicalRegion],
+    table_name: str = "region_variants",
+) -> str:
+    """Read summary statistics once into a compact temporary region-scoped relation."""
+    if not regions:
+        raise ValueError("At least one canonical region is required")
+    con.execute(f"DROP TABLE IF EXISTS {table_name}")
+    region_rows = " UNION ALL ".join(
+        f"SELECT {_quote_sql_string(region.canonical_region_id)} AS canonicalRegionId, {_quote_sql_string(region.chromosome)} AS chromosome, {region.region_start}::INTEGER AS locusStart, {region.region_end}::INTEGER AS locusEnd"
+        for region in regions
+    )
+    con.execute(
+        f"""
+        CREATE TEMP TABLE _canonical_regions_for_join AS
+        {region_rows}
+        """
+    )
+    inputs = " UNION ALL ".join(
+        f"""
+        SELECT
+            {_quote_sql_string(prepared.study_id)} AS studyId,
+            {_quote_sql_string(prepared.ancestry)} AS ancestry,
+            CAST(variantId AS VARCHAR) AS variantId,
+            CAST(chromosome AS VARCHAR) AS chromosome,
+            CAST(position AS INTEGER) AS position,
+            CAST(pValueMantissa AS FLOAT) AS pValueMantissa,
+            CAST(pValueExponent AS INTEGER) AS pValueExponent,
+            CAST(effectAlleleFrequencyFromSource AS FLOAT) AS effectAlleleFrequencyFromSource,
+            CAST(beta AS DOUBLE) AS beta,
+            CAST(standardError AS DOUBLE) AS standardError
+        FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+        """
+        for prepared in prepared_inputs
+    )
+    con.execute(
+        f"""
+        CREATE TEMP TABLE {table_name} AS
+        SELECT
+            regions.canonicalRegionId,
+            stats.studyId,
+            stats.ancestry,
+            stats.variantId,
+            stats.chromosome,
+            stats.position,
+            stats.pValueMantissa,
+            stats.pValueExponent,
+            stats.effectAlleleFrequencyFromSource,
+            stats.beta,
+            stats.standardError
+        FROM ({inputs}) AS stats
+        INNER JOIN _canonical_regions_for_join AS regions
+          ON stats.chromosome = regions.chromosome
+         AND stats.position BETWEEN regions.locusStart AND regions.locusEnd
+        """
+    )
+    return table_name
+
+
 def _assert_distinct(values: tuple[object, ...], label: str) -> None:
     normalized = [str(value) for value in values]
     if len(normalized) != len(set(normalized)):

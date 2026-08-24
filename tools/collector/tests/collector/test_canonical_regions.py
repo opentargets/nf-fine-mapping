@@ -9,9 +9,47 @@ import pytest
 from typer.testing import CliRunner
 
 from collector import app
-from collector.canonical_regions import CollectCanonicalRegionsConfig, prepare_collect_canonical_region_inputs
+from collector.canonical_regions import (
+    CanonicalRegion,
+    CanonicalRegionInput,
+    CollectCanonicalRegionsConfig,
+    SourceLocus,
+    create_regional_variants_table,
+    prepare_collect_canonical_region_inputs,
+    validate_summary_statistics_inputs,
+)
 
 runner = CliRunner()
+
+
+def _regional_test_inputs(tmp_path: Path) -> tuple[tuple[CanonicalRegionInput, ...], list[CanonicalRegion]]:
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01), ("1_500_A_G", 500, 0.1, -7, 1.0, 0.2, 0.01)],
+    )
+    sum_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_120_A_G", 120, 0.1, -8, 1.0, 0.3, 0.01)],
+    )
+    prepared = (
+        CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=sum_a, summary_statistics_path=sum_a),
+        CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=sum_b, summary_statistics_path=sum_b),
+    )
+    regions = [
+        CanonicalRegion(
+            chromosome="1",
+            region_start=100,
+            region_end=200,
+            quality_controls=(),
+            input_loci=(
+                SourceLocus("STUDY_A", "a-locus", "EUR", "1", 100, 150),
+                SourceLocus("STUDY_B", "b-locus", "AFR", "1", 110, 160),
+            ),
+        )
+    ]
+    return prepared, regions
 
 
 def _write_locus_breaker_dataset(path: Path, *, study_ids: list[str]) -> Path:
@@ -747,3 +785,34 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
     report = json.loads((tmp_path / "stats.json").read_text())
     assert report["studiesWithMissingEAF"] == ["STUDY_B"]
     assert report["runQualityControls"] == ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"]
+
+
+def test_regional_staging_keeps_only_projected_variants_inside_regions(tmp_path: Path) -> None:
+    prepared, regions = _regional_test_inputs(tmp_path)
+    with duckdb.connect() as con:
+        validate_summary_statistics_inputs(con, prepared)
+        table_name = create_regional_variants_table(con, prepared, regions)
+        rows = con.execute(f"SELECT studyId, ancestry, variantId, position FROM {table_name} ORDER BY studyId, position").fetchall()
+    assert rows == [("STUDY_A", "EUR", "1_110_A_G", 110), ("STUDY_B", "AFR", "1_120_A_G", 120)]
+
+
+def test_summary_validation_rejects_duplicate_variants(tmp_path: Path) -> None:
+    path = _write_sumstats_dataset_with_rows(
+        tmp_path / "duplicate.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01), ("1_110_A_G", 110, 0.2, -7, 1.0, 0.2, 0.01)],
+    )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
+    with duckdb.connect() as con, pytest.raises(ValueError, match="duplicate variantId"):
+        validate_summary_statistics_inputs(con, prepared)
+
+
+def test_summary_validation_rejects_all_null_eaf(tmp_path: Path) -> None:
+    path = tmp_path / "null-eaf.sumstats.parquet"
+    with duckdb.connect() as con:
+        con.execute(
+            f"COPY (SELECT 'STUDY_A'::VARCHAR AS studyId, '1_110_A_G'::VARCHAR AS variantId, '1'::VARCHAR AS chromosome, 110::INTEGER AS position, 1.0::FLOAT AS pValueMantissa, -8::INTEGER AS pValueExponent, NULL::FLOAT AS effectAlleleFrequencyFromSource, 0.1::DOUBLE AS beta, 0.01::DOUBLE AS standardError) TO '{path}' (FORMAT PARQUET)"
+        )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
+    with duckdb.connect() as con, pytest.raises(ValueError, match="incomplete effectAlleleFrequencyFromSource"):
+        validate_summary_statistics_inputs(con, prepared)
