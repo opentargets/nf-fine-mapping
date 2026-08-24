@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_STATS_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
-MAF_CUTOFF = 0.01
+DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
 DISK_EXHAUSTION_EXIT_CODE = 75
 
 
@@ -80,7 +80,8 @@ class CollectCanonicalRegionsConfig(BaseModel):
     fine_mapping_locus_set_output_dir: Path
     stats_parquet_output: Path
     stats_json_output: Path
-    max_region_span_bp: int = Field(default=3_000_000, ge=1)
+    canonical_region_min_maf: float = Field(default=DEFAULT_CANONICAL_REGION_MIN_MAF, ge=0, lt=0.5)
+    canonical_region_max_region_span_bp: int = Field(default=3_000_000, ge=1)
 
     @model_validator(mode="after")
     def _validate_parallel_arrays(self) -> CollectCanonicalRegionsConfig:
@@ -510,6 +511,7 @@ def build_regional_output_tables(
     region_variants_table: str = "region_variants",
     stats_table_name: str = "canonical_region_stats_output",
     loci_table_name: str = "published_locus_rows",
+    min_maf: float = DEFAULT_CANONICAL_REGION_MIN_MAF,
 ) -> tuple[str, str]:
     """Derive canonical-region stats and published-locus rows from staged variants."""
     con.execute(f"DROP TABLE IF EXISTS {stats_table_name}")
@@ -524,7 +526,7 @@ def build_regional_output_tables(
         "least("
         "CAST(staged.effectAlleleFrequencyFromSource AS DOUBLE), "
         "1.0::DOUBLE - CAST(staged.effectAlleleFrequencyFromSource AS DOUBLE)"
-        f") > {MAF_CUTOFF}"
+        f") > {min_maf}"
     )
     required_components = len(prepared_inputs)
     locus_type = COLLECTED_LOCUS_SCHEMA.fields[-1].sql_type()
@@ -664,9 +666,17 @@ def _write_stats_json(
     prepared_inputs: tuple[CanonicalRegionInput, ...],
     regions: list[CanonicalRegion],
     timings_seconds: dict[str, float] | None = None,
+    published_locus_sizes: list[int] | None = None,
 ) -> None:
+    def size_summary(sizes: list[int]) -> dict[str, float | int | None]:
+        if not sizes:
+            return {"n": 0, "mean": None, "min": None, "max": None}
+        return {"n": len(sizes), "mean": sum(sizes) / len(sizes), "min": min(sizes), "max": max(sizes)}
+
     payload = {
         "runId": config.run_id,
+        "canonicalRegionMinMaf": config.canonical_region_min_maf,
+        "canonicalRegionMaxRegionSpanBp": config.canonical_region_max_region_span_bp,
         "inputTuples": [
             {
                 "studyId": prepared.study_id,
@@ -681,6 +691,8 @@ def _write_stats_json(
         "studiesWithMissingEAF": [],
         "runQualityControls": [],
         "timingsSeconds": timings_seconds or {},
+        "candidateLocusSizeBp": size_summary([region.region_end - region.region_start + 1 for region in regions]),
+        "publishedLocusSizeBp": size_summary(published_locus_sizes or []),
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -718,6 +730,8 @@ def _write_invalid_run_stats(
     """Emit the compact run report for a fatal preflight QC result."""
     payload = {
         "runId": config.run_id,
+        "canonicalRegionMinMaf": config.canonical_region_min_maf,
+        "canonicalRegionMaxRegionSpanBp": config.canonical_region_max_region_span_bp,
         "inputTuples": [
             {
                 "studyId": prepared.study_id,
@@ -731,6 +745,8 @@ def _write_invalid_run_stats(
         "runQualityControls": ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"],
         "nCandidateLocusSets": 0,
         "nPublishedLocusSets": 0,
+        "candidateLocusSizeBp": {"n": 0, "mean": None, "min": None, "max": None},
+        "publishedLocusSizeBp": {"n": 0, "mean": None, "min": None, "max": None},
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -770,7 +786,7 @@ def _write_fine_mapping_locus_sets_from_table(
     con: duckdb.DuckDBPyConnection,
     output_dir: Path,
     loci_table_name: str,
-) -> int:
+) -> tuple[int, list[int]]:
     published_ids = [
         row[0]
         for row in con.execute(
@@ -792,7 +808,11 @@ def _write_fine_mapping_locus_sets_from_table(
             ) TO {_quote_sql_string(output_path.as_posix())} (FORMAT PARQUET)
             """
         )
-    return len(published_ids)
+    published_sizes = [
+        int(row[0])
+        for row in con.execute(f"SELECT max(locusEnd) - min(locusStart) + 1 FROM {loci_table_name} GROUP BY fineMappingLocusSetId").fetchall()
+    ]
+    return len(published_ids), published_sizes
 
 
 def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tuple[CanonicalRegionInput, ...]:
@@ -808,7 +828,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
     source_loci = _read_source_loci(prepared_inputs)
-    regions = _sweep_canonical_regions(source_loci, config.max_region_span_bp)
+    regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
     with _managed_duckdb() as con:
@@ -818,8 +838,9 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
             prepared_inputs,
             regions,
             region_variants_table=region_variants_table or "region_variants",
+            min_maf=config.canonical_region_min_maf,
         )
-        published_count = _write_fine_mapping_locus_sets_from_table(
+        published_count, published_locus_sizes = _write_fine_mapping_locus_sets_from_table(
             con,
             config.fine_mapping_locus_set_output_dir,
             loci_table_name,
@@ -828,7 +849,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings)
+    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings, published_locus_sizes)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count

@@ -50,7 +50,7 @@ The comparison normalizes Gentropy hive partitions into a real `studyLocusId` co
 `--locus_breaker`, `--ancestry`, and `--summary_statistics` options and
 writes a bounded canonical-region parquet dataset. This first slice validates
 the aligned tuple contract, sorts tuples deterministically by `studyId`, and
-merges inclusive source-locus overlaps up to `--max_region_span_bp`
+merges inclusive source-locus overlaps up to `--canonical_region_max_region_span_bp`
 (default `3000000`).
 
 ## Hailing Ducks LD annotation
