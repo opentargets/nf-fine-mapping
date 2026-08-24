@@ -1,0 +1,2 @@
+runId	studyId	route	summarystatsLocation	majorAncestry	traitFromSourceMappedIds	effectiveSampleSize
+RUN_A	GCST90002351	multi_susie_route	testdata/sumstats/GCST90002351	nfe	['EFO_0004833']	notanumber

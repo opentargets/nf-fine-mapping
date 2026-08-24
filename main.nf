@@ -50,37 +50,28 @@ def intro() -> Void {
     )
 }
 
-def manifest_row_to_record(row: List<String>, manifest_base_dir: String) -> Map {
-    def traitSet: List<String> = row[5].tokenize(',')
-    def summary_statistics_path = (row[3].startsWith('/') || row[3].contains('://')) ? row[3] : "${manifest_base_dir}/${row[3]}"
+def manifest_entry_to_record(entry: List, manifest_base_dir: String) -> Map {
+    def meta = entry[0] as Map
+    def summarystats_location = entry[1] as String
+    def trait_from_source_mapped_ids = entry[2] as String
 
-    def meta = [
-        runId: row[0],
-        studyId: row[1],
-        route: row[2],
-        ancestry: row[4],
-        traitSet: traitSet,
-        sampleSize: row[6].toInteger(),
-    ]
+    def summary_statistics_path = (summarystats_location.startsWith('/') || summarystats_location.contains('://'))
+        ? summarystats_location
+        : "${manifest_base_dir}/${summarystats_location}"
 
     return [
         summary_statistics_path: file(summary_statistics_path),
-        meta: meta,
+        meta: meta + [traitSet: trait_from_source_mapped_ids.tokenize(',')],
     ]
 }
 
 
 def read_manifest(path: String) {
-    def manifest_channel = channel.fromPath(path)
-        .flatMap { manifest ->
-            manifest.splitCsv(
-                sep: '\t',
-                skip: 1,
-            )
-        }
-        .map { row ->
-            manifest_row_to_record(row as List<String>, params.manifest_base_dir)
-        }
+    def manifest_channel = channel.fromList(
+        samplesheetToList(path, "assets/schema_manifest.json")
+    ).map { entry ->
+        manifest_entry_to_record(entry as List, params.manifest_base_dir)
+    }
 
     log.info("Manifest file read successfully: ${path}")
 
