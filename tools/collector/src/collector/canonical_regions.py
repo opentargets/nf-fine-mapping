@@ -658,6 +658,7 @@ def build_regional_output_tables(
 def _write_stats_json(
     path: Path,
     config: CollectCanonicalRegionsConfig,
+    prepared_inputs: tuple[CanonicalRegionInput, ...],
     regions: list[CanonicalRegion],
     timings_seconds: dict[str, float] | None = None,
 ) -> None:
@@ -670,7 +671,7 @@ def _write_stats_json(
                 "locusBreakerPath": str(prepared.locus_breaker_path),
                 "summaryStatisticsPath": str(prepared.summary_statistics_path),
             }
-            for prepared in prepare_collect_canonical_region_inputs(config)
+            for prepared in prepared_inputs
         ],
         "nCandidateLocusSets": len(regions),
         "nPublishedLocusSets": 0,
@@ -824,7 +825,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    _write_stats_json(config.stats_json_output, config, regions, timings)
+    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count
