@@ -23,11 +23,13 @@ graph LR
         study_in[OpenTargets Study]
     end
 
-    subgraph fm_planning [Fine-mapping Planning]
+    subgraph fm_planner [Fine-mapping Planner]
         planner[Fine-mapping Planner]
+    end
+
+    subgraph fm_manifest [Fine-mapping Manifest Generator]
         manifest_gen[Fine-mapping Manifest Generator]
         manifest_in[ ]
-        planner -->|main| manifest_gen
         manifest_gen -->|main| manifest_in
     end
 
@@ -67,6 +69,7 @@ graph LR
     end
 
     study_in -->|main| planner
+    planner -->|main| manifest_gen
     manifest_in -->|main| validate
     validate -->|main| lb
     lb -->|main| collect
