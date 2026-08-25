@@ -967,8 +967,6 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count
         payload["nNotPromotedLocusSets"] = len(regions) - published_count
-        payload["notPromotedReasons"] = (
-            {"NO_VARIANTS_IN_LOCUS": len(regions) - published_count} if len(regions) > published_count else {}
-        )
+        payload["notPromotedReasons"] = {"NO_VARIANTS_IN_LOCUS": len(regions) - published_count} if len(regions) > published_count else {}
         config.stats_json_output.write_text(json.dumps(payload, indent=2) + "\n")
     return prepared_inputs

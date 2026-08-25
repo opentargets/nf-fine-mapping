@@ -936,12 +936,8 @@ def test_summary_validation_rejects_all_null_eaf(tmp_path: Path) -> None:
 
 
 def test_collect_canonical_regions_materializes_all_inputs_for_single_ancestry_boundary(tmp_path: Path) -> None:
-    locus_a = _write_locus_breaker_dataset_with_loci(
-        tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)]
-    )
-    locus_b = _write_locus_breaker_dataset_with_loci(
-        tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 1000, 1100)]
-    )
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
+    locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 1000, 1100)])
     sum_a = _write_sumstats_dataset_with_rows(
         tmp_path / "a.sumstats.parquet",
         study_id="STUDY_A",
@@ -987,9 +983,7 @@ def test_collect_canonical_regions_materializes_all_inputs_for_single_ancestry_b
         stats = con.execute(
             f"SELECT fineMappingLocusSetId, list_transform(components, item -> item.studyId) FROM read_parquet('{stats_path}')"
         ).fetchall()
-        output_rows = con.execute(
-            f"SELECT studyId FROM read_parquet('{next(output_dir.glob('*.parquet'))}') ORDER BY studyId"
-        ).fetchall()
+        output_rows = con.execute(f"SELECT studyId FROM read_parquet('{next(output_dir.glob('*.parquet'))}') ORDER BY studyId").fetchall()
 
     assert len(stats) == 1
     assert stats[0][0] is not None
