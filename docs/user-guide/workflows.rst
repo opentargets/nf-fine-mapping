@@ -16,10 +16,10 @@ The workflow passes native Nextflow tuples containing a metadata ``Map`` and a
 Locus collection
 ----------------
 
-``LOCUS_COLLECTION`` groups locus outputs by ``runId`` and runs one collection
-task per run. It emits full-overlap, partial-overlap, non-overlap, and JSON
-statistics channels. Full-overlap loci are the candidate sets passed to later
-fine-mapping stages.
+``LOCUS_COLLECTION`` groups locus outputs by ``runId`` and runs one canonical
+multi-ancestry region collection task per run. It emits the collected locus
+sets alongside a JSON/Parquet statistics channel. The collected locus sets
+are the sole candidate sets passed to later fine-mapping stages.
 
 Locus annotation
 ----------------

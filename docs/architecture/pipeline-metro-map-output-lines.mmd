@@ -1,8 +1,19 @@
 %%metro title: nf-fine-mapping pipeline
-%%metro caption: opentargets/nf-fine-mapping — rendered with nf-metro from main.nf
+%%metro caption: opentargets/nf-fine-mapping — rendered with nf-metro from main.nf; each published output is its own metro line
 %%metro style: dark
 %%metro line: main | Pipeline | #22d3ee
-%%metro line: validation | Validation & QC | #ef4444 | dashed
+%%metro line: line_loci | Loci | #14b8a6
+%%metro line: line_collected | Collected Loci | #84cc16
+%%metro line: line_collect_stats | Collection Stats | #facc15
+%%metro line: line_annotated | Annotated Locus Sets | #6366f1
+%%metro line: line_ld_pair_stats | LD-pair Stats | #0ea5e9
+%%metro line: line_credible_sets | Credible Sets | #ec4899
+%%metro line: line_anndata | AnnData | #8b5cf6
+%%metro line: line_fm_stats | Fine-mapping Stats | #d946ef
+%%metro line: line_report_validation | Manifest Validation Report | #ef4444 | dashed
+%%metro line: line_status_lb | LocusBreaker Status | #f97316 | dashed
+%%metro line: line_status_collection | Locus Collection Status | #f43f5e | dashed
+%%metro line: line_status_annotation | Locus Annotation Status | #34d399 | dashed
 
 %%metro file: manifest_in | TSV | Manifest
 %%metro dir: loci_out | Loci
@@ -35,37 +46,46 @@ graph LR
 
     subgraph validation_stage [Manifest Validation]
         validate[Manifest Validation]
+        report_validation[ ]
+        validate -->|line_report_validation| report_validation
     end
 
     subgraph locus_breaker [Locus Breaker]
         lb[LocusBreaker]
+        loci_out[ ]
+        status_lb[ ]
+        lb -->|line_loci| loci_out
+        lb -->|line_status_lb| status_lb
     end
 
     subgraph locus_collection [Locus Collection]
         collect[Canonical Region Collection]
+        collected_out[ ]
+        collect_stats_out[ ]
+        status_collection[ ]
+        collect -->|line_collected| collected_out
+        collect -->|line_collect_stats| collect_stats_out
+        collect -->|line_status_collection| status_collection
     end
 
     subgraph locus_annotation [Locus Annotation]
         ld_hailing[Hailing Ducks LD Annotation]
+        annotated_out[ ]
+        ld_pair_stats_out[ ]
+        status_annotation[ ]
+        ld_hailing -->|line_annotated| annotated_out
+        ld_hailing -->|line_ld_pair_stats| ld_pair_stats_out
+        ld_hailing -->|line_status_annotation| status_annotation
     end
 
     subgraph fine_mapping [Fine Mapping]
         multisusie[MultiSuSiE]
-    end
-
-    subgraph publish [Published Outputs]
-        loci_out[ ]
-        collected_out[ ]
-        collect_stats_out[ ]
-        annotated_out[ ]
-        ld_pair_stats_out[ ]
         credible_sets_out[ ]
         anndata_out[ ]
         fm_stats_out[ ]
-        report_validation[ ]
-        status_lb[ ]
-        status_collection[ ]
-        status_annotation[ ]
+        multisusie -->|line_credible_sets| credible_sets_out
+        multisusie -->|line_anndata| anndata_out
+        multisusie -->|line_fm_stats| fm_stats_out
     end
 
     study_in -->|main| planner
@@ -75,17 +95,3 @@ graph LR
     lb -->|main| collect
     collect -->|main| ld_hailing
     ld_hailing -->|main| multisusie
-
-    lb -->|main| loci_out
-    collect -->|main| collected_out
-    collect -->|main| collect_stats_out
-    ld_hailing -->|main| annotated_out
-    ld_hailing -->|main| ld_pair_stats_out
-    multisusie -->|main| credible_sets_out
-    multisusie -->|main| anndata_out
-    multisusie -->|main| fm_stats_out
-
-    validate -->|validation| report_validation
-    lb -->|validation| status_lb
-    collect -->|validation| status_collection
-    ld_hailing -->|validation| status_annotation
