@@ -5,10 +5,18 @@
 %%metro line: validation | Validation & QC | #ef4444 | dashed
 
 %%metro file: manifest_in | TSV | Manifest
-%%metro dir: loci_dir | Loci
-%%metro dir: annotated_dir | Annotated
-%%metro dir: results_dir | Results
-%%metro dir: reports_dir | Reports
+%%metro dir: loci_out | Loci
+%%metro dir: full_overlap_out | Full-overlap Loci
+%%metro dir: partial_overlap_out | Partial-overlap Loci
+%%metro dir: non_overlap_out | Non-overlap Loci
+%%metro dir: collect_stats_out | Collection Stats
+%%metro dir: annotated_out | Annotated Locus Sets
+%%metro dir: ld_pair_stats_out | LD-pair Stats
+%%metro dir: multisusie_out | MultiSuSiE Results
+%%metro dir: report_validation | Manifest Validation Report
+%%metro dir: status_lb | LocusBreaker Status
+%%metro dir: status_collection | Locus Collection Status
+%%metro dir: status_annotation | Locus Annotation Status
 
 graph LR
     subgraph input [Input]
@@ -44,10 +52,18 @@ graph LR
     end
 
     subgraph publish [Published Outputs]
-        loci_dir[ ]
-        annotated_dir[ ]
-        results_dir[ ]
-        reports_dir[ ]
+        loci_out[ ]
+        full_overlap_out[ ]
+        partial_overlap_out[ ]
+        non_overlap_out[ ]
+        collect_stats_out[ ]
+        annotated_out[ ]
+        ld_pair_stats_out[ ]
+        multisusie_out[ ]
+        report_validation[ ]
+        status_lb[ ]
+        status_collection[ ]
+        status_annotation[ ]
     end
 
     study_in -->|main| planner
@@ -56,13 +72,17 @@ graph LR
     lb -->|main| collect
     collect -->|main| ld_hailing
     ld_hailing -->|main| multisusie
-    multisusie -->|main| results_dir
 
-    lb -->|main| loci_dir
-    collect -->|main| loci_dir
-    ld_hailing -->|main| annotated_dir
+    lb -->|main| loci_out
+    collect -->|main| full_overlap_out
+    collect -->|main| partial_overlap_out
+    collect -->|main| non_overlap_out
+    collect -->|main| collect_stats_out
+    ld_hailing -->|main| annotated_out
+    ld_hailing -->|main| ld_pair_stats_out
+    multisusie -->|main| multisusie_out
 
-    validate -->|validation| reports_dir
-    lb -->|validation| reports_dir
-    collect -->|validation| reports_dir
-    ld_hailing -->|validation| reports_dir
+    validate -->|validation| report_validation
+    lb -->|validation| status_lb
+    collect -->|validation| status_collection
+    ld_hailing -->|validation| status_annotation

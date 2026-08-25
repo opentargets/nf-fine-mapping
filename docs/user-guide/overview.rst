@@ -11,6 +11,76 @@ Regenerate this diagram with ``make docs-metro-map`` after changing
 ``main.nf`` or its subworkflows; the source lives at
 ``docs/architecture/pipeline-metro-map.mmd``.
 
+Outputs
+-------
+
+The workflow's ``output {}`` block (in ``main.nf``) is the authoritative
+source for what gets published. All paths below are relative to
+``params.output_dir``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 30 15 33
+
+   * - Output
+     - Path
+     - Produced by
+     - Contents
+   * - Loci
+     - ``locus_breaker_clumped_study_locus/``
+     - LocusBreaker
+     - Per-study clumped-locus Parquet, filtered to studies that passed
+       manifest validation.
+   * - Full-overlap Loci
+     - ``collected_loci/full_overlaps/``
+     - Locus Collection
+     - Locus sets with complete cross-ancestry overlap; the candidate sets
+       carried forward into LD annotation and fine-mapping.
+   * - Partial-overlap Loci
+     - ``collected_loci/partial_overlaps/``
+     - Locus Collection
+     - Locus sets with partial cross-ancestry overlap. QC-only; not used
+       downstream.
+   * - Non-overlap Loci
+     - ``collected_loci/non_overlaps/``
+     - Locus Collection
+     - Locus sets with no cross-ancestry overlap. QC-only; not used
+       downstream.
+   * - Collection Stats
+     - ``collected_loci/stats/``
+     - Locus Collection
+     - Size and count statistics for the canonical-region collection.
+   * - Annotated Locus Sets
+     - ``locus_annotation/``
+     - LD Annotation
+     - LD-annotated locus-set Parquet. The pairwise LD matrix itself is a
+       transient work artifact and is not published.
+   * - LD-pair Stats
+     - ``locus_annotation/stats/``
+     - LD Annotation
+     - Per-locus-set statistics on LD-pair coverage.
+   * - MultiSuSiE Results
+     - ``multisusie/<runId>/<fineMappingLocusSetId>/``
+     - Fine Mapping
+     - Gentropy-compatible StudyLocus Parquet, extended AnnData (``.h5ad``)
+       results, and a JSON status record.
+   * - Manifest Validation Report
+     - ``validation/manifest/``
+     - Manifest Validation
+     - JSONL records of manifest rows rejected during validation.
+   * - LocusBreaker Status
+     - ``status/locus_breaker/``
+     - LocusBreaker
+     - JSONL records flagging runs with empty LocusBreaker output.
+   * - Locus Collection Status
+     - ``status/locus_collection/``
+     - Locus Collection
+     - JSONL records flagging runs with empty collection output.
+   * - Locus Annotation Status
+     - ``status/locus_annotation/``
+     - LD Annotation
+     - JSONL records flagging locus sets with no valid LD pairs.
+
 IDIC performs summary-statistics fine-mapping using out-of-sample LD. The
 workflow is designed for multi-study and multi-ancestry analyses and emits
 Gentropy-compatible datasets for downstream Open Targets processing.
