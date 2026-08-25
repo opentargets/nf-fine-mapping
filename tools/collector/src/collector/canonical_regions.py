@@ -107,6 +107,7 @@ class SourceLocus:
     chromosome: str
     locus_start: int
     locus_end: int
+    lead_position: int
 
     @property
     def source_key(self) -> tuple[str, str]:
@@ -386,11 +387,11 @@ def _chromosome_sort_key(chromosome: str) -> tuple[int, int | str]:
     return (1, normalized)
 
 
-def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list[SourceLocus]:
+def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...], min_maf: float) -> list[SourceLocus]:
     loci: list[SourceLocus] = []
     with _managed_duckdb() as con:
         for prepared_input in prepared_inputs:
-            rows = con.execute(
+            locus_rows = con.execute(
                 f"""
                 SELECT
                     CAST(studyLocusId AS VARCHAR) AS studyLocusId,
@@ -407,8 +408,21 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list
                     studyLocusId
                 """
             ).fetchall()
-            loci.extend(
-                [
+            for study_locus_id, chromosome, locus_start, locus_end in locus_rows:
+                lead_row = con.execute(
+                    f"""
+                    SELECT position
+                    FROM {_read_parquet_sql(prepared_input.summary_statistics_path)}
+                    WHERE chromosome = {_quote_sql_string(chromosome)}
+                      AND position BETWEEN {locus_start} AND {locus_end}
+                      AND least(CAST(effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf}
+                    ORDER BY pValueExponent, pValueMantissa, position, variantId
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if lead_row is None:
+                    continue
+                loci.append(
                     SourceLocus(
                         study_id=prepared_input.study_id,
                         study_locus_id=study_locus_id,
@@ -416,10 +430,9 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list
                         chromosome=chromosome,
                         locus_start=locus_start,
                         locus_end=locus_end,
+                        lead_position=int(lead_row[0]),
                     )
-                    for study_locus_id, chromosome, locus_start, locus_end in rows
-                ]
-            )
+                )
     return sorted(
         loci,
         key=lambda locus: (
@@ -431,63 +444,160 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list
     )
 
 
-def _build_region(input_loci: list[SourceLocus], quality_controls: tuple[str, ...] = ()) -> CanonicalRegion:
-    sorted_input_loci = tuple(sorted(input_loci, key=lambda locus: locus.source_key))
+@dataclass
+class _ResolvingLocus:
+    """One source locus's live, possibly-trimmed position during the resolution sweep."""
+
+    source: SourceLocus
+    current_start: int
+    current_end: int
+
+
+def _resolve_overlap(left: _ResolvingLocus, right: _ResolvingLocus) -> bool:
+    """Resolve two overlapping loci in place using their fixed leads. Returns True if they agree."""
+    if left.current_start <= right.current_start and right.current_end <= left.current_end:
+        right.current_start = left.current_start
+        right.current_end = left.current_end
+        return True
+    if right.current_start <= left.current_start and left.current_end <= right.current_end:
+        left.current_start = right.current_start
+        left.current_end = right.current_end
+        return True
+
+    intersection_start = max(left.current_start, right.current_start)
+    intersection_end = min(left.current_end, right.current_end)
+    if intersection_start > intersection_end:
+        raise RuntimeError(
+            f"_resolve_overlap called on non-overlapping loci: "
+            f"left=({left.current_start},{left.current_end}) right=({right.current_start},{right.current_end})"
+        )
+    left_lead_in = intersection_start <= left.source.lead_position <= intersection_end
+    right_lead_in = intersection_start <= right.source.lead_position <= intersection_end
+
+    if left_lead_in and right_lead_in:
+        left.current_start = right.current_start = intersection_start
+        left.current_end = right.current_end = intersection_end
+        return True
+
+    # Neither locus contains the other (both containment checks above already
+    # returned), so the overlap is a genuine stagger: whichever locus starts
+    # first also ends first. Trimming must follow that geometry rather than the
+    # `left`/`right` argument order, or a "later" locus passed in as `left` can
+    # get its current_start pushed past its own current_end.
+    earlier, later = (left, right) if left.current_start <= right.current_start else (right, left)
+    earlier_lead_in = left_lead_in if earlier is left else right_lead_in
+    later_lead_in = right_lead_in if later is right else left_lead_in
+
+    if earlier_lead_in:
+        later.current_start = intersection_end + 1
+        return False
+    if later_lead_in:
+        earlier.current_end = intersection_start - 1
+        return False
+    earlier.current_end = intersection_start - 1
+    later.current_start = intersection_end + 1
+    return False
+
+
+def _build_region_from_group(group: list[_ResolvingLocus], envelope_start: int, envelope_end: int, max_region_span_bp: int) -> CanonicalRegion:
+    contributing = [item.source for item in group if envelope_start <= item.source.lead_position <= envelope_end]
+    sorted_sources = tuple(sorted(contributing, key=lambda locus: locus.source_key))
+    quality_controls = (OVERSIZED_SOURCE_LOCUS_QC,) if any(locus.inclusive_span_bp > max_region_span_bp for locus in sorted_sources) else ()
     return CanonicalRegion(
-        chromosome=sorted_input_loci[0].chromosome,
-        region_start=min(locus.locus_start for locus in sorted_input_loci),
-        region_end=max(locus.locus_end for locus in sorted_input_loci),
+        chromosome=group[0].source.chromosome,
+        region_start=envelope_start,
+        region_end=envelope_end,
         quality_controls=quality_controls,
-        input_loci=sorted_input_loci,
+        input_loci=sorted_sources,
     )
 
 
 def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp: int) -> list[CanonicalRegion]:
     regions: list[CanonicalRegion] = []
-    current: list[SourceLocus] = []
-    current_chromosome: str | None = None
-    current_start: int | None = None
-    current_end: int | None = None
+    current_group: list[_ResolvingLocus] = []
+    envelope_start: int | None = None
+    envelope_end: int | None = None
+    published_floor: dict[str, int] = {}
 
     def flush_current() -> None:
-        nonlocal current_chromosome, current_start, current_end
-        if current:
-            regions.append(_build_region(current))
-            current.clear()
-        current_chromosome = None
-        current_start = None
-        current_end = None
+        nonlocal current_group, envelope_start, envelope_end
+        if current_group:
+            if envelope_start is None or envelope_end is None:
+                raise RuntimeError("Canonical-region sweep lost the active region envelope")
+            region = _build_region_from_group(current_group, envelope_start, envelope_end, max_region_span_bp)
+            regions.append(region)
+            published_floor[region.chromosome] = max(published_floor.get(region.chromosome, region.region_end), region.region_end)
+        current_group = []
+        envelope_start = None
+        envelope_end = None
 
     for locus in source_loci:
-        if locus.inclusive_span_bp > max_region_span_bp:
+        # A locus whose own lead already belongs to an earlier, already-
+        # published region on this chromosome cannot be represented without
+        # reaching back into territory that region has already claimed --
+        # drop it entirely rather than let it distort a later comparison.
+        floor = published_floor.get(locus.chromosome)
+        if floor is not None and locus.lead_position <= floor:
+            continue
+        effective_start = locus.locus_start if floor is None else max(locus.locus_start, floor + 1)
+        resolving = _ResolvingLocus(source=locus, current_start=effective_start, current_end=locus.locus_end)
+
+        if not current_group:
+            current_group = [resolving]
+            envelope_start, envelope_end = resolving.current_start, resolving.current_end
+            continue
+
+        if envelope_start is None or envelope_end is None:
+            raise RuntimeError("Canonical-region sweep lost the active region envelope")
+        last = current_group[-1]
+        # Symmetric: a locus that ends before the envelope starts does not
+        # overlap it either, even though it may still start before the
+        # envelope's own end -- checking only one side let a genuinely
+        # disjoint pair reach _resolve_overlap with an inverted intersection.
+        overlaps = (
+            resolving.source.chromosome == last.source.chromosome
+            and resolving.current_start <= envelope_end
+            and envelope_start <= resolving.current_end
+        )
+        if not overlaps:
             flush_current()
-            regions.append(_build_region([locus], quality_controls=(OVERSIZED_SOURCE_LOCUS_QC,)))
+            current_group = [resolving]
+            envelope_start, envelope_end = resolving.current_start, resolving.current_end
             continue
 
-        if not current:
-            current.append(locus)
-            current_chromosome = locus.chromosome
-            current_start = locus.locus_start
-            current_end = locus.locus_end
+        # `last` may hold a stale individual bound left over from an earlier
+        # containment-widening elsewhere in this group; resync it to the
+        # group's true current envelope before resolving, so that whatever
+        # _resolve_overlap does to `last` is guaranteed to represent a
+        # change to the group's envelope, not just to one member's private,
+        # possibly-outdated bounds.
+        last.current_start, last.current_end = envelope_start, envelope_end
+        agreed = _resolve_overlap(last, resolving)
+
+        if agreed:
+            current_group.append(resolving)
+            envelope_start, envelope_end = last.current_start, last.current_end
             continue
 
-        if current_chromosome is None or current_start is None or current_end is None:
-            raise RuntimeError("Canonical-region sweep lost the active region bounds")
-        overlaps_current = locus.chromosome == current_chromosome and locus.locus_start <= current_end
-        merged_span_bp = max(current_end, locus.locus_end) - min(current_start, locus.locus_start) + 1
-        if overlaps_current and merged_span_bp <= max_region_span_bp:
-            current.append(locus)
-            current_end = max(current_end, locus.locus_end)
-            continue
-
+        # Disagreement: adopt whatever _resolve_overlap trimmed `last` (the
+        # group's envelope-holder, just resynced above) down to as the
+        # group's final bounds -- never a min/max over every member's
+        # historical individual bounds. This is what prevents an earlier
+        # member widened by a containment merge (and never revisited again)
+        # from silently re-inflating the region past a trim applied only to
+        # `last`.
+        envelope_start, envelope_end = last.current_start, last.current_end
         flush_current()
-        current.append(locus)
-        current_chromosome = locus.chromosome
-        current_start = locus.locus_start
-        current_end = locus.locus_end
+        current_group = [resolving]
+        envelope_start, envelope_end = resolving.current_start, resolving.current_end
 
     flush_current()
-    return regions
+    # Loci are fed in ascending-start order, but a locus that is excluded or
+    # start-clamped by the published-floor guard above can cause a later
+    # group to flush before an earlier-starting-but-later-processed group
+    # does; sort explicitly so callers get a well-defined, position-ordered
+    # result rather than relying on emission order by accident.
+    return sorted(regions, key=lambda region: (region.chromosome, region.region_start))
 
 
 def _input_loci_sql(region: CanonicalRegion) -> str:
@@ -700,10 +810,10 @@ def build_regional_output_tables(
                 studyLocusId := md5(components.studyId || '|' || components.leadVariantId),
                 nVariants := components.nVariants,
                 nVariantsBelowMafCutoff := components.nVariants - components.nVariantsAboveMafCutoff,
-                qualityControls := list_distinct(list_concat(
-                    CASE WHEN list_contains(merged.qualityControls, '{DUPLICATE_FINE_MAPPING_SET_QC}') THEN ['{DUPLICATE_FINE_MAPPING_SET_QC}']::VARCHAR[] ELSE []::VARCHAR[] END,
+                qualityControls := list_sort(list_distinct(list_concat(
+                    merged.qualityControls,
                     CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
-                ))
+                )))
             ) ORDER BY components.studyId)::{component_type} AS components,
             CASE WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) THEN merged.fineMappingLocusSetId ELSE NULL END AS publishedFineMappingLocusSetId
         FROM canonical_region_merged_bounds AS merged
@@ -943,7 +1053,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         return prepared_inputs
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
-    source_loci = _read_source_loci(prepared_inputs)
+    source_loci = _read_source_loci(prepared_inputs, config.canonical_region_min_maf)
     regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()

@@ -133,6 +133,21 @@ def registered_ld_registry_ancestries(ld_registry) -> Set<String> {
 }
 
 
+def validate_canonical_region_size_floor() -> Void {
+    def locus_breaker_method = params.locus_breaker_method.toString().toLowerCase()
+    // validateParameters() (which would otherwise coerce these to Integer per
+    // the schema) is only called when params.validate_params is true, and this
+    // check runs unconditionally regardless -- so a String value supplied via
+    // CLI or -params-file must be coerced explicitly here, or a numeric
+    // comparison silently becomes a lexicographic String comparison.
+    def max_region_span_bp = params.canonical_region_max_region_span_bp.toInteger()
+    def large_loci_size = params.locus_breaker_large_loci_size.toInteger()
+    if (locus_breaker_method == 'collector' && max_region_span_bp < large_loci_size + 1) {
+        error "params.canonical_region_max_region_span_bp (${max_region_span_bp}) must be at least params.locus_breaker_large_loci_size + 1 (${large_loci_size + 1}) when locus_breaker_method is 'collector'; the locus breaker emits loci up to locus_breaker_large_loci_size wide, an inclusive span of large_loci_size + 1, so a smaller region-size limit cannot accommodate even a single locus-breaker locus."
+    }
+}
+
+
 def manifest_validation_status_record(row: Map) -> Map {
     return [
         runId: row.meta.runId,
@@ -296,6 +311,7 @@ workflow {
     if (params.validate_params) {
         validateParameters()
     }
+    validate_canonical_region_size_floor()
     log.info paramsSummaryLog(workflow)
     manifest_ch = read_manifest(params.manifest)
     filtered_ch = filter_manifest_by_route(manifest_ch, params.route)

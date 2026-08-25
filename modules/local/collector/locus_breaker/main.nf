@@ -40,7 +40,7 @@ process COLLECTOR_LOCUS_BREAKER {
         --lbc_distance_cutoff 250000 \
         --lbc_pvalue_threshold 1.0e-08 \
         --lbc_flanking_distance 100000 \
-        --large_loci_size 1500000 \
+        --large_loci_size ${params.locus_breaker_large_loci_size} \
         --wbc_clump_distance 500000 \
         --wbc_pvalue_threshold 1.0e-05 \
         --collect_locus \

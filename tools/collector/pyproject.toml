@@ -71,7 +71,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "src/**" = ["S608"] # DuckDB SQL uses quoted, validated local paths and fixed identifiers.
 "scripts/**" = ["S608", "T20"] # Comparison scripts intentionally print reports and use quoted paths.
-"tests/**" = ["S101", "S324", "S608"] # Tests intentionally use asserts, MD5 fixtures, and quoted SQL.
+"tests/**" = ["S101", "S311", "S324", "S608"] # Tests intentionally use asserts, seeded RNGs, MD5 fixtures, and quoted SQL.
 
 [tool.ruff.lint.flake8-pytest-style]
 fixture-parentheses = false

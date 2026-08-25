@@ -7,6 +7,7 @@ LOCUS_BREAKER_WORKFLOW = REPO_ROOT / "workflows" / "locus_breaker" / "main.nf"
 LOCUS_COLLECTION_WORKFLOW = REPO_ROOT / "workflows" / "locus_collection" / "main.nf"
 LOCUS_ANNOTATION_WORKFLOW = REPO_ROOT / "workflows" / "locus_annotation" / "main.nf"
 COLLECTOR_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "locus_breaker" / "main.nf"
+NEXTFLOW_SCHEMA = REPO_ROOT / "nextflow_schema.json"
 GENTROPY_LOCUS_BREAKER_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "locus_breaker_clumping" / "main.nf"
 COLLECT_CANONICAL_REGIONS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "collect_canonical_regions" / "main.nf"
 EMPTY_STATUS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "empty_status" / "main.nf"
@@ -403,3 +404,15 @@ def test_local_modules_support_process_ext_prefix():
     assert "stats.parquet" in collect_canonical_regions
     assert "stats.json" in collect_canonical_regions
     assert "gentropy_ld_annotation/${prefix}" in gentropy_ld_annotation
+
+
+def test_collector_locus_breaker_module_uses_the_locus_breaker_large_loci_size_param():
+    module = COLLECTOR_LOCUS_BREAKER_MODULE.read_text()
+    assert "--large_loci_size ${params.locus_breaker_large_loci_size}" in module
+    assert "--large_loci_size 1500000" not in module
+
+
+def test_nextflow_schema_declares_locus_breaker_large_loci_size():
+    schema = NEXTFLOW_SCHEMA.read_text()
+    assert '"locus_breaker_large_loci_size"' in schema
+    assert '"default": 1500000' in schema
