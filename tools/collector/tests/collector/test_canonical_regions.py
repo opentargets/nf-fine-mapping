@@ -96,6 +96,36 @@ def test_sweep_never_emits_overlapping_regions_on_a_dense_chain():
     regions = _sweep_canonical_regions(loci)
     for earlier, later in zip(regions, regions[1:], strict=False):  # noqa: RUF007
         assert earlier.region_end < later.region_start
+    # Without this, the assertion above passes vacuously against a
+    # regression to always-merge-into-one (a single-region result makes the
+    # zip() loop iterate zero times) -- it would even still pass against the
+    # old, retired union-based sweep. Pin down that this scenario genuinely
+    # produces two disjoint regions, not one.
+    assert len(regions) == 2
+
+
+def test_sweep_never_lets_a_stale_contained_member_reinflate_a_region_past_a_later_trim():
+    # STUDY_B is fully contained by STUDY_A's span, so A-B agree via
+    # containment and B's current bounds widen to match A's (100, 300).
+    # STUDY_C then overlaps only B's tail, and only C's lead falls in that
+    # overlap, so B is trimmed back down to (100, 249) -- but A itself is
+    # never revisited. A region-builder that takes min/max over every group
+    # member's bounds (rather than tracking one authoritative envelope)
+    # would let A's stale, still-300 bound silently re-widen the region past
+    # B's trim, producing (100, 300) and (250, 400) -- which overlap at
+    # [250, 300]. The correct region is (100, 249), matching the actual
+    # trimmed envelope.
+    loci = [
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 300, lead_position=120),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 200, lead_position=170),
+        SourceLocus("STUDY_C", "c1", "NFE", "1", 250, 400, lead_position=280),
+    ]
+    regions = _sweep_canonical_regions(loci)
+    for earlier, later in zip(regions, regions[1:], strict=False):  # noqa: RUF007
+        assert earlier.region_end < later.region_start
+    assert len(regions) == 2
+    assert (regions[0].region_start, regions[0].region_end) == (100, 249)
+    assert (regions[1].region_start, regions[1].region_end) == (250, 400)
 
 
 def test_sweep_still_splits_on_a_genuine_position_gap():
@@ -555,10 +585,14 @@ def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_st
     # *agreeing* loci does. So all three studies here share the same lead
     # position (200), which each study's own bounds happen to contain, and
     # each consecutive pair's overlap contains that shared lead: A-B agree
-    # and crop to their [150, 250] intersection, then B-C agree and crop
-    # further to [180, 250] -- but that later agreement can only narrow B
-    # and C, not re-open A's already-settled bound, so the final region is
-    # (150, 250): A's settled start through the common end all three share.
+    # and crop to their [150, 250] intersection, then that result (tracked
+    # as the group's single running envelope, not each locus's individually
+    # remembered bounds) is compared against C and agrees again, cropping
+    # further to [180, 250]. The final region is the true 3-way
+    # intersection of all three spans -- max(100, 150, 180) to
+    # min(250, 300, 320) = (180, 250) -- because each sequential pairwise
+    # agreement narrows the group's shared envelope rather than getting
+    # stuck after the first.
     locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 180, 320)])
     locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 250)])
     locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 150, 300)])
@@ -624,7 +658,7 @@ def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_st
         ).fetchall()
 
     assert rows == [
-        ("1", 150, 250, ["STUDY_A", "STUDY_B", "STUDY_C"], ["a_locus", "b_locus", "c_locus"], ["STUDY_A", "STUDY_B", "STUDY_C"]),
+        ("1", 180, 250, ["STUDY_A", "STUDY_B", "STUDY_C"], ["a_locus", "b_locus", "c_locus"], ["STUDY_A", "STUDY_B", "STUDY_C"]),
     ]
 
 

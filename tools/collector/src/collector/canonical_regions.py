@@ -494,15 +494,13 @@ def _resolve_overlap(left: _ResolvingLocus, right: _ResolvingLocus) -> bool:
     return False
 
 
-def _build_region_from_group(group: list[_ResolvingLocus]) -> CanonicalRegion:
-    source_loci = [item.source for item in group]
-    region_start = min(item.current_start for item in group)
-    region_end = max(item.current_end for item in group)
-    sorted_sources = tuple(sorted(source_loci, key=lambda locus: locus.source_key))
+def _build_region_from_group(group: list[_ResolvingLocus], envelope_start: int, envelope_end: int) -> CanonicalRegion:
+    contributing = [item.source for item in group if envelope_start <= item.source.lead_position <= envelope_end]
+    sorted_sources = tuple(sorted(contributing, key=lambda locus: locus.source_key))
     return CanonicalRegion(
         chromosome=group[0].source.chromosome,
-        region_start=region_start,
-        region_end=region_end,
+        region_start=envelope_start,
+        region_end=envelope_end,
         quality_controls=(),
         input_loci=sorted_sources,
     )
@@ -511,31 +509,65 @@ def _build_region_from_group(group: list[_ResolvingLocus]) -> CanonicalRegion:
 def _sweep_canonical_regions(source_loci: list[SourceLocus]) -> list[CanonicalRegion]:
     regions: list[CanonicalRegion] = []
     current_group: list[_ResolvingLocus] = []
+    envelope_start: int | None = None
+    envelope_end: int | None = None
+
+    def flush_current() -> None:
+        nonlocal current_group, envelope_start, envelope_end
+        if current_group:
+            # Invariant: envelope_start/envelope_end are always set together
+            # with current_group, so they can't be None here.
+            if envelope_start is None or envelope_end is None:
+                raise RuntimeError("Canonical-region sweep lost the active region envelope")
+            regions.append(_build_region_from_group(current_group, envelope_start, envelope_end))
+        current_group = []
+        envelope_start = None
+        envelope_end = None
 
     for locus in source_loci:
         resolving = _ResolvingLocus(source=locus, current_start=locus.locus_start, current_end=locus.locus_end)
         if not current_group:
-            current_group.append(resolving)
-            continue
-
-        last = current_group[-1]
-        overlaps = resolving.source.chromosome == last.source.chromosome and resolving.current_start <= last.current_end
-        if not overlaps:
-            regions.append(_build_region_from_group(current_group))
             current_group = [resolving]
+            envelope_start, envelope_end = resolving.current_start, resolving.current_end
             continue
 
+        if envelope_start is None or envelope_end is None:
+            raise RuntimeError("Canonical-region sweep lost the active region envelope")
+        last = current_group[-1]
+        overlaps = resolving.source.chromosome == last.source.chromosome and resolving.current_start <= envelope_end
+        if not overlaps:
+            flush_current()
+            current_group = [resolving]
+            envelope_start, envelope_end = resolving.current_start, resolving.current_end
+            continue
+
+        # `last` may hold a stale individual bound left over from an earlier
+        # containment-widening elsewhere in this group; resync it to the
+        # group's true current envelope before resolving, so that whatever
+        # _resolve_overlap does to `last` is guaranteed to represent a
+        # change to the group's envelope, not just to one member's private,
+        # possibly-outdated bounds.
+        last.current_start, last.current_end = envelope_start, envelope_end
         agreed = _resolve_overlap(last, resolving)
+
         if agreed:
             current_group.append(resolving)
+            envelope_start, envelope_end = last.current_start, last.current_end
             continue
 
-        regions.append(_build_region_from_group(current_group))
+        # Disagreement: adopt whatever _resolve_overlap trimmed `last` (the
+        # group's envelope-holder, just resynced above) down to as the
+        # group's final bounds -- never a min/max over every member's
+        # historical individual bounds. This is what prevents an earlier
+        # member widened by a containment merge (and never revisited again)
+        # from silently re-inflating the region past a trim applied only to
+        # `last`.
+        envelope_start, envelope_end = last.current_start, last.current_end
+        flush_current()
         current_group = [resolving]
+        envelope_start, envelope_end = resolving.current_start, resolving.current_end
 
-    if current_group:
-        regions.append(_build_region_from_group(current_group))
-
+    flush_current()
     return regions
 
 
