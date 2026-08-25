@@ -464,6 +464,8 @@ def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp:
     def flush_current() -> None:
         nonlocal current_chromosome, current_start, current_end
         if current:
+            if current_start is None or current_end is None:
+                raise RuntimeError("Canonical-region sweep lost the active region bounds")
             span_bp = current_end - current_start + 1
             regions.append(_build_region(current, quality_controls=_region_quality_controls(current, span_bp, max_region_span_bp)))
             current.clear()
@@ -490,6 +492,8 @@ def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp:
         # via quality_controls instead of being force-split into an
         # overlapping pair.
         current.append(locus)
+        if current_end is None:
+            raise RuntimeError("Canonical-region sweep lost the active region bounds")
         current_end = max(current_end, locus.locus_end)
 
     flush_current()
