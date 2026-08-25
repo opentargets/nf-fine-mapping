@@ -18,63 +18,48 @@ algorithmic semantics needed for parity with Gentropy.
 Locus collection
 ----------------
 
-Locus collection turns each study's separate loci into shared,
-multi-study locus sets, ready for fine-mapping.
+Locus collection turns each study's separate loci into shared, multi-study
+locus sets, ready for fine-mapping.
 
 **How a locus set is built:**
 
-- **Find each locus's own strongest signal first.** Before comparing
-  loci to each other, each study's own locus gets one fixed "lead"
-  position — its most significant qualifying variant, found only
-  within that locus's own boundaries. A locus with no qualifying
-  variant is dropped before it's ever compared to anything else.
-- **Compare overlapping loci pairwise.** Loci are lined up by genomic
-  position. When two neighboring loci overlap, they're resolved based
-  on where each one's own lead sits:
+- **Each locus gets its own "lead" position first** — its most significant
+  qualifying variant, found only within that locus's own boundaries. A
+  locus with no qualifying variant is dropped before any comparison.
+- **Overlapping loci are compared pairwise**, based on where each one's
+  lead sits relative to the overlap:
 
-  - If both leads fall inside the overlap, they're treated as the
-    same signal and both loci are tightened down to just that shared
-    window.
-  - If only one lead falls inside the overlap, that locus keeps the
-    shared part; the other locus keeps only its own separate
-    remainder.
-  - If neither lead falls inside the overlap, both loci keep only
-    their own separate remainders, and the disputed middle ground is
-    dropped rather than handed to either side.
-  - If one locus's boundaries fully contain another's, the larger
-    locus wins and both are treated as the wider span.
+  - Both leads inside the overlap → same signal, both tighten to the
+    shared window.
+  - Only one lead inside → that locus keeps the shared part; the other
+    keeps only its own remainder.
+  - Neither lead inside → both keep only their own remainders; the
+    disputed middle is dropped, not given to either side.
+  - One locus fully contains another → the larger locus wins.
 
-- **Draw a new locus set wherever two loci disagree.** Even if the
-  resulting boundaries end up touching with no gap between them,
-  disagreement always starts a new locus set — this is what keeps
-  locus sets from silently growing without limit in densely packed
-  regions.
+- **Any disagreement starts a new locus set** — even with no position gap
+  between the results. This is what stops locus sets from growing without
+  limit in densely packed regions.
 
-**Example:** study A reports a locus at 1–300 with its own strongest
-signal at 120, and study B reports a locus at 150–200 (fully inside
-A) with its strongest signal at 170. Since B sits entirely inside A,
-they're treated as one shared locus set spanning 1–300. If a third
-study, C, then reports a locus at 250–400 with its own strongest
-signal at 280, C's locus overlaps that shared span in 250–300. C's
-own lead falls inside that disputed overlap, but neither A's nor B's
-lead does, so C keeps the whole shared stretch and the A/B locus
-set's own end trims back to 249 — the two locus sets end up touching
-with no gap, but never overlapping each other.
+**Example:** study A's locus (1–300, lead 120) fully contains study B's
+locus (150–200, lead 170), so they merge into one locus set spanning
+1–300. Study C's locus (250–400, lead 280) then overlaps that merged span
+in 250–300; since C's own lead falls in that overlap but neither A's nor
+B's does, C keeps the disputed zone and the A/B locus set trims back to
+249 — the two locus sets end up touching, never overlapping.
 
-Because a locus set only ever grows through *agreement*, and every
-input locus already has a known, bounded size from locus breaking
-(``params.locus_breaker_large_loci_size``), a locus set can't grow
-into an arbitrarily large region the way blind merging could — there
-is no separate size cap or rejection step during construction. The
-pipeline checks at startup that the region-size limit
-(``params.canonical_region_max_region_span_bp``) is at least as large
-as the upstream locus size, so a locus set can never be asked to be
-smaller than a single input locus. A locus set's contributing loci
-are drawn only from studies whose own lead still falls inside its
-final boundaries.
+Because growth only ever happens through agreement, and every input locus
+already has a bounded size from locus breaking
+(``params.locus_breaker_large_loci_size``), a locus set can't grow without
+limit — there's no separate size cap or rejection step. When using the
+collector locus breaker, the pipeline checks at startup that
+``params.canonical_region_max_region_span_bp`` is at least as large as
+``params.locus_breaker_large_loci_size``. A locus set's contributing loci
+are only those studies whose own lead still falls inside its final
+boundaries.
 
 The command writes one locus-set Parquet file per published
 ``fineMappingLocusSetId`` (published as *Collected Loci*, see
-:doc:`overview`), one stats Parquet file, and one JSON statistics
-document per run. The published output is the input for downstream
-LD annotation and fine-mapping.
+:doc:`overview`), one stats Parquet file, and one JSON statistics document
+per run. The published output is the input for downstream LD annotation
+and fine-mapping.
