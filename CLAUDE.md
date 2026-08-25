@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-This is a monorepo for multi-ancestry GWAS fine-mapping using SuShiE. Two components:
+This is a monorepo for multi-ancestry GWAS fine-mapping using MultiSuSiE as the
+currently integrated method. SuSiEx and SuShiE modules remain pending full
+pipeline integration. Two components:
 
 1. **Root-level Nextflow pipeline** — `main.nf` + `conf/` + `tests/`. Runs `FINE_MAPPING` workflow orchestrating the full pipeline. Requires Nextflow `>=25.10.0` (the `nf-schema` plugin's minimum).
 
@@ -15,7 +17,7 @@ This is a monorepo for multi-ancestry GWAS fine-mapping using SuShiE. Two compon
    - `ld/` — Subsets LD matrices using `subset_ld` for relevant variants
    - `sushie/` — Runs multi-ancestry fine-mapping
 
-3. **`tools/collector/`** — Python CLI tool (Python 3.12+, DuckDB, Typer) providing `collect`, `intersect`, and `transform` subcommands. This is built into the `collector:latest` container image used by the first three modules.
+3. **`tools/collector/`** — Python CLI tool (Python 3.12+, DuckDB, Typer) providing `collect`, `intersect`, and `transform` subcommands. Cloud and integration profiles use the pinned Collector image declared in `conf/`.
 
 The root `.nf-core.yml` sets `repository_type: modules` with `org_path: opentargets`.
 

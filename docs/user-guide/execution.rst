@@ -59,14 +59,15 @@ commands have not changed.
 Fine-mapping containers
 -----------------------
 
-The fine-mapping workflow supports MultiSuSiE, SuSiEx, and SuShiE containers.
-Select methods in configuration and set their images explicitly for local or
-production execution:
+The fine-mapping workflow currently supports MultiSuSiE. SuSiEx and SuShiE
+containers are pinned for pending integration work and should not be selected
+for production runs yet. The schema defaults use pinned images. Override them
+only when running locally built development images, for example:
 
 .. code-block:: groovy
 
    params {
-       fine_mapping_methods = ['multisusie', 'susiex', 'sushie']
+       fine_mapping_methods = ['multisusie']
        multisusie_container = 'multisusie:local'
        multisusie_purity_min_r2 = 0.01
        susiex_container = 'susiex:local'
@@ -84,10 +85,6 @@ Build and smoke-test the local images before running the non-stub pipeline:
    docker run --rm susiex:local --help
    docker run --rm sushie:local --help
    make integration-test
-
-``multisusie_purity_min_r2`` must be strictly between 0 and 1. It defaults to
-0.01. MultiSuSiE publishes only credible sets at or above this R-squared
-threshold; low-memory mode is disabled so purity is available for filtering.
 
 The nf-test suite uses process stubs and therefore does not require Docker or
 the method images. CI separately runs Nextflow lint and the complete nf-test
