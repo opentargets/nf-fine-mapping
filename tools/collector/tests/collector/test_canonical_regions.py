@@ -901,6 +901,19 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
         study_id="STUDY_B",
         loci=[("b_locus", 180, 220)],
     )
+    # STUDY_C's own locus never contributes a lead: its one variant (below)
+    # fails MAF, so c_locus never enters the sweep, and its far-away bounds
+    # (500-550) can't overlap the a/b region either way. It exists purely to
+    # exercise the pre-existing "every prepared input is cross-joined
+    # against every region regardless of sweep membership" behavior: since
+    # it has zero variants inside the a+b region, it is the component that
+    # blocks publication with NO_VARIANTS_IN_LOCUS, while a_locus and
+    # b_locus genuinely merge into one region via their own qualifying leads.
+    locus_breaker_c = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_c.locus.parquet",
+        study_id="STUDY_C",
+        loci=[("c_locus", 500, 550)],
+    )
     sumstats_a = _write_sumstats_dataset_with_rows(
         tmp_path / "study_a.sumstats.parquet",
         study_id="STUDY_A",
@@ -917,7 +930,18 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
             ("1_125_A_C", 125, -0.40, -7, 2.0, 0.009, 0.04),
             ("1_130_A_G", 130, -0.50, -7, 2.0, 0.991, 0.05),
             ("1_210_T_C", 210, 0.60, -6, 8.0, 0.99, 0.06),
+            # Genuine own-bounds (180-220) MAF-qualifying lead (MAF 0.30),
+            # so b_locus actually survives Task-1 filtering and re-enters
+            # the sweep to merge with a_locus into one real region, instead
+            # of being dropped and only coincidentally reproducing the same
+            # blocked outcome via its other, out-of-bounds variants.
+            ("1_200_G_T", 200, 0.05, -6, 1.0, 0.30, 0.03),
         ],
+    )
+    sumstats_c = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_c.sumstats.parquet",
+        study_id="STUDY_C",
+        rows=[("1_520_A_G", 520, 0.1, -8, 1.0, 0.001, 0.01)],
     )
     output_dir = tmp_path / "fine_mapping_locus_sets"
     stats_json_output = tmp_path / "stats" / "run-1.stat.json"
@@ -933,14 +957,20 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
             str(locus_breaker_a),
             "--locus_breaker",
             str(locus_breaker_b),
+            "--locus_breaker",
+            str(locus_breaker_c),
             "--ancestry",
             "EUR",
             "--ancestry",
             "AFR",
+            "--ancestry",
+            "CSA",
             "--summary_statistics",
             str(sumstats_a),
             "--summary_statistics",
             str(sumstats_b),
+            "--summary_statistics",
+            str(sumstats_c),
             "--fine_mapping_locus_set_output_dir",
             str(output_dir),
             "--stats_parquet_output",
