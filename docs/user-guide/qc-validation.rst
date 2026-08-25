@@ -101,6 +101,47 @@ own output by ``fineMappingLocusSetId`` instead of by ``runId``, removing
 any locus set with zero LD pairs in any ancestry before it reaches
 ``FINE_MAPPING``. No further validation stage runs after LD annotation.
 
+.. _duplicate-summary-statistics-limitation:
+
+Duplicate summary-statistics limitation
+----------------------------------------
+
+Summary statistics must contain at most one row for each ``(studyId,
+variantId)`` pair before LocusBreaker runs. Duplicate rows are not a harmless
+formatting detail: they can contain different p-values, effect sizes, or
+alleles, so there is no generally safe row to keep.
+
+The two available LocusBreaker backends do not currently handle this case in
+the same way:
+
+* the collector removes every row for a duplicated variant before clumping;
+* Gentropy can rank duplicate rows during clumping before later processing
+  removes ambiguous variants.
+
+Consequently, a collector-versus-Gentropy comparison is not meaningful when
+the input contains duplicated variant IDs. The lead variant, locus boundary,
+and downstream fine-mapping input can differ even when both tasks complete
+successfully. This is a known limitation, not evidence that one backend is
+numerically wrong.
+
+Until a shared preflight validator is available, reject or repair duplicated
+summary statistics before starting the pipeline. Do not silently keep the
+most significant duplicate. A simple DuckDB check is:
+
+.. code-block:: sql
+
+   SELECT studyId, COUNT(*) AS n_rows,
+          COUNT(DISTINCT variantId) AS n_variant_ids,
+          COUNT(*) - COUNT(DISTINCT variantId) AS n_duplicate_rows
+   FROM read_parquet('summary_statistics.parquet')
+   GROUP BY studyId
+   HAVING COUNT(*) > COUNT(DISTINCT variantId);
+
+The current collector canonical-region command rejects duplicate summary
+statistics during preflight. Its duplicate counts are not yet included in the
+run report, and the Gentropy route does not yet share that same fail-fast
+check; track this gap in GitHub issue #11.
+
 Triggering validation paths in stub tests
 -------------------------------------------
 

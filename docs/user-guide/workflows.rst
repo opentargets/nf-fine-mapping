@@ -13,6 +13,16 @@ paths. The backend is selected with ``params.locus_breaker_method``:
 The workflow passes native Nextflow tuples containing a metadata ``Map`` and a
 ``Path``. This keeps task hashing stable and preserves ``-resume`` behavior.
 
+Duplicate variant limitation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before choosing either LocusBreaker backend, validate that each summary
+statistics input has one row per ``(studyId, variantId)``. The collector and
+Gentropy implementations currently resolve duplicate rows differently, so
+their outputs are not a valid parity comparison for affected studies. See
+:ref:`duplicate-summary-statistics-limitation` for the failure mode and a DuckDB
+preflight query. This limitation is tracked in GitHub issue #11.
+
 Locus collection
 ----------------
 
