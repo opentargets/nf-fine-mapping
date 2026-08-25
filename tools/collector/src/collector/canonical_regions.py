@@ -18,10 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_STATS_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
-MERGED_REGION_EXCEEDS_MAX_SPAN_QC = "MERGED_REGION_EXCEEDS_MAX_REGION_SPAN"
 DUPLICATE_FINE_MAPPING_SET_QC = "MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL"
-REJECTED_REGION_SPAN_MULTIPLIER = 5
-REGION_SPAN_EXCEEDS_REJECT_THRESHOLD_REASON = "REGION_SPAN_EXCEEDS_REJECT_THRESHOLD"
 DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
 DISK_EXHAUSTION_EXIT_CODE = 75
 
@@ -447,17 +444,6 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...], min_maf
     )
 
 
-def _build_region(input_loci: list[SourceLocus], quality_controls: tuple[str, ...] = ()) -> CanonicalRegion:
-    sorted_input_loci = tuple(sorted(input_loci, key=lambda locus: locus.source_key))
-    return CanonicalRegion(
-        chromosome=sorted_input_loci[0].chromosome,
-        region_start=min(locus.locus_start for locus in sorted_input_loci),
-        region_end=max(locus.locus_end for locus in sorted_input_loci),
-        quality_controls=quality_controls,
-        input_loci=sorted_input_loci,
-    )
-
-
 @dataclass
 class _ResolvingLocus:
     """One source locus's live, possibly-trimmed position during the resolution sweep."""
@@ -508,58 +494,48 @@ def _resolve_overlap(left: _ResolvingLocus, right: _ResolvingLocus) -> bool:
     return False
 
 
-def _region_quality_controls(current: list[SourceLocus], span_bp: int, max_region_span_bp: int) -> tuple[str, ...]:
-    tags: list[str] = []
-    if any(locus.inclusive_span_bp > max_region_span_bp for locus in current):
-        tags.append(OVERSIZED_SOURCE_LOCUS_QC)
-    if span_bp > max_region_span_bp and len(current) > 1:
-        tags.append(MERGED_REGION_EXCEEDS_MAX_SPAN_QC)
-    return tuple(tags)
+def _build_region_from_group(group: list[_ResolvingLocus]) -> CanonicalRegion:
+    source_loci = [item.source for item in group]
+    region_start = min(item.current_start for item in group)
+    region_end = max(item.current_end for item in group)
+    sorted_sources = tuple(sorted(source_loci, key=lambda locus: locus.source_key))
+    return CanonicalRegion(
+        chromosome=group[0].source.chromosome,
+        region_start=region_start,
+        region_end=region_end,
+        quality_controls=(),
+        input_loci=sorted_sources,
+    )
 
 
-def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp: int) -> list[CanonicalRegion]:
+def _sweep_canonical_regions(source_loci: list[SourceLocus]) -> list[CanonicalRegion]:
     regions: list[CanonicalRegion] = []
-    current: list[SourceLocus] = []
-    current_chromosome: str | None = None
-    current_start: int | None = None
-    current_end: int | None = None
-
-    def flush_current() -> None:
-        nonlocal current_chromosome, current_start, current_end
-        if current:
-            if current_start is None or current_end is None:
-                raise RuntimeError("Canonical-region sweep lost the active region bounds")
-            span_bp = current_end - current_start + 1
-            regions.append(_build_region(current, quality_controls=_region_quality_controls(current, span_bp, max_region_span_bp)))
-            current.clear()
-        current_chromosome = None
-        current_start = None
-        current_end = None
+    current_group: list[_ResolvingLocus] = []
 
     for locus in source_loci:
-        overlaps_current = (
-            current_chromosome is not None and current_end is not None and locus.chromosome == current_chromosome and locus.locus_start <= current_end
-        )
-        if not overlaps_current:
-            flush_current()
-            current.append(locus)
-            current_chromosome = locus.chromosome
-            current_start = locus.locus_start
-            current_end = locus.locus_end
+        resolving = _ResolvingLocus(source=locus, current_start=locus.locus_start, current_end=locus.locus_end)
+        if not current_group:
+            current_group.append(resolving)
             continue
 
-        # Overlaps the open region: it must be merged in, even past the
-        # cap, so two emitted regions never share genomic coordinates.
-        # Any split point here would necessarily fall inside a locus that
-        # spans it, so a region wider than max_region_span_bp is flagged
-        # via quality_controls instead of being force-split into an
-        # overlapping pair.
-        current.append(locus)
-        if current_end is None:
-            raise RuntimeError("Canonical-region sweep lost the active region bounds")
-        current_end = max(current_end, locus.locus_end)
+        last = current_group[-1]
+        overlaps = resolving.source.chromosome == last.source.chromosome and resolving.current_start <= last.current_end
+        if not overlaps:
+            regions.append(_build_region_from_group(current_group))
+            current_group = [resolving]
+            continue
 
-    flush_current()
+        agreed = _resolve_overlap(last, resolving)
+        if agreed:
+            current_group.append(resolving)
+            continue
+
+        regions.append(_build_region_from_group(current_group))
+        current_group = [resolving]
+
+    if current_group:
+        regions.append(_build_region_from_group(current_group))
+
     return regions
 
 
@@ -874,9 +850,6 @@ def _write_stats_json(
         "nCandidateLocusSets": len(regions),
         "nPublishedLocusSets": 0,
         "nNotPromotedLocusSets": len(regions),
-        "nRegionsExceedingSpanCap": sum(
-            1 for region in regions if (region.region_end - region.region_start + 1) > config.canonical_region_max_region_span_bp
-        ),
         "notPromotedReasons": {"NO_VARIANTS_IN_LOCUS": len(regions)} if regions else {},
         "studiesWithMissingEAF": [],
         "runQualityControls": [],
@@ -1020,10 +993,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
     source_loci = _read_source_loci(prepared_inputs, config.canonical_region_min_maf)
-    all_regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
-    reject_span_bp = config.canonical_region_max_region_span_bp * REJECTED_REGION_SPAN_MULTIPLIER
-    regions = [region for region in all_regions if (region.region_end - region.region_start + 1) <= reject_span_bp]
-    n_rejected_for_span = len(all_regions) - len(regions)
+    regions = _sweep_canonical_regions(source_loci)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
     with _managed_duckdb() as con:
@@ -1044,17 +1014,11 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    _write_stats_json(config.stats_json_output, config, prepared_inputs, all_regions, timings, published_locus_sizes)
+    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings, published_locus_sizes)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count
-        payload["nNotPromotedLocusSets"] = len(all_regions) - published_count
-        not_promoted_reasons: dict[str, int] = {}
-        if n_rejected_for_span:
-            not_promoted_reasons[REGION_SPAN_EXCEEDS_REJECT_THRESHOLD_REASON] = n_rejected_for_span
-        n_no_variants = len(regions) - published_count
-        if n_no_variants:
-            not_promoted_reasons["NO_VARIANTS_IN_LOCUS"] = n_no_variants
-        payload["notPromotedReasons"] = not_promoted_reasons
+        payload["nNotPromotedLocusSets"] = len(regions) - published_count
+        payload["notPromotedReasons"] = {"NO_VARIANTS_IN_LOCUS": len(regions) - published_count} if len(regions) > published_count else {}
         config.stats_json_output.write_text(json.dumps(payload, indent=2) + "\n")
     return prepared_inputs

@@ -10,7 +10,6 @@ from typer.testing import CliRunner
 
 from collector import app
 from collector.canonical_regions import (
-    MERGED_REGION_EXCEEDS_MAX_SPAN_QC,
     OVERSIZED_SOURCE_LOCUS_QC,
     CanonicalRegion,
     CanonicalRegionInput,
@@ -59,67 +58,52 @@ def _regional_test_inputs(tmp_path: Path) -> tuple[tuple[CanonicalRegionInput, .
     return prepared, regions
 
 
-def test_sweep_canonical_regions_merges_overlapping_loci_under_the_cap():
+def test_sweep_merges_two_loci_that_agree_into_one_region():
     loci = [
-        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, 150),
-        SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 250, 200),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 1_000_000, 2_200_000, 2_000_000),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 1_800_000, 3_000_000, 1_900_000),
     ]
-    regions = _sweep_canonical_regions(loci, max_region_span_bp=1_000_000)
+    regions = _sweep_canonical_regions(loci)
     assert len(regions) == 1
-    assert (regions[0].region_start, regions[0].region_end) == (100, 250)
-    assert regions[0].quality_controls == ()
+    assert (regions[0].region_start, regions[0].region_end) == (1_800_000, 2_200_000)
 
 
-def test_sweep_canonical_regions_never_emits_overlapping_regions_when_cap_is_exceeded():
-    # Mirrors the real RUN2 case found in the chr1 benchmark: a chain of
-    # loci accumulates close to the cap, then a locus that overlaps the
-    # open region arrives whose own end would push the merged span over
-    # max_region_span_bp. The old sweep flushed and restarted from this
-    # locus's own start, producing two regions that shared coordinates.
+def test_sweep_starts_a_new_region_on_disagreement_even_with_no_position_gap():
     loci = [
-        SourceLocus("STUDY_A", "a1", "EUR", "1", 100_000, 200_000, 150_000),
-        SourceLocus("STUDY_B", "b1", "AFR", "1", 150_000, 3_050_000, 1_600_000),
-        SourceLocus("STUDY_C", "c1", "NFE", "1", 200_000, 3_180_000, 1_690_000),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, lead_position=190),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 250, lead_position=190),
+        SourceLocus("STUDY_C", "c1", "NFE", "1", 160, 300, lead_position=280),
     ]
-    # Each locus's own span is individually under the 3,000,000 cap
-    # (100,001 / 2,900,001 / 2,980,001 respectively) so OVERSIZED_SOURCE_LOCUS_QC
-    # must not fire; only the merged span (3,080,001) exceeds it.
-    regions = _sweep_canonical_regions(loci, max_region_span_bp=3_000_000)
-
-    assert len(regions) == 1
-    region = regions[0]
-    assert (region.region_start, region.region_end) == (100_000, 3_180_000)
-    assert region.quality_controls == (MERGED_REGION_EXCEEDS_MAX_SPAN_QC,)
-    assert {locus.study_locus_id for locus in region.input_loci} == {"a1", "b1", "c1"}
-
-
-def test_sweep_canonical_regions_flags_a_lone_oversized_locus():
-    loci = [SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 400, 250)]
-    regions = _sweep_canonical_regions(loci, max_region_span_bp=100)
-    assert len(regions) == 1
-    assert regions[0].quality_controls == (OVERSIZED_SOURCE_LOCUS_QC,)
+    regions = _sweep_canonical_regions(loci)
+    assert len(regions) == 2
+    # A (100-200, lead 190) and B (150-250, lead 190) both have their lead
+    # inside their [150, 200] intersection, so they agree and both trim to
+    # that shared span -- 150, not 160 (A's own start never enters this
+    # calculation once it merges with B; C's 160 start only starts mattering
+    # when B-vs-C is resolved next, and that comparison cannot move a
+    # boundary that has already been fixed by an earlier agreement).
+    assert (regions[0].region_start, regions[0].region_end) == (150, 200)
+    assert (regions[1].region_start, regions[1].region_end) == (201, 300)
 
 
-def test_sweep_canonical_regions_flags_both_tags_when_an_oversized_locus_absorbs_a_neighbor():
-    # STUDY_A's own locus is already bigger than the cap; STUDY_B's small
-    # locus overlaps it and must be merged in (not isolated), per the
-    # disjoint-region invariant.
+def test_sweep_never_emits_overlapping_regions_on_a_dense_chain():
     loci = [
-        SourceLocus("STUDY_A", "a_large", "EUR", "1", 100, 260, 180),
-        SourceLocus("STUDY_B", "b_small", "AFR", "1", 150, 180, 165),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 0, 1_500_000, lead_position=100_000),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 400_000, 1_900_000, lead_position=1_800_000),
+        SourceLocus("STUDY_C", "c1", "NFE", "1", 1_700_000, 3_200_000, lead_position=1_750_000),
+        SourceLocus("STUDY_D", "d1", "EAS", "1", 1_600_000, 3_100_000, lead_position=3_050_000),
     ]
-    regions = _sweep_canonical_regions(loci, max_region_span_bp=100)
-    assert len(regions) == 1
-    assert set(regions[0].quality_controls) == {OVERSIZED_SOURCE_LOCUS_QC, MERGED_REGION_EXCEEDS_MAX_SPAN_QC}
-    assert {locus.study_locus_id for locus in regions[0].input_loci} == {"a_large", "b_small"}
+    regions = _sweep_canonical_regions(loci)
+    for earlier, later in zip(regions, regions[1:], strict=False):  # noqa: RUF007
+        assert earlier.region_end < later.region_start
 
 
-def test_sweep_canonical_regions_still_splits_on_a_genuine_gap():
+def test_sweep_still_splits_on_a_genuine_position_gap():
     loci = [
-        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, 150),
-        SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200, 5_100),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, lead_position=150),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200, lead_position=5_100),
     ]
-    regions = _sweep_canonical_regions(loci, max_region_span_bp=1_000_000)
+    regions = _sweep_canonical_regions(loci)
     assert len(regions) == 2
     assert (regions[0].region_start, regions[0].region_end) == (100, 200)
     assert (regions[1].region_start, regions[1].region_end) == (5_000, 5_200)
@@ -566,17 +550,27 @@ def test_collect_canonical_regions_cli_rejects_unequal_array_lengths(tmp_path: P
 
 
 def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_stats_parquet(tmp_path: Path) -> None:
-    locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 250, 320)])
-    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 200, 260)])
-    # STUDY_C's own bounds (250-320) don't contain the fixed position=200 that
-    # _write_single_sumstats_dataset would emit, so it needs its own qualifying
-    # variant inside its own bounds to have a lead and enter the sweep at all.
+    # Under the lead-aware sweep, a chain of merely-overlapping loci no
+    # longer transitively unions into one region -- only a chain of
+    # *agreeing* loci does. So all three studies here share the same lead
+    # position (200), which each study's own bounds happen to contain, and
+    # each consecutive pair's overlap contains that shared lead: A-B agree
+    # and crop to their [150, 250] intersection, then B-C agree and crop
+    # further to [180, 250] -- but that later agreement can only narrow B
+    # and C, not re-open A's already-settled bound, so the final region is
+    # (150, 250): A's settled start through the common end all three share.
+    locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 180, 320)])
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 250)])
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 150, 300)])
     sumstats_c = _write_sumstats_dataset_with_rows(
-        tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C", rows=[("1_280_A_G", 280, 0.1, -8, 1.0, 0.2, 0.01)]
+        tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C", rows=[("1_200_A_G", 200, 0.1, -8, 1.0, 0.2, 0.01)]
     )
-    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A", rows=[("1_200_A_G", 200, 0.1, -8, 1.0, 0.2, 0.01)]
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B", rows=[("1_200_A_G", 200, 0.1, -8, 1.0, 0.2, 0.01)]
+    )
     stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
 
     result = runner.invoke(
@@ -630,239 +624,8 @@ def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_st
         ).fetchall()
 
     assert rows == [
-        ("1", 100, 320, ["STUDY_A", "STUDY_B", "STUDY_C"], ["a_locus", "b_locus", "c_locus"], ["STUDY_A", "STUDY_B", "STUDY_C"]),
+        ("1", 150, 250, ["STUDY_A", "STUDY_B", "STUDY_C"], ["a_locus", "b_locus", "c_locus"], ["STUDY_A", "STUDY_B", "STUDY_C"]),
     ]
-
-
-def test_collect_canonical_regions_cli_merges_overlap_chain_despite_cap_exceedance(tmp_path: Path) -> None:
-    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 180, 259)])
-    locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 240, 319)])
-    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
-    # STUDY_C's own bounds (240-319) don't contain the fixed position=200 that
-    # _write_single_sumstats_dataset would emit, so it needs its own qualifying
-    # variant inside its own bounds to have a lead and enter the sweep at all.
-    sumstats_c = _write_sumstats_dataset_with_rows(
-        tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C", rows=[("1_280_A_G", 280, 0.1, -8, 1.0, 0.2, 0.01)]
-    )
-    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
-
-    result = runner.invoke(
-        app,
-        [
-            "collect_canonical_regions",
-            "--run_id",
-            "run-1",
-            "--locus_breaker",
-            str(locus_breaker_a),
-            "--locus_breaker",
-            str(locus_breaker_b),
-            "--locus_breaker",
-            str(locus_breaker_c),
-            "--ancestry",
-            "EUR",
-            "--ancestry",
-            "CSA",
-            "--ancestry",
-            "AFR",
-            "--summary_statistics",
-            str(sumstats_a),
-            "--summary_statistics",
-            str(sumstats_b),
-            "--summary_statistics",
-            str(sumstats_c),
-            "--fine_mapping_locus_set_output_dir",
-            str(tmp_path / "fine_mapping_locus_sets"),
-            "--stats_parquet_output",
-            str(stats_parquet_output),
-            "--stats_json_output",
-            str(tmp_path / "stats" / "run-1.stat.json"),
-            "--canonical_region_max_region_span_bp",
-            "140",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-
-    with duckdb.connect() as con:
-        rows = con.execute(
-            f"""
-            SELECT locusStart, locusEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds
-            FROM read_parquet('{stats_parquet_output}')
-            ORDER BY locusStart, locusEnd
-            """
-        ).fetchall()
-
-    # Under the old sweep, the cap forced a1/b1 to be flushed as one region
-    # and b1/c1 to start a second, overlapping region ([100,200] and
-    # [180,319] share coordinates 180-200), which the downstream
-    # fineMappingLocusSetId dedup then collapsed into a single row with
-    # intersected (not unioned) bounds. The disjoint-region invariant means
-    # the sweep now merges the whole overlap chain into one region instead.
-    assert rows == [
-        (100, 319, ["a_locus", "b_locus", "c_locus"]),
-    ]
-
-
-def test_collect_canonical_regions_cli_merges_an_oversized_locus_with_an_overlapping_neighbor(tmp_path: Path) -> None:
-    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_large", 100, 260)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_small", 150, 180)])
-    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    # STUDY_B's own bounds (150-180) don't contain the fixed position=200 that
-    # _write_single_sumstats_dataset would emit, so it needs its own qualifying
-    # variant inside its own bounds to have a lead and enter the sweep at all.
-    sumstats_b = _write_sumstats_dataset_with_rows(
-        tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B", rows=[("1_165_A_G", 165, 0.1, -8, 1.0, 0.2, 0.01)]
-    )
-    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
-
-    result = runner.invoke(
-        app,
-        [
-            "collect_canonical_regions",
-            "--run_id",
-            "run-1",
-            "--locus_breaker",
-            str(locus_breaker_a),
-            "--locus_breaker",
-            str(locus_breaker_b),
-            "--ancestry",
-            "EUR",
-            "--ancestry",
-            "AFR",
-            "--summary_statistics",
-            str(sumstats_a),
-            "--summary_statistics",
-            str(sumstats_b),
-            "--fine_mapping_locus_set_output_dir",
-            str(tmp_path / "fine_mapping_locus_sets"),
-            "--stats_parquet_output",
-            str(stats_parquet_output),
-            "--stats_json_output",
-            str(tmp_path / "stats" / "run-1.stat.json"),
-            "--canonical_region_max_region_span_bp",
-            "100",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-
-    with duckdb.connect() as con:
-        rows = con.execute(
-            f"""
-            SELECT locusStart, locusEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds, list_transform(components, item -> item.qualityControls) AS componentQualityControls
-            FROM read_parquet('{stats_parquet_output}')
-            ORDER BY locusStart, locusEnd
-            """
-        ).fetchall()
-
-    assert rows == [
-        (
-            100,
-            260,
-            ["a_large", "b_small"],
-            [
-                ["MERGED_REGION_EXCEEDS_MAX_REGION_SPAN", "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"],
-                ["MERGED_REGION_EXCEEDS_MAX_REGION_SPAN", "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"],
-            ],
-        ),
-    ]
-
-
-def test_collect_canonical_regions_cli_rejects_a_region_whose_merged_span_exceeds_the_reject_threshold(tmp_path: Path) -> None:
-    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 150)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 140, 250)])
-    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
-    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
-    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
-
-    result = runner.invoke(
-        app,
-        [
-            "collect_canonical_regions",
-            "--run_id",
-            "run-1",
-            "--locus_breaker",
-            str(locus_breaker_a),
-            "--locus_breaker",
-            str(locus_breaker_b),
-            "--ancestry",
-            "EUR",
-            "--ancestry",
-            "AFR",
-            "--summary_statistics",
-            str(sumstats_a),
-            "--summary_statistics",
-            str(sumstats_b),
-            "--fine_mapping_locus_set_output_dir",
-            str(tmp_path / "fine_mapping_locus_sets"),
-            "--stats_parquet_output",
-            str(stats_parquet_output),
-            "--stats_json_output",
-            str(stats_json_output),
-            "--canonical_region_max_region_span_bp",
-            "10",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-
-    with duckdb.connect() as con:
-        row_count = con.execute(f"SELECT count(*) FROM read_parquet('{stats_parquet_output}')").fetchone()[0]
-    assert row_count == 0
-
-    stats = json.loads(stats_json_output.read_text())
-    assert stats["nCandidateLocusSets"] == 1
-    assert stats["nPublishedLocusSets"] == 0
-    assert stats["nNotPromotedLocusSets"] == 1
-    assert stats["notPromotedReasons"] == {"REGION_SPAN_EXCEEDS_REJECT_THRESHOLD": 1}
-
-
-def test_collect_canonical_regions_cli_counts_a_lone_oversized_region_toward_nregionsexceedingspancap(tmp_path: Path) -> None:
-    # Config requires at least two input triples, so a second, non-overlapping,
-    # within-cap study is included purely to satisfy that constraint. It must
-    # not overlap or merge with the oversized a_locus region, so it doesn't
-    # affect the nRegionsExceedingSpanCap count under test.
-    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 400)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 1000, 1050)])
-    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
-    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
-
-    result = runner.invoke(
-        app,
-        [
-            "collect_canonical_regions",
-            "--run_id",
-            "run-1",
-            "--locus_breaker",
-            str(locus_breaker_a),
-            "--locus_breaker",
-            str(locus_breaker_b),
-            "--ancestry",
-            "EUR",
-            "--ancestry",
-            "AFR",
-            "--summary_statistics",
-            str(sumstats_a),
-            "--summary_statistics",
-            str(sumstats_b),
-            "--fine_mapping_locus_set_output_dir",
-            str(tmp_path / "fine_mapping_locus_sets"),
-            "--stats_parquet_output",
-            str(tmp_path / "stats" / "run-1.stat.parquet"),
-            "--stats_json_output",
-            str(stats_json_output),
-            "--canonical_region_max_region_span_bp",
-            "100",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    stats = json.loads(stats_json_output.read_text())
-    assert stats["nRegionsExceedingSpanCap"] == 1
 
 
 def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_strict_maf_and_deterministic_ids(
@@ -874,7 +637,14 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     # asserted published locus below) falls inside its own bounds and gives
     # it a lead; its only other own-bounds-and-MAF-qualifying alternative,
     # "1_210_T_C", sits exactly at the MAF cutoff (0.01) and must not qualify.
-    # The union with a_locus (100-200) is unchanged: still 100-220.
+    #
+    # a_locus's own qualifying lead is "1_110_A_G" (position 110), which sits
+    # outside the [125, 200] overlap with b_locus, while b_locus's own
+    # qualifying lead ("1_125_A_C", position 125) sits inside it. Only
+    # b_locus's lead is in the shared zone, so the pairwise resolution rules
+    # this a disagreement (two distinct signals, not one): a_locus is trimmed
+    # back to (100, 124) and published separately, while b_locus keeps its
+    # own bounds (125, 220) and becomes the region asserted below.
     locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 125, 220)])
     sumstats_a = _write_sumstats_dataset_with_rows(
         tmp_path / "study_a.sumstats.parquet",
@@ -929,8 +699,14 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     files = sorted(output_dir.glob("*.parquet"))
     assert len(files) == 1
 
+    # STUDY_A's published lead within the (125, 220) region is "1_140_C_T"
+    # (position 140), not its own-bounds lead "1_110_A_G": position 110 falls
+    # outside the published region once a_locus is trimmed away from the
+    # disagreement above, and every study is still cross-joined against every
+    # region regardless of sweep membership, so STUDY_A's qualifying variant
+    # inside b_locus's own region is what ends up published for it.
     expected_study_locus_ids = {
-        "STUDY_A": hashlib.md5(b"STUDY_A|1_110_A_G", usedforsecurity=False).hexdigest(),
+        "STUDY_A": hashlib.md5(b"STUDY_A|1_140_C_T", usedforsecurity=False).hexdigest(),
         "STUDY_B": hashlib.md5(b"STUDY_B|1_125_A_C", usedforsecurity=False).hexdigest(),
     }
     expected_locus_set_id = hashlib.md5(
@@ -960,16 +736,16 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
             "STUDY_A",
             expected_study_locus_ids["STUDY_A"],
             "1",
-            100,
+            125,
             220,
-            ["1_110_A_G", "1_140_C_T"],
+            ["1_140_C_T"],
         ),
         (
             expected_locus_set_id,
             "STUDY_B",
             expected_study_locus_ids["STUDY_B"],
             "1",
-            100,
+            125,
             220,
             ["1_125_A_C", "1_130_A_G"],
         ),
@@ -977,8 +753,10 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
 
     stats = json.loads(stats_json_output.read_text())
     assert stats["nPublishedLocusSets"] == 1
-    assert stats["candidateLocusSizeBp"] == {"n": 1, "mean": 121.0, "min": 121, "max": 121}
-    assert stats["publishedLocusSizeBp"] == {"n": 1, "mean": 121.0, "min": 121, "max": 121}
+    # Two candidate regions now: a_locus's disagreement-trimmed (100, 124)
+    # and the published (125, 220).
+    assert stats["candidateLocusSizeBp"] == {"n": 2, "mean": 60.5, "min": 25, "max": 96}
+    assert stats["publishedLocusSizeBp"] == {"n": 1, "mean": 96.0, "min": 96, "max": 96}
 
 
 def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_when_publication_is_blocked(
@@ -998,10 +776,16 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
     # fails MAF, so c_locus never enters the sweep, and its far-away bounds
     # (500-550) can't overlap the a/b region either way. It exists purely to
     # exercise the pre-existing "every prepared input is cross-joined
-    # against every region regardless of sweep membership" behavior: since
-    # it has zero variants inside the a+b region, it is the component that
-    # blocks publication with NO_VARIANTS_IN_LOCUS, while a_locus and
-    # b_locus genuinely merge into one region via their own qualifying leads.
+    # against every region regardless of sweep membership" behavior.
+    #
+    # a_locus's own qualifying lead (position 110) sits outside its overlap
+    # with b_locus ([180, 200]), while b_locus's own qualifying lead
+    # (position 200) sits inside it -- so pairwise resolution treats them as
+    # two distinct signals rather than one merged region: a_locus is trimmed
+    # to (100, 179) and b_locus keeps (180, 220). Each of those two regions
+    # is missing a MAF-qualifying variant from at least one of the other two
+    # studies (STUDY_C always, plus STUDY_A or STUDY_B depending on the
+    # region), so NO_VARIANTS_IN_LOCUS blocks publication of both.
     locus_breaker_c = _write_locus_breaker_dataset_with_loci(
         tmp_path / "study_c.locus.parquet",
         study_id="STUDY_C",
@@ -1025,9 +809,9 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
             ("1_210_T_C", 210, 0.60, -6, 8.0, 0.99, 0.06),
             # Genuine own-bounds (180-220) MAF-qualifying lead (MAF 0.30),
             # so b_locus actually survives Task-1 filtering and re-enters
-            # the sweep to merge with a_locus into one real region, instead
-            # of being dropped and only coincidentally reproducing the same
-            # blocked outcome via its other, out-of-bounds variants.
+            # the sweep with a real lead of its own, instead of being
+            # dropped and only coincidentally reproducing the same blocked
+            # outcome via its other, out-of-bounds variants.
             ("1_200_G_T", 200, 0.05, -6, 1.0, 0.30, 0.03),
         ],
     )
@@ -1104,13 +888,15 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
     assert rows == []
 
     stats = json.loads(stats_json_output.read_text())
-    assert stats["nCandidateLocusSets"] == 1
+    # Two candidate regions now (a_locus's disagreement-trimmed (100, 179)
+    # and b_locus's (180, 220)), both blocked by NO_VARIANTS_IN_LOCUS.
+    assert stats["nCandidateLocusSets"] == 2
     assert stats["nPublishedLocusSets"] == 0
-    assert stats["nNotPromotedLocusSets"] == 1
-    assert stats["notPromotedReasons"] == {"NO_VARIANTS_IN_LOCUS": 1}
+    assert stats["nNotPromotedLocusSets"] == 2
+    assert stats["notPromotedReasons"] == {"NO_VARIANTS_IN_LOCUS": 2}
     assert set(stats["timingsSeconds"]) == {"inputValidation", "regionDiscovery", "locusMaterialization", "statistics"}
     assert all(value >= 0 for value in stats["timingsSeconds"].values())
-    assert stats["candidateLocusSizeBp"]["n"] == 1
+    assert stats["candidateLocusSizeBp"]["n"] == 2
     assert stats["publishedLocusSizeBp"] == {"n": 0, "mean": None, "min": None, "max": None}
 
 
@@ -1155,47 +941,6 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
     report = json.loads((tmp_path / "stats.json").read_text())
     assert report["studiesWithMissingEAF"] == ["STUDY_B"]
     assert report["runQualityControls"] == ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"]
-
-
-def test_collect_canonical_regions_cli_reports_regions_exceeding_the_span_cap(tmp_path: Path) -> None:
-    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_large", 100, 260)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_small", 150, 180)])
-    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
-    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
-
-    result = runner.invoke(
-        app,
-        [
-            "collect_canonical_regions",
-            "--run_id",
-            "run-1",
-            "--locus_breaker",
-            str(locus_breaker_a),
-            "--locus_breaker",
-            str(locus_breaker_b),
-            "--ancestry",
-            "EUR",
-            "--ancestry",
-            "AFR",
-            "--summary_statistics",
-            str(sumstats_a),
-            "--summary_statistics",
-            str(sumstats_b),
-            "--fine_mapping_locus_set_output_dir",
-            str(tmp_path / "fine_mapping_locus_sets"),
-            "--stats_parquet_output",
-            str(tmp_path / "stats" / "run-1.stat.parquet"),
-            "--stats_json_output",
-            str(stats_json_output),
-            "--canonical_region_max_region_span_bp",
-            "100",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    stats = json.loads(stats_json_output.read_text())
-    assert stats["nRegionsExceedingSpanCap"] == 1
 
 
 def test_regional_staging_keeps_only_projected_variants_inside_regions(tmp_path: Path) -> None:
@@ -1505,7 +1250,12 @@ def test_build_regional_output_tables_forwards_region_level_quality_controls_to_
             chromosome="1",
             region_start=100,
             region_end=260,
-            quality_controls=(OVERSIZED_SOURCE_LOCUS_QC, MERGED_REGION_EXCEEDS_MAX_SPAN_QC),
+            # These two tags are arbitrary here -- this test only checks that
+            # build_regional_output_tables forwards whatever quality-control
+            # tags a region already carries down to its components; it does
+            # not exercise how those tags got onto the region in the first
+            # place (that used to be the now-removed span-cap mechanism).
+            quality_controls=(OVERSIZED_SOURCE_LOCUS_QC, "SOME_OTHER_REGION_LEVEL_QC"),
             input_loci=(
                 SourceLocus("STUDY_A", "a", "EUR", "1", 100, 260, 180),
                 SourceLocus("STUDY_B", "b", "AFR", "1", 150, 180, 165),
@@ -1520,6 +1270,6 @@ def test_build_regional_output_tables_forwards_region_level_quality_controls_to_
         component_qc = con.execute(f"SELECT list_transform(components, item -> item.qualityControls) FROM {stats_table}").fetchone()[0]
 
     assert component_qc == [
-        [MERGED_REGION_EXCEEDS_MAX_SPAN_QC, OVERSIZED_SOURCE_LOCUS_QC],
-        [MERGED_REGION_EXCEEDS_MAX_SPAN_QC, OVERSIZED_SOURCE_LOCUS_QC],
+        ["SOME_OTHER_REGION_LEVEL_QC", OVERSIZED_SOURCE_LOCUS_QC],
+        ["SOME_OTHER_REGION_LEVEL_QC", OVERSIZED_SOURCE_LOCUS_QC],
     ]
