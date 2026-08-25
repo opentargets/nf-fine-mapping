@@ -466,6 +466,11 @@ def _resolve_overlap(left: _ResolvingLocus, right: _ResolvingLocus) -> bool:
 
     intersection_start = max(left.current_start, right.current_start)
     intersection_end = min(left.current_end, right.current_end)
+    if intersection_start > intersection_end:
+        raise RuntimeError(
+            f"_resolve_overlap called on non-overlapping loci: "
+            f"left=({left.current_start},{left.current_end}) right=({right.current_start},{right.current_end})"
+        )
     left_lead_in = intersection_start <= left.source.lead_position <= intersection_end
     right_lead_in = intersection_start <= right.source.lead_position <= intersection_end
 
@@ -494,38 +499,49 @@ def _resolve_overlap(left: _ResolvingLocus, right: _ResolvingLocus) -> bool:
     return False
 
 
-def _build_region_from_group(group: list[_ResolvingLocus], envelope_start: int, envelope_end: int) -> CanonicalRegion:
+def _build_region_from_group(group: list[_ResolvingLocus], envelope_start: int, envelope_end: int, max_region_span_bp: int) -> CanonicalRegion:
     contributing = [item.source for item in group if envelope_start <= item.source.lead_position <= envelope_end]
     sorted_sources = tuple(sorted(contributing, key=lambda locus: locus.source_key))
+    quality_controls = (OVERSIZED_SOURCE_LOCUS_QC,) if any(locus.inclusive_span_bp > max_region_span_bp for locus in sorted_sources) else ()
     return CanonicalRegion(
         chromosome=group[0].source.chromosome,
         region_start=envelope_start,
         region_end=envelope_end,
-        quality_controls=(),
+        quality_controls=quality_controls,
         input_loci=sorted_sources,
     )
 
 
-def _sweep_canonical_regions(source_loci: list[SourceLocus]) -> list[CanonicalRegion]:
+def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp: int) -> list[CanonicalRegion]:
     regions: list[CanonicalRegion] = []
     current_group: list[_ResolvingLocus] = []
     envelope_start: int | None = None
     envelope_end: int | None = None
+    published_floor: dict[str, int] = {}
 
     def flush_current() -> None:
         nonlocal current_group, envelope_start, envelope_end
         if current_group:
-            # Invariant: envelope_start/envelope_end are always set together
-            # with current_group, so they can't be None here.
             if envelope_start is None or envelope_end is None:
                 raise RuntimeError("Canonical-region sweep lost the active region envelope")
-            regions.append(_build_region_from_group(current_group, envelope_start, envelope_end))
+            region = _build_region_from_group(current_group, envelope_start, envelope_end, max_region_span_bp)
+            regions.append(region)
+            published_floor[region.chromosome] = max(published_floor.get(region.chromosome, region.region_end), region.region_end)
         current_group = []
         envelope_start = None
         envelope_end = None
 
     for locus in source_loci:
-        resolving = _ResolvingLocus(source=locus, current_start=locus.locus_start, current_end=locus.locus_end)
+        # A locus whose own lead already belongs to an earlier, already-
+        # published region on this chromosome cannot be represented without
+        # reaching back into territory that region has already claimed --
+        # drop it entirely rather than let it distort a later comparison.
+        floor = published_floor.get(locus.chromosome)
+        if floor is not None and locus.lead_position <= floor:
+            continue
+        effective_start = locus.locus_start if floor is None else max(locus.locus_start, floor + 1)
+        resolving = _ResolvingLocus(source=locus, current_start=effective_start, current_end=locus.locus_end)
+
         if not current_group:
             current_group = [resolving]
             envelope_start, envelope_end = resolving.current_start, resolving.current_end
@@ -534,7 +550,15 @@ def _sweep_canonical_regions(source_loci: list[SourceLocus]) -> list[CanonicalRe
         if envelope_start is None or envelope_end is None:
             raise RuntimeError("Canonical-region sweep lost the active region envelope")
         last = current_group[-1]
-        overlaps = resolving.source.chromosome == last.source.chromosome and resolving.current_start <= envelope_end
+        # Symmetric: a locus that ends before the envelope starts does not
+        # overlap it either, even though it may still start before the
+        # envelope's own end -- checking only one side let a genuinely
+        # disjoint pair reach _resolve_overlap with an inverted intersection.
+        overlaps = (
+            resolving.source.chromosome == last.source.chromosome
+            and resolving.current_start <= envelope_end
+            and envelope_start <= resolving.current_end
+        )
         if not overlaps:
             flush_current()
             current_group = [resolving]
@@ -568,7 +592,12 @@ def _sweep_canonical_regions(source_loci: list[SourceLocus]) -> list[CanonicalRe
         envelope_start, envelope_end = resolving.current_start, resolving.current_end
 
     flush_current()
-    return regions
+    # Loci are fed in ascending-start order, but a locus that is excluded or
+    # start-clamped by the published-floor guard above can cause a later
+    # group to flush before an earlier-starting-but-later-processed group
+    # does; sort explicitly so callers get a well-defined, position-ordered
+    # result rather than relying on emission order by accident.
+    return sorted(regions, key=lambda region: (region.chromosome, region.region_start))
 
 
 def _input_loci_sql(region: CanonicalRegion) -> str:
@@ -1025,7 +1054,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
     source_loci = _read_source_loci(prepared_inputs, config.canonical_region_min_maf)
-    regions = _sweep_canonical_regions(source_loci)
+    regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
     with _managed_duckdb() as con:

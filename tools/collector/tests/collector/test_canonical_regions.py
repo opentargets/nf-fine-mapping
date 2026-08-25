@@ -63,7 +63,7 @@ def test_sweep_merges_two_loci_that_agree_into_one_region():
         SourceLocus("STUDY_A", "a1", "EUR", "1", 1_000_000, 2_200_000, 2_000_000),
         SourceLocus("STUDY_B", "b1", "AFR", "1", 1_800_000, 3_000_000, 1_900_000),
     ]
-    regions = _sweep_canonical_regions(loci)
+    regions = _sweep_canonical_regions(loci, 3_000_000)
     assert len(regions) == 1
     assert (regions[0].region_start, regions[0].region_end) == (1_800_000, 2_200_000)
 
@@ -74,7 +74,7 @@ def test_sweep_starts_a_new_region_on_disagreement_even_with_no_position_gap():
         SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 250, lead_position=190),
         SourceLocus("STUDY_C", "c1", "NFE", "1", 160, 300, lead_position=280),
     ]
-    regions = _sweep_canonical_regions(loci)
+    regions = _sweep_canonical_regions(loci, 3_000_000)
     assert len(regions) == 2
     # A (100-200, lead 190) and B (150-250, lead 190) both have their lead
     # inside their [150, 200] intersection, so they agree and both trim to
@@ -93,7 +93,7 @@ def test_sweep_never_emits_overlapping_regions_on_a_dense_chain():
         SourceLocus("STUDY_C", "c1", "NFE", "1", 1_700_000, 3_200_000, lead_position=1_750_000),
         SourceLocus("STUDY_D", "d1", "EAS", "1", 1_600_000, 3_100_000, lead_position=3_050_000),
     ]
-    regions = _sweep_canonical_regions(loci)
+    regions = _sweep_canonical_regions(loci, 3_000_000)
     for earlier, later in zip(regions, regions[1:], strict=False):  # noqa: RUF007
         assert earlier.region_end < later.region_start
     # Without this, the assertion above passes vacuously against a
@@ -120,7 +120,7 @@ def test_sweep_never_lets_a_stale_contained_member_reinflate_a_region_past_a_lat
         SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 200, lead_position=170),
         SourceLocus("STUDY_C", "c1", "NFE", "1", 250, 400, lead_position=280),
     ]
-    regions = _sweep_canonical_regions(loci)
+    regions = _sweep_canonical_regions(loci, 3_000_000)
     for earlier, later in zip(regions, regions[1:], strict=False):  # noqa: RUF007
         assert earlier.region_end < later.region_start
     assert len(regions) == 2
@@ -133,10 +133,57 @@ def test_sweep_still_splits_on_a_genuine_position_gap():
         SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, lead_position=150),
         SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200, lead_position=5_100),
     ]
-    regions = _sweep_canonical_regions(loci)
+    regions = _sweep_canonical_regions(loci, 3_000_000)
     assert len(regions) == 2
     assert (regions[0].region_start, regions[0].region_end) == (100, 200)
     assert (regions[1].region_start, regions[1].region_end) == (5_000, 5_200)
+
+
+def test_sweep_flags_a_region_containing_an_oversized_source_locus():
+    loci = [
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 400, lead_position=200),
+    ]
+    regions = _sweep_canonical_regions(loci, 100)
+    assert len(regions) == 1
+    assert regions[0].quality_controls == (OVERSIZED_SOURCE_LOCUS_QC,)
+
+
+def test_sweep_does_not_flag_a_normally_sized_region():
+    loci = [
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, lead_position=150),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200, lead_position=5_100),
+    ]
+    regions = _sweep_canonical_regions(loci, 3_000_000)
+    assert len(regions) == 2
+    assert regions[0].quality_controls == ()
+    assert regions[1].quality_controls == ()
+
+
+def test_sweep_never_emits_overlapping_or_misordered_regions_on_random_multi_locus_input():
+    import random
+
+    rng = random.Random(20260826)
+    for _ in range(5_000):
+        n_loci = rng.randint(1, 8)
+        loci = []
+        for i in range(n_loci):
+            start = rng.randint(0, 200)
+            end = start + rng.randint(0, 100)
+            lead = rng.randint(start, end)
+            loci.append(SourceLocus(f"STUDY_{i}", f"locus_{i}", "EUR", "1", start, end, lead))
+        loci.sort(key=lambda locus: (locus.locus_start, locus.locus_end, locus.source_key))
+        regions = _sweep_canonical_regions(loci, 1_000_000)
+        for earlier, later in zip(regions, regions[1:], strict=False):  # noqa: RUF007
+            assert earlier.chromosome != later.chromosome or earlier.region_end < later.region_start
+        for region in regions:
+            for member in region.input_loci:
+                assert region.region_start <= member.lead_position <= region.region_end
+        seen_source_keys: set[tuple[str, str]] = set()
+        for region in regions:
+            for member in region.input_loci:
+                key = (member.study_id, member.study_locus_id)
+                assert key not in seen_source_keys, f"{key} appeared in more than one region"
+                seen_source_keys.add(key)
 
 
 def _write_locus_breaker_dataset(path: Path, *, study_ids: list[str]) -> Path:

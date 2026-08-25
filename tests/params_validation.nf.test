@@ -158,6 +158,46 @@ nextflow_pipeline {
         }
     }
 
+    test("fails when canonical_region_max_region_span_bp exactly equals locus_breaker_large_loci_size for the collector backend") {
+        when {
+            params {
+                locus_breaker_method = "collector"
+                canonical_region_max_region_span_bp = 1_500_000
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("canonical_region_max_region_span_bp") },
+                { assert output.contains("locus_breaker_large_loci_size") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds when canonical_region_max_region_span_bp is exactly locus_breaker_large_loci_size + 1 for the collector backend") {
+        when {
+            params {
+                locus_breaker_method = "collector"
+                canonical_region_max_region_span_bp = 1_500_001
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 }
+            )
+        }
+    }
+
     test("succeeds for the gentropy backend even when canonical_region_max_region_span_bp is below locus_breaker_large_loci_size") {
         when {
             params {
