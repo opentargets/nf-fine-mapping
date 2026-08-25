@@ -52,7 +52,7 @@ jobs:
                       COLLECTOR_VERSION=${{ steps.version.outputs.TAG }}
                   tags: |
                       ghcr.io/${{ github.repository }}/collector:latest
-                      ghcr.io/${{ github.repository }}/collector:${{ steps.version.outputs.TAG }}
+                      ghcr.io/${{ github.repository }}/collector:${{ github.sha }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
 
@@ -61,4 +61,3 @@ jobs:
               with:
                   subject-name: ghcr.io/${{ github.repository }}/collector
                   subject-digest: ${{ steps.push.outputs.digest }}
-                  push-to-registry: true
