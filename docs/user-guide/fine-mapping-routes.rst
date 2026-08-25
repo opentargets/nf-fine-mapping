@@ -16,9 +16,8 @@ All methods consume the same per-locus Parquet, MultiAncestryPairwiseLD, and
 JSONL metadata contract. They each publish a Gentropy-compatible StudyLocus
 Parquet file, an extended AnnData result, and machine-readable statistics.
 
-The workflow consumes only fully overlapping locus sets from
-``LOCUS_COLLECTION`` that pass LD annotation validation. Partial and
-non-overlap outputs remain available for quality-control analysis.
+The workflow consumes the canonical multi-ancestry locus sets emitted by
+``LOCUS_COLLECTION`` that pass LD annotation validation.
 
 LD interface
 ------------

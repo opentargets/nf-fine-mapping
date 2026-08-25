@@ -31,21 +31,12 @@ source for what gets published. All paths below are relative to
      - LocusBreaker
      - Per-study clumped-locus Parquet, filtered to studies that passed
        manifest validation.
-   * - Full-overlap Loci
+   * - Collected Loci
      - ``collected_loci/full_overlaps/``
      - Locus Collection
-     - Locus sets with complete cross-ancestry overlap; the candidate sets
-       carried forward into LD annotation and fine-mapping.
-   * - Partial-overlap Loci
-     - ``collected_loci/partial_overlaps/``
-     - Locus Collection
-     - Locus sets with partial cross-ancestry overlap. QC-only; not used
-       downstream.
-   * - Non-overlap Loci
-     - ``collected_loci/non_overlaps/``
-     - Locus Collection
-     - Locus sets with no cross-ancestry overlap. QC-only; not used
-       downstream.
+     - Canonical multi-ancestry locus sets assembled from all input studies
+       for a run; the sole candidate-set output carried forward into LD
+       annotation and fine-mapping.
    * - Collection Stats
      - ``collected_loci/stats/``
      - Locus Collection
@@ -89,7 +80,8 @@ The major stages are:
 
 1. Read and filter study metadata from a manifest.
 2. Break summary statistics into study loci.
-3. Collect overlapping loci across studies in a shared ``runId``.
+3. Collect canonical multi-ancestry locus sets across studies in a shared
+   ``runId``.
 4. Prepare LD and fine-mapping inputs.
 5. Run a configured fine-mapping route, such as MultiSuSiE.
 

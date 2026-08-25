@@ -6,9 +6,7 @@
 
 %%metro file: manifest_in | TSV | Manifest
 %%metro dir: loci_out | Loci
-%%metro dir: full_overlap_out | Full-overlap Loci
-%%metro dir: partial_overlap_out | Partial-overlap Loci
-%%metro dir: non_overlap_out | Non-overlap Loci
+%%metro dir: collected_out | Collected Loci
 %%metro dir: collect_stats_out | Collection Stats
 %%metro dir: annotated_out | Annotated Locus Sets
 %%metro dir: ld_pair_stats_out | LD-pair Stats
@@ -53,9 +51,7 @@ graph LR
 
     subgraph publish [Published Outputs]
         loci_out[ ]
-        full_overlap_out[ ]
-        partial_overlap_out[ ]
-        non_overlap_out[ ]
+        collected_out[ ]
         collect_stats_out[ ]
         annotated_out[ ]
         ld_pair_stats_out[ ]
@@ -74,9 +70,7 @@ graph LR
     ld_hailing -->|main| multisusie
 
     lb -->|main| loci_out
-    collect -->|main| full_overlap_out
-    collect -->|main| partial_overlap_out
-    collect -->|main| non_overlap_out
+    collect -->|main| collected_out
     collect -->|main| collect_stats_out
     ld_hailing -->|main| annotated_out
     ld_hailing -->|main| ld_pair_stats_out
