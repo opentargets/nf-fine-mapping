@@ -46,6 +46,8 @@ jobs:
                   context: tools/collector
                   platforms: linux/amd64,linux/arm64
                   push: true
+                  provenance: false
+                  sbom: false
                   build-args: |
                       COLLECTOR_VERSION=${{ steps.version.outputs.TAG }}
                   tags: |
