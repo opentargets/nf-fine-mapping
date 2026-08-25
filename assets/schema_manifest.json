@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/opentargets/nf-fine-mapping/main/assets/schema_manifest.json",
+  "title": "nf-fine-mapping manifest schema",
+  "description": "Schema for the tab-separated manifest describing studies and summary-statistics inputs.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "runId": {"type": "string", "minLength": 1, "meta": "runId"},
+      "studyId": {"type": "string", "minLength": 1, "meta": "studyId"},
+      "route": {"type": "string", "minLength": 1, "meta": "route"},
+      "summarystatsLocation": {"type": "string", "minLength": 1},
+      "majorAncestry": {"type": "string", "minLength": 1, "meta": "ancestry"},
+      "traitFromSourceMappedIds": {"type": "string", "minLength": 1},
+      "effectiveSampleSize": {"type": "integer", "minimum": 1, "meta": "sampleSize"}
+    },
+    "required": ["runId", "studyId", "route", "summarystatsLocation", "majorAncestry", "traitFromSourceMappedIds", "effectiveSampleSize"]
+  }
+}

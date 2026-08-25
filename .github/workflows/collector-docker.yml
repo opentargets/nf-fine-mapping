@@ -21,7 +21,7 @@ jobs:
             - name: Read version
               id: version
               run: |
-                  VERSION=$(python -c 'import tomllib; print(tomllib.load(open("tools/collector/pyproject.toml", "rb"))["project"]["version"])')
+                  VERSION=$(grep -m1 '^version' tools/collector/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
                   echo "TAG=${VERSION}" >> "$GITHUB_OUTPUT"
 
             - name: Set up QEMU

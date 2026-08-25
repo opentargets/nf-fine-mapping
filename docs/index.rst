@@ -13,6 +13,7 @@ disequilibrium resources.
    user-guide/overview
    user-guide/execution
    user-guide/workflows
+   user-guide/qc-validation
    user-guide/locus-processing
    user-guide/fine-mapping-routes
    benchmarks/hailing-ducks-ld-annotation
