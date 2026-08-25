@@ -22,6 +22,20 @@ The full pipeline documentation can be built from the repository root with
 
 ## Compare LocusBreaker outputs
 
+### Duplicate summary-statistics limitation
+
+The collector LocusBreaker deliberately removes all rows for a duplicated
+``(studyId, variantId)`` before clumping. This is conservative: when the same
+variant has conflicting rows, the collector does not guess which p-value or
+effect estimate is correct. Gentropy may rank those duplicate rows before its
+later duplicate removal, so collector/Gentropy parity is not expected for
+inputs with duplicates.
+
+Treat duplicates as an input validation failure and repair or reject the
+affected study before comparing backends. The canonical-region collector
+already rejects duplicate summary-statistics inputs during preflight; duplicate
+counts and a shared Gentropy preflight are tracked in GitHub issue #11.
+
 After running the pipeline with both collector and Gentropy LocusBreaker outputs enabled, compare logical rows with:
 
 ```bash
