@@ -3,13 +3,6 @@
 %%metro style: dark
 %%metro line: main | Pipeline | #22d3ee
 %%metro line: validation | Validation & QC | #ef4444 | dashed
-%%metro line: lb_collector | LocusBreaker: Collector | #14b8a6 | dashed
-%%metro line: lb_gentropy | LocusBreaker: Gentropy | #8b5cf6 | dashed
-%%metro line: ld_gentropy | LD Annotation: Gentropy | #6366f1 | dashed
-%%metro line: ld_hailing | LD Annotation: Hailing Ducks | #f59e0b | dashed
-%%metro line: fm_multisusie | Fine-mapping: MultiSuSiE | #ec4899
-%%metro line: fm_susiex | Fine-mapping: SuSiEx | #34d399
-%%metro line: fm_sushie | Fine-mapping: SuShiE | #facc15
 
 %%metro file: manifest_in | TSV | Manifest
 %%metro dir: loci_dir | Loci
@@ -19,7 +12,15 @@
 
 graph LR
     subgraph input [Input]
+        study_in[OpenTargets Study]
+    end
+
+    subgraph fm_planning [Fine-mapping Planning]
+        planner[Fine-mapping Planner]
+        manifest_gen[Fine-mapping Manifest Generator]
         manifest_in[ ]
+        planner -->|main| manifest_gen
+        manifest_gen -->|main| manifest_in
     end
 
     subgraph validation_stage [Manifest Validation]
@@ -27,11 +28,7 @@ graph LR
     end
 
     subgraph locus_breaker [Locus Breaker]
-        _lb_branch[ ]
-        lb_collector[Collector LocusBreaker]
-        lb_gentropy[Gentropy LocusBreaker]
-        _lb_branch -->|lb_collector| lb_collector
-        _lb_branch -->|lb_gentropy| lb_gentropy
+        lb[LocusBreaker]
     end
 
     subgraph locus_collection [Locus Collection]
@@ -39,24 +36,11 @@ graph LR
     end
 
     subgraph locus_annotation [Locus Annotation]
-        _ld_branch[ ]
-        ld_gentropy[Gentropy LD Annotation]
         ld_hailing[Hailing Ducks LD Annotation]
-        _ld_converge[ ]
-        _ld_branch -->|ld_gentropy| ld_gentropy
-        _ld_branch -->|ld_hailing| ld_hailing
-        ld_gentropy -->|main| _ld_converge
-        ld_hailing -->|main| _ld_converge
     end
 
     subgraph fine_mapping [Fine Mapping]
-        _fm_branch[ ]
         multisusie[MultiSuSiE]
-        susiex[SuSiEx]
-        sushie[SuShiE]
-        _fm_branch -->|fm_multisusie| multisusie
-        _fm_branch -->|fm_susiex| susiex
-        _fm_branch -->|fm_sushie| sushie
     end
 
     subgraph publish [Published Outputs]
@@ -66,25 +50,19 @@ graph LR
         reports_dir[ ]
     end
 
+    study_in -->|main| planner
     manifest_in -->|main| validate
-    validate -->|main,lb_collector,lb_gentropy| _lb_branch
-    lb_collector -->|main| collect
-    lb_gentropy -->|main| collect
-    collect -->|main,ld_gentropy,ld_hailing| _ld_branch
-    _ld_converge -->|main,fm_multisusie,fm_susiex,fm_sushie| _fm_branch
-    multisusie -->|main,fm_multisusie| results_dir
-    susiex -->|main,fm_susiex| results_dir
-    sushie -->|main,fm_sushie| results_dir
+    validate -->|main| lb
+    lb -->|main| collect
+    collect -->|main| ld_hailing
+    ld_hailing -->|main| multisusie
+    multisusie -->|main| results_dir
 
-    lb_collector -->|main| loci_dir
-    lb_gentropy -->|main| loci_dir
+    lb -->|main| loci_dir
     collect -->|main| loci_dir
-    ld_gentropy -->|main| annotated_dir
     ld_hailing -->|main| annotated_dir
 
     validate -->|validation| reports_dir
-    lb_collector -->|validation| reports_dir
-    lb_gentropy -->|validation| reports_dir
+    lb -->|validation| reports_dir
     collect -->|validation| reports_dir
-    ld_gentropy -->|validation| reports_dir
     ld_hailing -->|validation| reports_dir
