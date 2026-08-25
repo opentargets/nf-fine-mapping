@@ -20,6 +20,8 @@ from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGI
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
 MERGED_REGION_EXCEEDS_MAX_SPAN_QC = "MERGED_REGION_EXCEEDS_MAX_REGION_SPAN"
 DUPLICATE_FINE_MAPPING_SET_QC = "MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL"
+REJECTED_REGION_SPAN_MULTIPLIER = 5
+REGION_SPAN_EXCEEDS_REJECT_THRESHOLD_REASON = "REGION_SPAN_EXCEEDS_REJECT_THRESHOLD"
 DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
 DISK_EXHAUSTION_EXIT_CODE = 75
 
@@ -805,7 +807,9 @@ def _write_stats_json(
         "nCandidateLocusSets": len(regions),
         "nPublishedLocusSets": 0,
         "nNotPromotedLocusSets": len(regions),
-        "nRegionsExceedingSpanCap": sum(1 for region in regions if MERGED_REGION_EXCEEDS_MAX_SPAN_QC in region.quality_controls),
+        "nRegionsExceedingSpanCap": sum(
+            1 for region in regions if (region.region_end - region.region_start + 1) > config.canonical_region_max_region_span_bp
+        ),
         "notPromotedReasons": {"NO_VARIANTS_IN_LOCUS": len(regions)} if regions else {},
         "studiesWithMissingEAF": [],
         "runQualityControls": [],
@@ -949,7 +953,10 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
     source_loci = _read_source_loci(prepared_inputs)
-    regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
+    all_regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
+    reject_span_bp = config.canonical_region_max_region_span_bp * REJECTED_REGION_SPAN_MULTIPLIER
+    regions = [region for region in all_regions if (region.region_end - region.region_start + 1) <= reject_span_bp]
+    n_rejected_for_span = len(all_regions) - len(regions)
     timings["regionDiscovery"] = round(perf_counter() - started, 6)
     started = perf_counter()
     with _managed_duckdb() as con:
@@ -970,11 +977,17 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings, published_locus_sizes)
+    _write_stats_json(config.stats_json_output, config, prepared_inputs, all_regions, timings, published_locus_sizes)
     if config.stats_json_output.exists():
         payload = json.loads(config.stats_json_output.read_text())
         payload["nPublishedLocusSets"] = published_count
-        payload["nNotPromotedLocusSets"] = len(regions) - published_count
-        payload["notPromotedReasons"] = {"NO_VARIANTS_IN_LOCUS": len(regions) - published_count} if len(regions) > published_count else {}
+        payload["nNotPromotedLocusSets"] = len(all_regions) - published_count
+        not_promoted_reasons: dict[str, int] = {}
+        if n_rejected_for_span:
+            not_promoted_reasons[REGION_SPAN_EXCEEDS_REJECT_THRESHOLD_REASON] = n_rejected_for_span
+        n_no_variants = len(regions) - published_count
+        if n_no_variants:
+            not_promoted_reasons["NO_VARIANTS_IN_LOCUS"] = n_no_variants
+        payload["notPromotedReasons"] = not_promoted_reasons
         config.stats_json_output.write_text(json.dumps(payload, indent=2) + "\n")
     return prepared_inputs

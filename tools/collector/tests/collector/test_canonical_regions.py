@@ -574,15 +574,118 @@ def test_collect_canonical_regions_cli_merges_an_oversized_locus_with_an_overlap
     with duckdb.connect() as con:
         rows = con.execute(
             f"""
-            SELECT locusStart, locusEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds
+            SELECT locusStart, locusEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds, list_transform(components, item -> item.qualityControls) AS componentQualityControls
             FROM read_parquet('{stats_parquet_output}')
             ORDER BY locusStart, locusEnd
             """
         ).fetchall()
 
     assert rows == [
-        (100, 260, ["a_large", "b_small"]),
+        (
+            100,
+            260,
+            ["a_large", "b_small"],
+            [
+                ["MERGED_REGION_EXCEEDS_MAX_REGION_SPAN", "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"],
+                ["MERGED_REGION_EXCEEDS_MAX_REGION_SPAN", "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"],
+            ],
+        ),
     ]
+
+
+def test_collect_canonical_regions_cli_rejects_a_region_whose_merged_span_exceeds_the_reject_threshold(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 150)])
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 140, 250)])
+    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
+    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(tmp_path / "fine_mapping_locus_sets"),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(stats_json_output),
+            "--canonical_region_max_region_span_bp",
+            "10",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as con:
+        row_count = con.execute(f"SELECT count(*) FROM read_parquet('{stats_parquet_output}')").fetchone()[0]
+    assert row_count == 0
+
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nCandidateLocusSets"] == 1
+    assert stats["nPublishedLocusSets"] == 0
+    assert stats["nNotPromotedLocusSets"] == 1
+    assert stats["notPromotedReasons"] == {"REGION_SPAN_EXCEEDS_REJECT_THRESHOLD": 1}
+
+
+def test_collect_canonical_regions_cli_counts_a_lone_oversized_region_toward_nregionsexceedingspancap(tmp_path: Path) -> None:
+    # Config requires at least two input triples, so a second, non-overlapping,
+    # within-cap study is included purely to satisfy that constraint. It must
+    # not overlap or merge with the oversized a_locus region, so it doesn't
+    # affect the nRegionsExceedingSpanCap count under test.
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 400)])
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 1000, 1050)])
+    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
+    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(tmp_path / "fine_mapping_locus_sets"),
+            "--stats_parquet_output",
+            str(tmp_path / "stats" / "run-1.stat.parquet"),
+            "--stats_json_output",
+            str(stats_json_output),
+            "--canonical_region_max_region_span_bp",
+            "100",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nRegionsExceedingSpanCap"] == 1
 
 
 def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_strict_maf_and_deterministic_ids(
