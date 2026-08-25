@@ -59,6 +59,13 @@ def test_locus_breaker_workflow_does_not_collect_loci():
     assert "ch_locus2" not in workflow
 
 
+def test_manifest_preserves_remote_summary_statistics_uris():
+    workflow = MAIN_WORKFLOW.read_text()
+
+    assert "summarystats_location.contains('://')" in workflow
+    assert "summary_statistics_path = (summarystats_location.startsWith('/') || summarystats_location.contains('://'))" in workflow
+
+
 def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumping():
     workflow = LOCUS_COLLECTION_WORKFLOW.read_text()
     module = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
