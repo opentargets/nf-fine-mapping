@@ -10,6 +10,37 @@
 
 ## Pipeline tools
 
+## Multi-ancestry fine-mapping methods
+
+### [MultiSuSiE](https://pubmed.ncbi.nlm.nih.gov/41491094/)
+
+> Rossen J, Shi H, Strober BJ, Zhang MJ, Kanai M, McCaw ZR, Liang L, Weissbrod O, Price AL. MultiSuSiE improves multi-ancestry fine-mapping in All of Us whole-genome sequencing data. Nat Genet. 2026 Jan;58(1):67-76. doi: 10.1038/s41588-025-02450-5. PubMed PMID: 41491094.
+
+### [SuSiEx](https://pubmed.ncbi.nlm.nih.gov/39187616/)
+
+> Yuan K, Longchamps RJ, Pardiñas AF, Yu M, Chen TT, Lin SC, Chen Y, Lam M, Liu R, Xia Y, Guo Z, Shi W, Shen C, et al. Fine-mapping across diverse ancestries drives the discovery of putative causal variants underlying human complex traits and diseases. Nat Genet. 2024 Sep;56(9):1841-1850. doi: 10.1038/s41588-024-01870-z. PubMed PMID: 39187616.
+
+### [SuShiE](https://pubmed.ncbi.nlm.nih.gov/40691406/)
+
+> Lu Z, Wang X, Carr M, Kim A, Gazal S, Mohammadi P, Wu L, Pirruccello J, Kachuri L, Gusev A, Mancuso N. Improved multiancestry fine-mapping identifies cis-regulatory variants underlying molecular traits and disease risk. Nat Genet. 2025 Aug;57(8):1881-1889. doi: 10.1038/s41588-025-02262-7. PubMed PMID: 40691406.
+
+## Reference resources and frameworks
+
+### [Pan-UK Biobank](https://pubmed.ncbi.nlm.nih.gov/40968291/)
+
+> Karczewski KJ, Gupta R, Kanai M, Lu W, Tsuo K, Wang Y, Walters RK, Turley P, Callier S, Shah NN, et al. Pan-UK Biobank genome-wide association analyses enhance discovery and resolution of ancestry-enriched effects. Nat Genet. 2025 Oct;57(10):2408-2417. doi: 10.1038/s41588-025-02335-7. PubMed PMID: 40968291.
+
+### [Locus-breaker context](https://pubmed.ncbi.nlm.nih.gov/37173304/)
+
+> Demela P, Pirastu N, Soskic B, et al. Cross-disorder genetic analysis of immune diseases reveals distinct gene associations that converge on common pathways. Nat Commun. 2023 May 12;14(1):2743. doi: 10.1038/s41467-023-38389-6. PubMed PMID: 37173304.
+
+### [Hail 0.2](https://github.com/hail-is/hail)
+
+> Hail Team. Hail 0.2. https://github.com/hail-is/hail.
+
+Acknowledgement: Kudos to the Hail team for building and maintaining this
+excellent open-source genomics framework.
+
 ## Software packaging/containerisation tools
 
 - [Docker](https://dl.acm.org/doi/10.5555/2600239.2600241)
