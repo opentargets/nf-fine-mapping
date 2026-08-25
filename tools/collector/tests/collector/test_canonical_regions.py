@@ -17,6 +17,8 @@ from collector.canonical_regions import (
     CollectCanonicalRegionsConfig,
     SourceLocus,
     _read_source_loci,
+    _resolve_overlap,
+    _ResolvingLocus,
     _sweep_canonical_regions,
     build_regional_output_tables,
     create_regional_variants_table,
@@ -322,6 +324,97 @@ def test_read_source_loci_excludes_variants_below_the_maf_cutoff(tmp_path: Path)
     prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),)
     loci = _read_source_loci(prepared, min_maf=0.01)
     assert loci == []
+
+
+def _resolving(study_id: str, study_locus_id: str, start: int, end: int, lead: int) -> _ResolvingLocus:
+    source = SourceLocus(study_id, study_locus_id, "EUR", "1", start, end, lead)
+    return _ResolvingLocus(source=source, current_start=start, current_end=end)
+
+
+def test_resolve_overlap_both_leads_in_intersection_crops_both_to_it():
+    left = _resolving("STUDY_A", "a1", 1_000_000, 2_200_000, lead=2_000_000)
+    right = _resolving("STUDY_B", "b1", 1_800_000, 3_000_000, lead=1_900_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is True
+    assert (left.current_start, left.current_end) == (1_800_000, 2_200_000)
+    assert (right.current_start, right.current_end) == (1_800_000, 2_200_000)
+
+
+def test_resolve_overlap_only_left_lead_in_intersection_trims_right_start():
+    left = _resolving("STUDY_A", "a1", 1_000_000, 2_200_000, lead=2_000_000)
+    right = _resolving("STUDY_B", "b1", 1_800_000, 3_000_000, lead=2_800_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is False
+    assert (left.current_start, left.current_end) == (1_000_000, 2_200_000)
+    assert (right.current_start, right.current_end) == (2_200_001, 3_000_000)
+
+
+def test_resolve_overlap_only_right_lead_in_intersection_trims_left_end():
+    left = _resolving("STUDY_A", "a1", 1_000_000, 2_200_000, lead=1_500_000)
+    right = _resolving("STUDY_B", "b1", 1_800_000, 3_000_000, lead=1_900_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is False
+    assert (left.current_start, left.current_end) == (1_000_000, 1_799_999)
+    assert (right.current_start, right.current_end) == (1_800_000, 3_000_000)
+
+
+def test_resolve_overlap_neither_lead_in_intersection_trims_both_and_leaves_a_gap():
+    left = _resolving("STUDY_A", "a1", 1_000_000, 2_200_000, lead=1_500_000)
+    right = _resolving("STUDY_B", "b1", 1_800_000, 3_000_000, lead=2_800_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is False
+    assert (left.current_start, left.current_end) == (1_000_000, 1_799_999)
+    assert (right.current_start, right.current_end) == (2_200_001, 3_000_000)
+
+
+def test_resolve_overlap_full_containment_picks_the_larger_locus():
+    left = _resolving("STUDY_A", "a1", 0, 10_000_000, lead=9_000_000)
+    right = _resolving("STUDY_B", "b1", 4_000_000, 4_500_000, lead=4_200_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is True
+    assert (left.current_start, left.current_end) == (0, 10_000_000)
+    assert (right.current_start, right.current_end) == (0, 10_000_000)
+
+
+def test_resolve_overlap_full_containment_the_other_direction():
+    left = _resolving("STUDY_A", "a1", 4_000_000, 4_500_000, lead=4_200_000)
+    right = _resolving("STUDY_B", "b1", 0, 10_000_000, lead=9_000_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is True
+    assert (left.current_start, left.current_end) == (0, 10_000_000)
+    assert (right.current_start, right.current_end) == (0, 10_000_000)
+
+
+def test_resolve_overlap_identical_bounds_is_treated_as_containment():
+    left = _resolving("STUDY_A", "a1", 1_000_000, 2_000_000, lead=1_500_000)
+    right = _resolving("STUDY_B", "b1", 1_000_000, 2_000_000, lead=1_600_000)
+    agreed = _resolve_overlap(left, right)
+    assert agreed is True
+    assert (left.current_start, left.current_end) == (1_000_000, 2_000_000)
+    assert (right.current_start, right.current_end) == (1_000_000, 2_000_000)
+
+
+def test_resolve_overlap_never_trims_a_locus_past_its_own_lead():
+    import random
+
+    rng = random.Random(20260825)
+    for _ in range(20_000):
+        left_start = rng.randint(0, 1_000)
+        left_end = left_start + rng.randint(0, 2_000)
+        left_lead = rng.randint(left_start, left_end)
+        right_start = rng.randint(0, 1_000)
+        right_end = right_start + rng.randint(0, 2_000)
+        right_lead = rng.randint(right_start, right_end)
+        left = _resolving("STUDY_A", "a1", left_start, left_end, left_lead)
+        right = _resolving("STUDY_B", "b1", right_start, right_end, right_lead)
+        overlaps = left.current_start <= right.current_end and right.current_start <= left.current_end
+        if not overlaps:
+            continue
+        _resolve_overlap(left, right)
+        assert left.current_start <= left.source.lead_position <= left.current_end
+        assert right.current_start <= right.source.lead_position <= right.current_end
+        assert left.current_start <= left.current_end
+        assert right.current_start <= right.current_end
 
 
 def _valid_config(tmp_path: Path) -> CollectCanonicalRegionsConfig:

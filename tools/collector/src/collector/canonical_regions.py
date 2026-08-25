@@ -458,6 +458,56 @@ def _build_region(input_loci: list[SourceLocus], quality_controls: tuple[str, ..
     )
 
 
+@dataclass
+class _ResolvingLocus:
+    """One source locus's live, possibly-trimmed position during the resolution sweep."""
+
+    source: SourceLocus
+    current_start: int
+    current_end: int
+
+
+def _resolve_overlap(left: _ResolvingLocus, right: _ResolvingLocus) -> bool:
+    """Resolve two overlapping loci in place using their fixed leads. Returns True if they agree."""
+    if left.current_start <= right.current_start and right.current_end <= left.current_end:
+        right.current_start = left.current_start
+        right.current_end = left.current_end
+        return True
+    if right.current_start <= left.current_start and left.current_end <= right.current_end:
+        left.current_start = right.current_start
+        left.current_end = right.current_end
+        return True
+
+    intersection_start = max(left.current_start, right.current_start)
+    intersection_end = min(left.current_end, right.current_end)
+    left_lead_in = intersection_start <= left.source.lead_position <= intersection_end
+    right_lead_in = intersection_start <= right.source.lead_position <= intersection_end
+
+    if left_lead_in and right_lead_in:
+        left.current_start = right.current_start = intersection_start
+        left.current_end = right.current_end = intersection_end
+        return True
+
+    # Neither locus contains the other (both containment checks above already
+    # returned), so the overlap is a genuine stagger: whichever locus starts
+    # first also ends first. Trimming must follow that geometry rather than the
+    # `left`/`right` argument order, or a "later" locus passed in as `left` can
+    # get its current_start pushed past its own current_end.
+    earlier, later = (left, right) if left.current_start <= right.current_start else (right, left)
+    earlier_lead_in = left_lead_in if earlier is left else right_lead_in
+    later_lead_in = right_lead_in if later is right else left_lead_in
+
+    if earlier_lead_in:
+        later.current_start = intersection_end + 1
+        return False
+    if later_lead_in:
+        earlier.current_end = intersection_start - 1
+        return False
+    earlier.current_end = intersection_start - 1
+    later.current_start = intersection_end + 1
+    return False
+
+
 def _region_quality_controls(current: list[SourceLocus], span_bp: int, max_region_span_bp: int) -> tuple[str, ...]:
     tags: list[str] = []
     if any(locus.inclusive_span_bp > max_region_span_bp for locus in current):
