@@ -47,6 +47,7 @@ production execution:
    params {
        fine_mapping_methods = ['multisusie', 'susiex', 'sushie']
        multisusie_container = 'multisusie:local'
+       multisusie_purity_min_r2 = 0.01
        susiex_container = 'susiex:local'
        sushie_container = 'sushie:local'
    }
@@ -66,6 +67,11 @@ Build and smoke-test the local images before running the non-stub pipeline:
 The nf-test suite uses process stubs and therefore does not require Docker or
 the method images. CI separately runs Nextflow lint and the complete nf-test
 suite on pull requests.
+
+``multisusie_purity_min_r2`` must be strictly between 0 and 1. It defaults to
+0.01. MultiSuSiE publishes only credible sets at or above this R-squared
+threshold; the process always runs with low-memory mode disabled so purity is
+available for filtering.
 
 Hailing Ducks LD validation
 ---------------------------

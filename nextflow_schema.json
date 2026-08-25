@@ -24,6 +24,7 @@
     "hailing_ducks_max_cached_blocks": {"type": "integer", "minimum": 1, "default": 8, "description": "Maximum Hailing Ducks LD blocks cached per task."},
     "fine_mapping_methods": {"type": "array", "default": ["multisusie"], "description": "Fine-mapping methods to execute.", "items": {"type": "string", "enum": ["multisusie", "susiex", "sushie"]}},
     "multisusie_container": {"type": "string", "default": "multisusie:latest", "description": "Container image used by MultiSuSiE."},
+    "multisusie_purity_min_r2": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1, "default": 0.01, "description": "Minimum credible-set purity on the R-squared scale for reportable MultiSuSiE components."},
     "susiex_container": {"type": "string", "default": "susiex:latest", "description": "Container image used by SuSiEx."},
     "sushie_container": {"type": "string", "default": "sushie:latest", "description": "Container image used by SuShiE."},
     "collector_container": {"type": "string", "description": "Collector image used by cloud profiles."},
