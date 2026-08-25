@@ -110,6 +110,7 @@ class SourceLocus:
     chromosome: str
     locus_start: int
     locus_end: int
+    lead_position: int
 
     @property
     def source_key(self) -> tuple[str, str]:
@@ -389,11 +390,11 @@ def _chromosome_sort_key(chromosome: str) -> tuple[int, int | str]:
     return (1, normalized)
 
 
-def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list[SourceLocus]:
+def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...], min_maf: float) -> list[SourceLocus]:
     loci: list[SourceLocus] = []
     with _managed_duckdb() as con:
         for prepared_input in prepared_inputs:
-            rows = con.execute(
+            locus_rows = con.execute(
                 f"""
                 SELECT
                     CAST(studyLocusId AS VARCHAR) AS studyLocusId,
@@ -410,8 +411,21 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list
                     studyLocusId
                 """
             ).fetchall()
-            loci.extend(
-                [
+            for study_locus_id, chromosome, locus_start, locus_end in locus_rows:
+                lead_row = con.execute(
+                    f"""
+                    SELECT position
+                    FROM {_read_parquet_sql(prepared_input.summary_statistics_path)}
+                    WHERE chromosome = {_quote_sql_string(chromosome)}
+                      AND position BETWEEN {locus_start} AND {locus_end}
+                      AND least(CAST(effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf}
+                    ORDER BY pValueExponent, pValueMantissa, position, variantId
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if lead_row is None:
+                    continue
+                loci.append(
                     SourceLocus(
                         study_id=prepared_input.study_id,
                         study_locus_id=study_locus_id,
@@ -419,10 +433,9 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...]) -> list
                         chromosome=chromosome,
                         locus_start=locus_start,
                         locus_end=locus_end,
+                        lead_position=int(lead_row[0]),
                     )
-                    for study_locus_id, chromosome, locus_start, locus_end in rows
-                ]
-            )
+                )
     return sorted(
         loci,
         key=lambda locus: (
@@ -956,7 +969,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         return prepared_inputs
     timings: dict[str, float] = {"inputValidation": round(perf_counter() - validation_started, 6)}
     started = perf_counter()
-    source_loci = _read_source_loci(prepared_inputs)
+    source_loci = _read_source_loci(prepared_inputs, config.canonical_region_min_maf)
     all_regions = _sweep_canonical_regions(source_loci, config.canonical_region_max_region_span_bp)
     reject_span_bp = config.canonical_region_max_region_span_bp * REJECTED_REGION_SPAN_MULTIPLIER
     regions = [region for region in all_regions if (region.region_end - region.region_start + 1) <= reject_span_bp]

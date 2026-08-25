@@ -16,6 +16,7 @@ from collector.canonical_regions import (
     CanonicalRegionInput,
     CollectCanonicalRegionsConfig,
     SourceLocus,
+    _read_source_loci,
     _sweep_canonical_regions,
     build_regional_output_tables,
     create_regional_variants_table,
@@ -48,8 +49,8 @@ def _regional_test_inputs(tmp_path: Path) -> tuple[tuple[CanonicalRegionInput, .
             region_end=200,
             quality_controls=(),
             input_loci=(
-                SourceLocus("STUDY_A", "a-locus", "EUR", "1", 100, 150),
-                SourceLocus("STUDY_B", "b-locus", "AFR", "1", 110, 160),
+                SourceLocus("STUDY_A", "a-locus", "EUR", "1", 100, 150, 125),
+                SourceLocus("STUDY_B", "b-locus", "AFR", "1", 110, 160, 135),
             ),
         )
     ]
@@ -58,8 +59,8 @@ def _regional_test_inputs(tmp_path: Path) -> tuple[tuple[CanonicalRegionInput, .
 
 def test_sweep_canonical_regions_merges_overlapping_loci_under_the_cap():
     loci = [
-        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200),
-        SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 250),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, 150),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 250, 200),
     ]
     regions = _sweep_canonical_regions(loci, max_region_span_bp=1_000_000)
     assert len(regions) == 1
@@ -74,9 +75,9 @@ def test_sweep_canonical_regions_never_emits_overlapping_regions_when_cap_is_exc
     # max_region_span_bp. The old sweep flushed and restarted from this
     # locus's own start, producing two regions that shared coordinates.
     loci = [
-        SourceLocus("STUDY_A", "a1", "EUR", "1", 100_000, 200_000),
-        SourceLocus("STUDY_B", "b1", "AFR", "1", 150_000, 3_050_000),
-        SourceLocus("STUDY_C", "c1", "NFE", "1", 200_000, 3_180_000),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100_000, 200_000, 150_000),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 150_000, 3_050_000, 1_600_000),
+        SourceLocus("STUDY_C", "c1", "NFE", "1", 200_000, 3_180_000, 1_690_000),
     ]
     # Each locus's own span is individually under the 3,000,000 cap
     # (100,001 / 2,900,001 / 2,980,001 respectively) so OVERSIZED_SOURCE_LOCUS_QC
@@ -91,7 +92,7 @@ def test_sweep_canonical_regions_never_emits_overlapping_regions_when_cap_is_exc
 
 
 def test_sweep_canonical_regions_flags_a_lone_oversized_locus():
-    loci = [SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 400)]
+    loci = [SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 400, 250)]
     regions = _sweep_canonical_regions(loci, max_region_span_bp=100)
     assert len(regions) == 1
     assert regions[0].quality_controls == (OVERSIZED_SOURCE_LOCUS_QC,)
@@ -102,8 +103,8 @@ def test_sweep_canonical_regions_flags_both_tags_when_an_oversized_locus_absorbs
     # locus overlaps it and must be merged in (not isolated), per the
     # disjoint-region invariant.
     loci = [
-        SourceLocus("STUDY_A", "a_large", "EUR", "1", 100, 260),
-        SourceLocus("STUDY_B", "b_small", "AFR", "1", 150, 180),
+        SourceLocus("STUDY_A", "a_large", "EUR", "1", 100, 260, 180),
+        SourceLocus("STUDY_B", "b_small", "AFR", "1", 150, 180, 165),
     ]
     regions = _sweep_canonical_regions(loci, max_region_span_bp=100)
     assert len(regions) == 1
@@ -113,8 +114,8 @@ def test_sweep_canonical_regions_flags_both_tags_when_an_oversized_locus_absorbs
 
 def test_sweep_canonical_regions_still_splits_on_a_genuine_gap():
     loci = [
-        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200),
-        SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200),
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, 150),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200, 5_100),
     ]
     regions = _sweep_canonical_regions(loci, max_region_span_bp=1_000_000)
     assert len(regions) == 2
@@ -250,9 +251,77 @@ def _write_sumstats_dataset_with_rows(
                 {standard_error}::DOUBLE AS standardError
             """
         )
+    if not selects:
+        selects.append(
+            """
+            SELECT
+                NULL::VARCHAR AS studyId,
+                NULL::VARCHAR AS variantId,
+                NULL::VARCHAR AS chromosome,
+                NULL::INTEGER AS position,
+                NULL::DOUBLE AS beta,
+                NULL::INTEGER AS sampleSize,
+                NULL::FLOAT AS pValueMantissa,
+                NULL::INTEGER AS pValueExponent,
+                NULL::FLOAT AS effectAlleleFrequencyFromSource,
+                NULL::DOUBLE AS standardError
+            WHERE FALSE
+            """
+        )
     with duckdb.connect() as con:
         con.execute(f"COPY ({' UNION ALL '.join(selects)}) TO '{path}' (FORMAT PARQUET)")
     return path
+
+
+def test_read_source_loci_computes_each_locus_own_lead_from_its_own_bounds(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a1", 100, 300)])
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_150_A_G", 150, 0.1, -6, 1.0, 0.2, 0.01),
+            ("1_250_A_G", 250, 0.1, -9, 1.0, 0.2, 0.01),
+        ],
+    )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),)
+    loci = _read_source_loci(prepared, min_maf=0.01)
+    assert len(loci) == 1
+    assert loci[0].lead_position == 250
+
+
+def test_read_source_loci_ties_break_by_position_then_variant_id(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a1", 100, 300)])
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_250_A_G", 250, 0.1, -9, 1.0, 0.2, 0.01),
+            ("1_150_A_G", 150, 0.1, -9, 1.0, 0.2, 0.01),
+        ],
+    )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),)
+    loci = _read_source_loci(prepared, min_maf=0.01)
+    assert loci[0].lead_position == 150
+
+
+def test_read_source_loci_excludes_a_locus_with_no_qualifying_variant(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a1", 100, 300)])
+    sum_a = _write_sumstats_dataset_with_rows(tmp_path / "a.sumstats.parquet", study_id="STUDY_A", rows=[])
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),)
+    loci = _read_source_loci(prepared, min_maf=0.01)
+    assert loci == []
+
+
+def test_read_source_loci_excludes_variants_below_the_maf_cutoff(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a1", 100, 300)])
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_150_A_G", 150, 0.1, -9, 1.0, 0.001, 0.01)],
+    )
+    prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),)
+    loci = _read_source_loci(prepared, min_maf=0.01)
+    assert loci == []
 
 
 def _valid_config(tmp_path: Path) -> CollectCanonicalRegionsConfig:
@@ -407,7 +476,12 @@ def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_st
     locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 250, 320)])
     locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
     locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 200, 260)])
-    sumstats_c = _write_single_sumstats_dataset(tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C")
+    # STUDY_C's own bounds (250-320) don't contain the fixed position=200 that
+    # _write_single_sumstats_dataset would emit, so it needs its own qualifying
+    # variant inside its own bounds to have a lead and enter the sweep at all.
+    sumstats_c = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C", rows=[("1_280_A_G", 280, 0.1, -8, 1.0, 0.2, 0.01)]
+    )
     sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
     sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
     stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
@@ -473,7 +547,12 @@ def test_collect_canonical_regions_cli_merges_overlap_chain_despite_cap_exceedan
     locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 240, 319)])
     sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
     sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
-    sumstats_c = _write_single_sumstats_dataset(tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C")
+    # STUDY_C's own bounds (240-319) don't contain the fixed position=200 that
+    # _write_single_sumstats_dataset would emit, so it needs its own qualifying
+    # variant inside its own bounds to have a lead and enter the sweep at all.
+    sumstats_c = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_c.sumstats.parquet", study_id="STUDY_C", rows=[("1_280_A_G", 280, 0.1, -8, 1.0, 0.2, 0.01)]
+    )
     stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
 
     result = runner.invoke(
@@ -537,7 +616,12 @@ def test_collect_canonical_regions_cli_merges_an_oversized_locus_with_an_overlap
     locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_large", 100, 260)])
     locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_small", 150, 180)])
     sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
-    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
+    # STUDY_B's own bounds (150-180) don't contain the fixed position=200 that
+    # _write_single_sumstats_dataset would emit, so it needs its own qualifying
+    # variant inside its own bounds to have a lead and enter the sweep at all.
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B", rows=[("1_165_A_G", 165, 0.1, -8, 1.0, 0.2, 0.01)]
+    )
     stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
 
     result = runner.invoke(
@@ -692,7 +776,13 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     tmp_path: Path,
 ) -> None:
     locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
-    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 180, 220)])
+    # b_locus's own bounds start at 125 (rather than 180) so that STUDY_B's
+    # already-qualifying "1_125_A_C" variant (MAF 0.40, already part of the
+    # asserted published locus below) falls inside its own bounds and gives
+    # it a lead; its only other own-bounds-and-MAF-qualifying alternative,
+    # "1_210_T_C", sits exactly at the MAF cutoff (0.01) and must not qualify.
+    # The union with a_locus (100-200) is unchanged: still 100-220.
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 125, 220)])
     sumstats_a = _write_sumstats_dataset_with_rows(
         tmp_path / "study_a.sumstats.parquet",
         study_id="STUDY_A",
@@ -1026,8 +1116,8 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
             region_end=220,
             quality_controls=(),
             input_loci=(
-                SourceLocus("STUDY_A", "a_locus", "EUR", "1", 100, 200),
-                SourceLocus("STUDY_B", "b_locus", "AFR", "1", 180, 220),
+                SourceLocus("STUDY_A", "a_locus", "EUR", "1", 100, 200, 150),
+                SourceLocus("STUDY_B", "b_locus", "AFR", "1", 180, 220, 200),
             ),
         )
     ]
@@ -1239,14 +1329,14 @@ def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_inter
             region_start=100,
             region_end=200,
             quality_controls=("SOURCE_QC",),
-            input_loci=(SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200), SourceLocus("STUDY_B", "b1", "AFR", "1", 100, 200)),
+            input_loci=(SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200, 150), SourceLocus("STUDY_B", "b1", "AFR", "1", 100, 200, 150)),
         ),
         CanonicalRegion(
             chromosome="1",
             region_start=150,
             region_end=250,
             quality_controls=(),
-            input_loci=(SourceLocus("STUDY_A", "a2", "EUR", "1", 150, 250), SourceLocus("STUDY_B", "b2", "AFR", "1", 150, 250)),
+            input_loci=(SourceLocus("STUDY_A", "a2", "EUR", "1", 150, 250, 200), SourceLocus("STUDY_B", "b2", "AFR", "1", 150, 250, 200)),
         ),
     ]
 
@@ -1294,8 +1384,8 @@ def test_build_regional_output_tables_forwards_region_level_quality_controls_to_
             region_end=260,
             quality_controls=(OVERSIZED_SOURCE_LOCUS_QC, MERGED_REGION_EXCEEDS_MAX_SPAN_QC),
             input_loci=(
-                SourceLocus("STUDY_A", "a", "EUR", "1", 100, 260),
-                SourceLocus("STUDY_B", "b", "AFR", "1", 150, 180),
+                SourceLocus("STUDY_A", "a", "EUR", "1", 100, 260, 180),
+                SourceLocus("STUDY_B", "b", "AFR", "1", 150, 180, 165),
             ),
         )
     ]
