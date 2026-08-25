@@ -34,6 +34,12 @@ process MULTISUSIE_FINE_MAPPING {
 
     script:
     def args = task.ext.args ?: ''
+    if (args.contains('--purity-min-r2')) {
+        error "MultiSuSiE purity is configured by params.multisusie_purity_min_r2; do not override it in task.ext.args."
+    }
+    if (args.contains('--low-memory-mode') || args.contains('--no-low-memory-mode')) {
+        error "MultiSuSiE low-memory mode is disabled for reportable pipeline runs."
+    }
     def metadata_lines = metas
         .collect { meta ->
             groovy.json.JsonOutput.toJson(
@@ -59,6 +65,8 @@ process MULTISUSIE_FINE_MAPPING {
         --study-locus-output multisusie/study_locus.parquet \\
         --extended-results-output multisusie/fit.h5ad \\
         --stats-output multisusie/stats.json \\
+        --purity-min-r2 ${params.multisusie_purity_min_r2} \\
+        --no-low-memory-mode \\
         ${args}
     """
 

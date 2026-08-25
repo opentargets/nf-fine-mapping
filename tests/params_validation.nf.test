@@ -52,6 +52,50 @@ nextflow_pipeline {
         }
     }
 
+    test("fails when MultiSuSiE purity threshold is zero") {
+        when {
+            params {
+                multisusie_purity_min_r2 = 0.0
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("multisusie_purity_min_r2") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails when MultiSuSiE purity threshold is one") {
+        when {
+            params {
+                multisusie_purity_min_r2 = 1.0
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("multisusie_purity_min_r2") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
     test("fails when an unrecognized parameter is passed") {
         when {
             params {

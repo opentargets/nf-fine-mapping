@@ -12,6 +12,7 @@ COLLECT_CANONICAL_REGIONS_MODULE = REPO_ROOT / "modules" / "local" / "collector"
 EMPTY_STATUS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "empty_status" / "main.nf"
 GENTROPY_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "gentropy" / "fine_mapping_locus_set_ld_annotation" / "main.nf"
 HAILING_DUCKS_LD_ANNOTATION_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "hailing_ld" / "main.nf"
+MULTISUSIE_MODULE = REPO_ROOT / "modules" / "local" / "multisusie" / "fine_mapping" / "main.nf"
 LD_PAIR_STATS_MODULE = REPO_ROOT / "modules" / "local" / "collector" / "ld_pair_stats" / "main.nf"
 MAIN_WORKFLOW = REPO_ROOT / "main.nf"
 NEXTFLOW_CONFIG = REPO_ROOT / "nextflow.config"
@@ -64,6 +65,15 @@ def test_manifest_preserves_remote_summary_statistics_uris():
 
     assert "summarystats_location.contains('://')" in workflow
     assert "summary_statistics_path = (summarystats_location.startsWith('/') || summarystats_location.contains('://'))" in workflow
+
+
+def test_multisusie_process_uses_configured_purity_and_disables_low_memory():
+    module = MULTISUSIE_MODULE.read_text()
+
+    assert "--purity-min-r2 ${params.multisusie_purity_min_r2}" in module
+    assert "--no-low-memory-mode" in module
+    assert "do not override it in task.ext.args" in module
+    assert "low-memory mode is disabled" in module
 
 
 def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumping():
