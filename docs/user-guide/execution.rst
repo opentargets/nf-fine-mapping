@@ -24,7 +24,7 @@ The principal profiles are:
    Full summary-statistics test data using the collector locus breaker and
    Hailing Ducks LD annotation.
 ``googleCloud`` / ``googleCloudTest``
-   Google Cloud execution profiles.
+   Google Cloud Batch execution profiles using Collector and Hailing Ducks.
 
 To run a profile directly:
 
@@ -32,20 +32,42 @@ To run a profile directly:
 
    nextflow run main.nf -profile testFullCollectorHailingDucks -resume
 
+Gentropy alternatives
+---------------------
+
+The pipeline still contains Gentropy-based locus-breaking and LD-annotation
+modules for comparison and specialized runs. They are not selected by any
+shipped profile and are discouraged for routine execution because they are
+slower than the Collector and Hailing Ducks path.
+
+To opt into a Gentropy module, override the relevant method and provide the
+required Gentropy container and Spark settings in a separate user config. For
+example:
+
+.. code-block:: bash
+
+   nextflow run main.nf -c gentropy.local.config \
+     --locus_breaker_method gentropy \
+     --ld_annotation_method gentropy
+
+The user config must provide the Gentropy process container and, for LD
+annotation, the appropriate ``gentropy_spark_uri`` and Spark configuration.
+
 The ``-resume`` flag reuses successful tasks when their process inputs and
 commands have not changed.
 
 Fine-mapping containers
 -----------------------
 
-The fine-mapping workflow supports MultiSuSiE, SuSiEx, and SuShiE containers.
-Select methods in configuration and set their images explicitly for local or
-production execution:
+The fine-mapping workflow currently supports MultiSuSiE. SuSiEx and SuShiE
+containers are pinned for pending integration work and should not be selected
+for production runs yet. The schema defaults use pinned images. Override them
+only when running locally built development images, for example:
 
 .. code-block:: groovy
 
    params {
-       fine_mapping_methods = ['multisusie', 'susiex', 'sushie']
+       fine_mapping_methods = ['multisusie']
        multisusie_container = 'multisusie:local'
        multisusie_purity_min_r2 = 0.01
        susiex_container = 'susiex:local'

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-This is a monorepo for multi-ancestry GWAS fine-mapping using SuShiE. Two components:
+This is a monorepo for multi-ancestry GWAS fine-mapping using MultiSuSiE as the
+currently integrated method. SuSiEx and SuShiE modules remain pending full
+pipeline integration. Two components:
 
 1. **Root-level Nextflow pipeline** — `main.nf` + `conf/` + `tests/`. Runs `FINE_MAPPING` workflow orchestrating the full pipeline. Requires Nextflow `>=25.10.0` (the `nf-schema` plugin's minimum).
 
@@ -15,7 +17,7 @@ This is a monorepo for multi-ancestry GWAS fine-mapping using SuShiE. Two compon
    - `ld/` — Subsets LD matrices using `subset_ld` for relevant variants
    - `sushie/` — Runs multi-ancestry fine-mapping
 
-3. **`tools/collector/`** — Python CLI tool (Python 3.12+, DuckDB, Typer) providing `collect`, `intersect`, and `transform` subcommands. This is built into the `collector:latest` container image used by the first three modules.
+3. **`tools/collector/`** — Python CLI tool (Python 3.12+, DuckDB, Typer) providing `collect`, `intersect`, and `transform` subcommands. Cloud and integration profiles use the pinned Collector image declared in `conf/`.
 
 The root `.nf-core.yml` sets `repository_type: modules` with `org_path: opentargets`.
 
@@ -82,9 +84,10 @@ The **`meta` map** carries `trait`, `sampleSize`, `ancestry` (and sometimes `lea
 
 ## Configuration
 
-- `conf/base.config` — Docker enabled by default; sets Python env vars
+- `nextflow.config` — shared Docker, shell, environment, plugin, validation, resource, and reporting defaults
 - `conf/test-full-collector-hailing-ducks.config` — Local full-data integration profile for the collector locus breaker and Hailing Ducks LD annotation
-- `conf/google-batch.config` — Google Cloud Batch profile
+- `conf/google-cloud.config` — Google Cloud Batch production profile using Collector and Hailing Ducks
+- `conf/google-cloud-test.config` — Google Cloud Batch staging/test profile using Collector and Hailing Ducks
 
 Key pipeline parameters: `params.manifest`, `params.ld_registry`, `params.output_dir`. See `nextflow_schema.json` for the full, authoritative parameter list — `validateParameters()` (nf-schema) rejects any parameter not declared there.
 

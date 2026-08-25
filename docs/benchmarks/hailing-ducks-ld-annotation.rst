@@ -101,7 +101,8 @@ pair set.
 Operational safeguards
 ----------------------
 
-* ``params.ld_annotation_method`` defaults to ``gentropy``.
+* ``params.ld_annotation_method`` defaults to ``hailing_ducks``.
+  Gentropy is retained only as an explicitly configured comparison backend.
 * Hailing Ducks uses ancestry-specific requests derived from study metadata.
 * ``params.hailing_ducks_max_cached_blocks`` defaults to 8.
 * Adapted ancestry outputs are written to temporary Parquet files before the

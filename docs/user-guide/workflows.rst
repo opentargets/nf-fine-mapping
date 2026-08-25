@@ -58,23 +58,31 @@ the native ``chr1_100_A_AT`` lookup convention, maps them back on output, and
 uses the study metadata to query each study-locus only against its registered
 ancestry.
 
+Hailing Ducks is the supported default and the only backend configured by the
+repository profiles. The Gentropy backend remains available through its local
+modules for comparison or specialized runs, but is discouraged for routine
+execution because its Spark-based processing is slower.
+
 Fine-mapping
 ------------
 
 ``FINE_MAPPING`` consumes valid records from ``LOCUS_ANNOTATION`` after empty
-LD results have been filtered. It can run any combination of:
+LD results have been filtered. MultiSuSiE is the currently integrated and
+supported method. The repository also contains SuSiEx and SuShiE modules, but
+their full pipeline integration is pending and they should not be used for
+production runs yet:
 
-* ``multisusie``;
-* ``susiex``;
-* ``sushie``.
+* ``multisusie`` — integrated and supported;
+* ``susiex`` — pending full integration;
+* ``sushie`` — pending full integration.
 
 Select methods with ``params.fine_mapping_methods``. The default is
-``['multisusie']`` so existing runs do not unexpectedly multiply their compute
-cost. To compare all methods:
+``['multisusie']``. Do not add SuSiEx or SuShiE to production runs until their
+integration work is complete. For development or stub-level comparison:
 
 .. code-block:: groovy
 
-   params.fine_mapping_methods = ['multisusie', 'susiex', 'sushie']
+   params.fine_mapping_methods = ['multisusie']
 
 Each method runs once per ``fineMappingLocusSetId`` with the same annotated
 locus, pairwise LD, and study metadata. Metadata is serialized as JSONL inside
@@ -88,8 +96,25 @@ metadata-preserving record containing:
 * ``runId``, ``fine_mapping_locus_set_id``, and the input ``metas``.
 
 Images are configured independently with ``params.multisusie_container``,
-``params.susiex_container``, and ``params.sushie_container``. Their local
-defaults are ``multisusie:latest``, ``susiex:latest``, and ``sushie:latest``.
+``params.susiex_container``, and ``params.sushie_container``. The MultiSuSiE
+default is used by the supported route; the SuSiEx and SuShiE images are pinned
+for pending integration work. Repository defaults are defined in
+``nextflow_schema.json``.
+
+The current pinned defaults are:
+
+.. code-block:: groovy
+
+   params {
+       multisusie_container = 'ghcr.io/project-defiant/multisusie:sha256-db07e794d00c8cac8bfc162fa43015254612a2ff627641078e09d0695339c8a5'
+       multisusie_purity_min_r2 = 0.01
+       susiex_container = 'ghcr.io/project-defiant/susiex/susiex:sha256-bf751e492d4bb3b7267f58a0583a1e00c3a9fc8dca3c1e565758d9e4754698cc'
+       sushie_container = 'ghcr.io/project-defiant/sushie/sushie:sha256-adedefcfe352f0ea80345654c6969e78a351ac333b10cd054721e32dd9b182d6'
+   }
+
+The Google Cloud profiles likewise set ``params.collector_container`` to the
+pinned Collector image. Local development overrides are supported, but should
+be explicit and should not replace the repository defaults unintentionally.
 Method options use the process ``task.ext.args`` interface. MultiSuSiE purity
 and low-memory settings are managed by the pipeline and must not be overridden
 through ``task.ext.args``. For example:
