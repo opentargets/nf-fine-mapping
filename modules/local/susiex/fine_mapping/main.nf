@@ -6,7 +6,7 @@ process SUSIEX_FINE_MAPPING {
     tag "${runId}:${fine_mapping_locus_set_id}"
 
     label "susiex"
-    container params.susiex_container ?: 'ghcr.io/project-defiant/susiex/susiex:sha256-bf751e492d4bb3b7267f58a0583a1e00c3a9fc8dca3c1e565758d9e4754698cc'
+    container params.susiex_container ?: 'ghcr.io/project-defiant/susiex/susiex:sha256-f59fc426789100377685901fa07d23b9c85b00ba2bba6f28cd6acb1e8843ef2b'
     containerOptions '--entrypoint=""'
     publishDir "${params.output_dir}", mode: 'copy', pattern: 'susiex/*', saveAs: { filename -> "susiex/${runId}/${fine_mapping_locus_set_id}/${filename.replace('susiex/', '')}" }
 
