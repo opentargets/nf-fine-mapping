@@ -16,12 +16,6 @@ Locus breaker
 .. automodule:: collector.locus_breaker
    :members: LocusBreakerConfig, run_locus_breaker, split_pvalue
 
-Locus collection
-----------------
-
-.. automodule:: collector.collect_loci
-   :members: CollectFineMappingLociConfig, run_collect_finemapping_loci
-
 Canonical regions
 -----------------
 

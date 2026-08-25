@@ -10,13 +10,11 @@ import typer
 from pydantic import ValidationError
 
 from collector.canonical_regions import DISK_EXHAUSTION_EXIT_CODE, CollectCanonicalRegionsConfig, DiskExhaustionError, run_collect_canonical_regions
-from collector.collect_loci import CollectFineMappingLociConfig, run_collect_finemapping_loci
 from collector.empty_status import ValidationStage, emit_empty_status
 from collector.hailing_ld import HailingLdConfig, HailingLdReference, run_hailing_ld
 from collector.ld_pair_stats import emit_empty_ld_pair_status
 from collector.ld_parity import LdParityConfig, compare_ld_outputs
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
-from collector.split_loci import SplitFineMappingLociConfig, run_split_finemapping_loci
 
 app = typer.Typer()
 
@@ -242,31 +240,6 @@ def locus_breaker(
     run_locus_breaker(input, output, config)
 
 
-@app.command(name="collect_finemapping_loci")
-def collect_finemapping_loci(
-    input: Annotated[
-        list[Path],
-        typer.Option("--input", help="Input flat StudyLocus Parquet file or directory dataset. Can be provided multiple times."),
-    ],
-    full_output: Annotated[Path, typer.Option("--full_output", help="Optional full-overlap output parquet path.")],
-    partial_output: Annotated[Path, typer.Option("--partial_output", help="Required partial-overlap output parquet path.")],
-    non_overlap_output: Annotated[Path, typer.Option("--non_overlap_output", help="Required non-overlap output parquet path.")],
-    stats_output: Annotated[Path, typer.Option("--stats_output", help="Required JSON statistics output path.")],
-):
-    """Collect StudyLocus datasets into fine-mapping overlap classes."""
-    config = CollectFineMappingLociConfig(
-        input_paths=tuple(input),
-        full_output=full_output,
-        partial_output=partial_output,
-        non_overlap_output=non_overlap_output,
-        stats_output=stats_output,
-    )
-    try:
-        run_collect_finemapping_loci(config)
-    except ValueError as error:
-        raise typer.BadParameter(str(error)) from error
-
-
 @app.command(name="collect_canonical_regions")
 def collect_canonical_regions(
     run_id: Annotated[str, typer.Option("--run_id", help="Pipeline run identifier for canonical-region collection.")],
@@ -325,18 +298,6 @@ def collect_canonical_regions(
         typer.echo(str(error), err=True)
         raise typer.Exit(code=DISK_EXHAUSTION_EXIT_CODE) from error
     except (FileNotFoundError, ValidationError, ValueError) as error:
-        raise typer.BadParameter(str(error)) from error
-
-
-@app.command(name="split_finemapping_loci")
-def split_finemapping_loci(
-    input: Annotated[Path, typer.Option("--input", help="Input full-overlap Parquet file or directory dataset.")],
-    output: Annotated[Path, typer.Option("--output", help="Output directory for one Parquet file per locus set.")],
-):
-    """Split full-overlap loci into one Parquet file per fine-mapping locus set."""
-    try:
-        run_split_finemapping_loci(SplitFineMappingLociConfig(input_path=input, output_dir=output))
-    except (FileNotFoundError, OSError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
 
