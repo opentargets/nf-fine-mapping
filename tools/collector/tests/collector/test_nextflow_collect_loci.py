@@ -59,6 +59,13 @@ def test_locus_breaker_workflow_does_not_collect_loci():
     assert "ch_locus2" not in workflow
 
 
+def test_manifest_preserves_remote_summary_statistics_uris():
+    workflow = MAIN_WORKFLOW.read_text()
+
+    assert "is_remote_uri = row[3] ==~" in workflow
+    assert "summary_statistics_path = row[3].startsWith('/') || is_remote_uri" in workflow
+
+
 def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumping():
     workflow = LOCUS_COLLECTION_WORKFLOW.read_text()
     module = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
@@ -222,7 +229,7 @@ def test_full_data_profile_uses_a_single_explicit_collector_hailing_ducks_profil
     assert 'workDir = "${projectDir}/testdata/work_full"' in full_config
     assert 'locus_breaker_method = "collector"' in normalized_full_config
     assert 'ld_annotation_method = "hailing_ducks"' in normalized_full_config
-    assert "collector:1.1.0" in full_config
+    assert "ghcr.io/opentargets/nf-fine-mapping/collector:sha256-73b2c3580ccbdf94c6c5fc851dd9db250797e10da5ca55e0eee47e0e7bbcf377" in full_config
     assert "vi_path" not in full_config
     assert "gentropy_spark_uri" not in full_config
     assert "gentropy_spark_conf" not in full_config

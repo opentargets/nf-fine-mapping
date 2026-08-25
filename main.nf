@@ -50,7 +50,8 @@ def intro() -> Void {
 
 def manifest_row_to_record(row: List<String>, manifest_base_dir: String) -> Map {
     def traitSet: List<String> = row[5].tokenize(',')
-    def summary_statistics_path = row[3].startsWith('/') ? row[3] : "${manifest_base_dir}/${row[3]}"
+    def is_remote_uri = row[3] ==~ /^[A-Za-z][A-Za-z0-9+.-]*:\/\/.*$/
+    def summary_statistics_path = row[3].startsWith('/') || is_remote_uri ? row[3] : "${manifest_base_dir}/${row[3]}"
 
     def meta = [
         runId: row[0],
