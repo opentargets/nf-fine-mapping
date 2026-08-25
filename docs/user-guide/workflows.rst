@@ -30,8 +30,8 @@ Locus collection
 ``COLLECT_CANONICAL_REGIONS`` task per run, sweeping each run's loci into
 disjoint canonical regions and materializing one published
 ``fineMappingLocusSetId`` per region that has a qualifying variant for every
-input study — see :doc:`locus-processing` for how regions are built, capped,
-and published. The workflow emits ``ch_full_overlap_loci`` (the *Collected
+input study — see :doc:`locus-processing` for how regions are built and
+published. The workflow emits ``ch_full_overlap_loci`` (the *Collected
 Loci* candidate sets passed to later fine-mapping stages) alongside
 ``ch_partial_overlap_loci`` and ``ch_non_overlap_loci``, which are always
 empty under the current canonical-region algorithm — they are vestigial
