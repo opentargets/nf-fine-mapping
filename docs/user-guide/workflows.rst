@@ -26,10 +26,17 @@ preflight query. This limitation is tracked in GitHub issue #11.
 Locus collection
 ----------------
 
-``LOCUS_COLLECTION`` groups locus outputs by ``runId`` and runs one canonical
-multi-ancestry region collection task per run. It emits the collected locus
-sets alongside a JSON/Parquet statistics channel. The collected locus sets
-are the sole candidate sets passed to later fine-mapping stages.
+``LOCUS_COLLECTION`` groups locus outputs by ``runId`` and runs one
+``COLLECT_CANONICAL_REGIONS`` task per run, sweeping each run's loci into
+disjoint canonical regions and materializing one published
+``fineMappingLocusSetId`` per region that has a qualifying variant for every
+input study — see :doc:`locus-processing` for how regions are built, capped,
+and published. The workflow emits ``ch_full_overlap_loci`` (the *Collected
+Loci* candidate sets passed to later fine-mapping stages) alongside
+``ch_partial_overlap_loci`` and ``ch_non_overlap_loci``, which are always
+empty under the current canonical-region algorithm — they are vestigial
+channel names from an earlier, since-removed classification step and carry
+no data.
 
 Locus annotation
 ----------------
