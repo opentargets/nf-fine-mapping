@@ -575,7 +575,7 @@ def build_regional_output_tables(
             list(
                 struct_pack(
                     studyId := components.studyId,
-                    studyLocusId := md5(components.studyId || components.leadVariantId),
+                    studyLocusId := md5(components.studyId || '|' || components.leadVariantId),
                     nVariants := components.nVariants,
                     nVariantsBelowMafCutoff := components.nVariants - components.nVariantsAboveMafCutoff,
                     qualityControls := CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
@@ -587,7 +587,7 @@ def build_regional_output_tables(
                     THEN md5(
                         array_to_string(
                             list_sort(
-                                list(md5(components.studyId || components.leadVariantId))
+                                list(md5(components.studyId || '|' || components.leadVariantId))
                                 FILTER (WHERE components.leadVariantId IS NOT NULL)
                             ),
                             '|'
@@ -618,7 +618,10 @@ def build_regional_output_tables(
             min(locusEnd)::INTEGER AS locusEnd,
             list_sort(list_distinct(flatten(list(inputLoci)))) AS inputLoci,
             CASE
-                WHEN count(*) > 1 THEN ['{DUPLICATE_FINE_MAPPING_SET_QC}']::VARCHAR[]
+                WHEN count(*) > 1 THEN list_sort(list_distinct(list_concat(
+                    flatten(list(qualityControls)),
+                    ['{DUPLICATE_FINE_MAPPING_SET_QC}']::VARCHAR[]
+                )))
                 ELSE list_sort(list_distinct(flatten(list(qualityControls))))
             END AS qualityControls
         FROM canonical_region_status
@@ -694,7 +697,7 @@ def build_regional_output_tables(
             sum(components.nVariantsAboveMafCutoff)::INTEGER AS nVariantsAboveMafCutoff,
             list(struct_pack(
                 studyId := components.studyId,
-                studyLocusId := md5(components.studyId || components.leadVariantId),
+                studyLocusId := md5(components.studyId || '|' || components.leadVariantId),
                 nVariants := components.nVariants,
                 nVariantsBelowMafCutoff := components.nVariants - components.nVariantsAboveMafCutoff,
                 qualityControls := list_distinct(list_concat(
@@ -731,7 +734,7 @@ def build_regional_output_tables(
         CREATE TEMP TABLE {loci_table_name} AS
         SELECT
             status.publishedFineMappingLocusSetId AS fineMappingLocusSetId,
-            md5(components.studyId || components.leadVariantId) AS studyLocusId,
+            md5(components.studyId || '|' || components.leadVariantId) AS studyLocusId,
             components.studyId,
             variants.chromosome,
             status.locusStart,
@@ -865,7 +868,7 @@ def _write_invalid_run_stats(
 
 
 def _deterministic_study_locus_id(study_id: str, variant_id: str) -> str:
-    return hashlib.md5(f"{study_id}{variant_id}".encode(), usedforsecurity=False).hexdigest()
+    return hashlib.md5(f"{study_id}|{variant_id}".encode(), usedforsecurity=False).hexdigest()
 
 
 def _deterministic_fine_mapping_locus_set_id(study_locus_ids: list[str]) -> str:

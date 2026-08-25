@@ -569,8 +569,8 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     assert len(files) == 1
 
     expected_study_locus_ids = {
-        "STUDY_A": hashlib.md5(b"STUDY_A1_110_A_G", usedforsecurity=False).hexdigest(),
-        "STUDY_B": hashlib.md5(b"STUDY_B1_125_A_C", usedforsecurity=False).hexdigest(),
+        "STUDY_A": hashlib.md5(b"STUDY_A|1_110_A_G", usedforsecurity=False).hexdigest(),
+        "STUDY_B": hashlib.md5(b"STUDY_B|1_125_A_C", usedforsecurity=False).hexdigest(),
     }
     expected_locus_set_id = hashlib.md5(
         "|".join(sorted(expected_study_locus_ids.values())).encode(),
@@ -814,8 +814,8 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
     ]
 
     expected_study_locus_ids = {
-        "STUDY_A": hashlib.md5(b"STUDY_A1_110_A_G", usedforsecurity=False).hexdigest(),
-        "STUDY_B": hashlib.md5(b"STUDY_B1_125_A_C", usedforsecurity=False).hexdigest(),
+        "STUDY_A": hashlib.md5(b"STUDY_A|1_110_A_G", usedforsecurity=False).hexdigest(),
+        "STUDY_B": hashlib.md5(b"STUDY_B|1_125_A_C", usedforsecurity=False).hexdigest(),
     }
     expected_locus_set_id = hashlib.md5(
         "|".join(sorted(expected_study_locus_ids.values())).encode(),
@@ -1019,7 +1019,7 @@ def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_inter
             chromosome="1",
             region_start=100,
             region_end=200,
-            quality_controls=(),
+            quality_controls=("SOURCE_QC",),
             input_loci=(SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200), SourceLocus("STUDY_B", "b1", "AFR", "1", 100, 200)),
         ),
         CanonicalRegion(
@@ -1047,4 +1047,5 @@ def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_inter
     assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in qc for qc in stats[0][3])
     assert all(row[0:2] == (150, 200) for row in loci)
     assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in row[2] for row in loci)
+    assert all("SOURCE_QC" in row[2] for row in loci)
     assert [row[3] for row in loci] == [["1_160_A_G", "1_180_A_G"], ["1_160_C_T", "1_180_C_T"]]
