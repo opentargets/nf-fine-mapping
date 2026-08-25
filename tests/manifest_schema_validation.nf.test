@@ -1,0 +1,57 @@
+nextflow_pipeline {
+
+    name "Test manifest samplesheet schema validation"
+    script "../main.nf"
+    tag "pipeline"
+    tag "stub"
+    tag "validation"
+    options "-stub-run"
+
+    test("fails fast when the manifest is missing a required column") {
+        when {
+            params {
+                manifest = new File("testdata/manifest.missing_column.tsv").canonicalPath
+                manifest_base_dir = new File(".").canonicalPath
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("Missing required field") },
+                { assert output.contains("traitFromSourceMappedIds") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails fast when effectiveSampleSize is not numeric") {
+        when {
+            params {
+                manifest = new File("testdata/manifest.invalid_sample_size.tsv").canonicalPath
+                manifest_base_dir = new File(".").canonicalPath
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("effectiveSampleSize") },
+                { assert output.contains("should be") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+}

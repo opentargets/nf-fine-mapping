@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/opentargets/nf-fine-mapping/main/nextflow_schema.json",
   "title": "Open Targets multi-ancestry fine-mapping pipeline parameters",
   "description": "Parameters for the Open Targets multi-ancestry fine-mapping Nextflow pipeline.",
