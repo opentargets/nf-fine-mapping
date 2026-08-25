@@ -10,10 +10,13 @@ from typer.testing import CliRunner
 
 from collector import app
 from collector.canonical_regions import (
+    MERGED_REGION_EXCEEDS_MAX_SPAN_QC,
+    OVERSIZED_SOURCE_LOCUS_QC,
     CanonicalRegion,
     CanonicalRegionInput,
     CollectCanonicalRegionsConfig,
     SourceLocus,
+    _sweep_canonical_regions,
     build_regional_output_tables,
     create_regional_variants_table,
     prepare_collect_canonical_region_inputs,
@@ -51,6 +54,72 @@ def _regional_test_inputs(tmp_path: Path) -> tuple[tuple[CanonicalRegionInput, .
         )
     ]
     return prepared, regions
+
+
+def test_sweep_canonical_regions_merges_overlapping_loci_under_the_cap():
+    loci = [
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 150, 250),
+    ]
+    regions = _sweep_canonical_regions(loci, max_region_span_bp=1_000_000)
+    assert len(regions) == 1
+    assert (regions[0].region_start, regions[0].region_end) == (100, 250)
+    assert regions[0].quality_controls == ()
+
+
+def test_sweep_canonical_regions_never_emits_overlapping_regions_when_cap_is_exceeded():
+    # Mirrors the real RUN2 case found in the chr1 benchmark: a chain of
+    # loci accumulates close to the cap, then a locus that overlaps the
+    # open region arrives whose own end would push the merged span over
+    # max_region_span_bp. The old sweep flushed and restarted from this
+    # locus's own start, producing two regions that shared coordinates.
+    loci = [
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100_000, 200_000),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 150_000, 3_050_000),
+        SourceLocus("STUDY_C", "c1", "NFE", "1", 200_000, 3_180_000),
+    ]
+    # Each locus's own span is individually under the 3,000,000 cap
+    # (100,001 / 2,900,001 / 2,980,001 respectively) so OVERSIZED_SOURCE_LOCUS_QC
+    # must not fire; only the merged span (3,080,001) exceeds it.
+    regions = _sweep_canonical_regions(loci, max_region_span_bp=3_000_000)
+
+    assert len(regions) == 1
+    region = regions[0]
+    assert (region.region_start, region.region_end) == (100_000, 3_180_000)
+    assert region.quality_controls == (MERGED_REGION_EXCEEDS_MAX_SPAN_QC,)
+    assert {locus.study_locus_id for locus in region.input_loci} == {"a1", "b1", "c1"}
+
+
+def test_sweep_canonical_regions_flags_a_lone_oversized_locus():
+    loci = [SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 400)]
+    regions = _sweep_canonical_regions(loci, max_region_span_bp=100)
+    assert len(regions) == 1
+    assert regions[0].quality_controls == (OVERSIZED_SOURCE_LOCUS_QC,)
+
+
+def test_sweep_canonical_regions_flags_both_tags_when_an_oversized_locus_absorbs_a_neighbor():
+    # STUDY_A's own locus is already bigger than the cap; STUDY_B's small
+    # locus overlaps it and must be merged in (not isolated), per the
+    # disjoint-region invariant.
+    loci = [
+        SourceLocus("STUDY_A", "a_large", "EUR", "1", 100, 260),
+        SourceLocus("STUDY_B", "b_small", "AFR", "1", 150, 180),
+    ]
+    regions = _sweep_canonical_regions(loci, max_region_span_bp=100)
+    assert len(regions) == 1
+    assert set(regions[0].quality_controls) == {OVERSIZED_SOURCE_LOCUS_QC, MERGED_REGION_EXCEEDS_MAX_SPAN_QC}
+    assert {locus.study_locus_id for locus in regions[0].input_loci} == {"a_large", "b_small"}
+
+
+def test_sweep_canonical_regions_still_splits_on_a_genuine_gap():
+    loci = [
+        SourceLocus("STUDY_A", "a1", "EUR", "1", 100, 200),
+        SourceLocus("STUDY_B", "b1", "AFR", "1", 5_000, 5_200),
+    ]
+    regions = _sweep_canonical_regions(loci, max_region_span_bp=1_000_000)
+    assert len(regions) == 2
+    assert (regions[0].region_start, regions[0].region_end) == (100, 200)
+    assert (regions[1].region_start, regions[1].region_end) == (5_000, 5_200)
 
 
 def _write_locus_breaker_dataset(path: Path, *, study_ids: list[str]) -> Path:
@@ -398,7 +467,7 @@ def test_collect_canonical_regions_cli_writes_transitive_inclusive_regions_to_st
     ]
 
 
-def test_collect_canonical_regions_cli_splits_overlap_chain_before_cap_exceedance(tmp_path: Path) -> None:
+def test_collect_canonical_regions_cli_merges_overlap_chain_despite_cap_exceedance(tmp_path: Path) -> None:
     locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_locus", 100, 200)])
     locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_locus", 180, 259)])
     locus_breaker_c = _write_locus_breaker_dataset_with_loci(tmp_path / "study_c.locus.parquet", study_id="STUDY_C", loci=[("c_locus", 240, 319)])
@@ -453,12 +522,18 @@ def test_collect_canonical_regions_cli_splits_overlap_chain_before_cap_exceedanc
             """
         ).fetchall()
 
+    # Under the old sweep, the cap forced a1/b1 to be flushed as one region
+    # and b1/c1 to start a second, overlapping region ([100,200] and
+    # [180,319] share coordinates 180-200), which the downstream
+    # fineMappingLocusSetId dedup then collapsed into a single row with
+    # intersected (not unioned) bounds. The disjoint-region invariant means
+    # the sweep now merges the whole overlap chain into one region instead.
     assert rows == [
-        (180, 200, ["a_locus", "b_locus", "c_locus"]),
+        (100, 319, ["a_locus", "b_locus", "c_locus"]),
     ]
 
 
-def test_collect_canonical_regions_cli_emits_oversized_source_locus_as_standalone_region(tmp_path: Path) -> None:
+def test_collect_canonical_regions_cli_merges_an_oversized_locus_with_an_overlapping_neighbor(tmp_path: Path) -> None:
     locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_large", 100, 260)])
     locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_small", 150, 180)])
     sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
@@ -499,14 +574,14 @@ def test_collect_canonical_regions_cli_emits_oversized_source_locus_as_standalon
     with duckdb.connect() as con:
         rows = con.execute(
             f"""
-            SELECT locusStart, locusEnd, list_transform(components, item -> item.qualityControls) AS qualityControls, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds  -- noqa: E501
+            SELECT locusStart, locusEnd, list_transform(inputLoci, item -> item.studyLocusId) AS studyLocusIds
             FROM read_parquet('{stats_parquet_output}')
             ORDER BY locusStart, locusEnd
             """
         ).fetchall()
 
     assert rows == [
-        (100, 260, [[], []], ["a_large"]),
+        (100, 260, ["a_large", "b_small"]),
     ]
 
 

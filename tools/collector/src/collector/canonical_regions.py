@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGION_STATS_SCHEMA, COLLECTED_LOCUS_SCHEMA
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
+MERGED_REGION_EXCEEDS_MAX_SPAN_QC = "MERGED_REGION_EXCEEDS_MAX_REGION_SPAN"
 DUPLICATE_FINE_MAPPING_SET_QC = "MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL"
 DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
 DISK_EXHAUSTION_EXIT_CODE = 75
@@ -442,6 +443,15 @@ def _build_region(input_loci: list[SourceLocus], quality_controls: tuple[str, ..
     )
 
 
+def _region_quality_controls(current: list[SourceLocus], span_bp: int, max_region_span_bp: int) -> tuple[str, ...]:
+    tags: list[str] = []
+    if any(locus.inclusive_span_bp > max_region_span_bp for locus in current):
+        tags.append(OVERSIZED_SOURCE_LOCUS_QC)
+    if span_bp > max_region_span_bp and len(current) > 1:
+        tags.append(MERGED_REGION_EXCEEDS_MAX_SPAN_QC)
+    return tuple(tags)
+
+
 def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp: int) -> list[CanonicalRegion]:
     regions: list[CanonicalRegion] = []
     current: list[SourceLocus] = []
@@ -452,39 +462,33 @@ def _sweep_canonical_regions(source_loci: list[SourceLocus], max_region_span_bp:
     def flush_current() -> None:
         nonlocal current_chromosome, current_start, current_end
         if current:
-            regions.append(_build_region(current))
+            span_bp = current_end - current_start + 1
+            regions.append(_build_region(current, quality_controls=_region_quality_controls(current, span_bp, max_region_span_bp)))
             current.clear()
         current_chromosome = None
         current_start = None
         current_end = None
 
     for locus in source_loci:
-        if locus.inclusive_span_bp > max_region_span_bp:
+        overlaps_current = (
+            current_chromosome is not None and current_end is not None and locus.chromosome == current_chromosome and locus.locus_start <= current_end
+        )
+        if not overlaps_current:
             flush_current()
-            regions.append(_build_region([locus], quality_controls=(OVERSIZED_SOURCE_LOCUS_QC,)))
-            continue
-
-        if not current:
             current.append(locus)
             current_chromosome = locus.chromosome
             current_start = locus.locus_start
             current_end = locus.locus_end
             continue
 
-        if current_chromosome is None or current_start is None or current_end is None:
-            raise RuntimeError("Canonical-region sweep lost the active region bounds")
-        overlaps_current = locus.chromosome == current_chromosome and locus.locus_start <= current_end
-        merged_span_bp = max(current_end, locus.locus_end) - min(current_start, locus.locus_start) + 1
-        if overlaps_current and merged_span_bp <= max_region_span_bp:
-            current.append(locus)
-            current_end = max(current_end, locus.locus_end)
-            continue
-
-        flush_current()
+        # Overlaps the open region: it must be merged in, even past the
+        # cap, so two emitted regions never share genomic coordinates.
+        # Any split point here would necessarily fall inside a locus that
+        # spans it, so a region wider than max_region_span_bp is flagged
+        # via quality_controls instead of being force-split into an
+        # overlapping pair.
         current.append(locus)
-        current_chromosome = locus.chromosome
-        current_start = locus.locus_start
-        current_end = locus.locus_end
+        current_end = max(current_end, locus.locus_end)
 
     flush_current()
     return regions
