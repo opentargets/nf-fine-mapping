@@ -6,7 +6,7 @@ process SUSHIE_FINE_MAPPING {
     tag "${runId}:${fine_mapping_locus_set_id}"
 
     label "sushie"
-    container params.sushie_container ?: 'ghcr.io/project-defiant/sushie/sushie:sha256-c63a0baef8195e44cf20a4296779d8c29c151083a352c7d4a1168265b822b39a'
+    container params.sushie_container ?: 'ghcr.io/project-defiant/sushie/sushie:dd7e4ae3cb96cc7c6f5718e0bf4fbe77ab07bf93'
     containerOptions '--entrypoint=""'
     publishDir "${params.output_dir}", mode: 'copy', pattern: 'sushie/*', saveAs: { filename -> "sushie/${runId}/${fine_mapping_locus_set_id}/${filename.replace('sushie/', '')}" }
 
