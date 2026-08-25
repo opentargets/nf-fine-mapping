@@ -18,45 +18,37 @@ algorithmic semantics needed for parity with Gentropy.
 Locus collection
 ----------------
 
-The collection step performs a bounded sweep across all input studies to
-assemble canonical multi-ancestry locus sets, rather than classifying loci
-by how many studies they overlap: loci from every study are pooled, sorted
-by genomic position, and merged whenever they overlap into non-overlapping
-*canonical regions*; a genuine gap between loci starts a new region. Two
-regions the sweep emits never share genomic coordinates — this is a
-structural guarantee, not a best-effort heuristic, since a shared position
-would let two regions independently pick the same variant as a study's
-"lead" and publish it twice.
+Locus collection turns each study's separate loci into shared,
+multi-study locus sets, ready for fine-mapping.
 
-Within each region, every study's most significant variant above the
-configured MAF cutoff (``params.canonical_region_min_maf``) becomes that
-study's component of the region's ``fineMappingLocusSetId``. A region only
-publishes if every input study has a qualifying variant in it; a region where
-at least one study has none is excluded and counted under
-``NO_VARIANTS_IN_LOCUS`` in the run's ``notPromotedReasons``.
+**How a locus set is built:**
 
-Region size is soft-capped by ``params.canonical_region_max_region_span_bp``
-(default 3,000,000 bp): merging never stops at the cap if the alternative
-would be an overlapping split, so a region can legitimately grow past the cap
-when the underlying loci are densely clustered. Such regions are tagged
-``SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN`` (a single input locus is individually
-oversized) and/or ``MERGED_REGION_EXCEEDS_MAX_REGION_SPAN`` (the merged group
-is oversized), and counted in the run's ``nRegionsExceedingSpanCap``
-statistic. A region that grows past ``canonical_region_max_region_span_bp``
-times 5 is rejected outright instead of published — at that scale, downstream
-LD annotation (quadratic in variant count) becomes intractable — and counted
-under ``REGION_SPAN_EXCEEDS_REJECT_THRESHOLD`` in ``notPromotedReasons``
-instead.
+- **Merge overlapping loci.** Loci from every study are lined up by
+  genomic position. Any loci that overlap are merged into one region.
+  A real gap between loci starts a new region.
+- **Pick one lead variant per study.** Each study contributes its most
+  significant variant above the MAF cutoff
+  (``params.canonical_region_min_maf``). If any study has no qualifying
+  variant in a region, that region is dropped (``NO_VARIANTS_IN_LOCUS``).
+- **Cap region size.** Regions have a soft size limit
+  (``params.canonical_region_max_region_span_bp``, 3,000,000 bp by
+  default). Densely packed loci can push a region past this limit —
+  that's allowed and flagged (``SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN`` or
+  ``MERGED_REGION_EXCEEDS_MAX_REGION_SPAN``), rather than split, because
+  splitting could let two regions overlap. A region that grows more than
+  5x past the limit is dropped instead of published
+  (``REGION_SPAN_EXCEEDS_REJECT_THRESHOLD``), since it would be too large
+  for LD annotation to process.
 
-Two regions that independently select the identical set of lead variants
-across every study collapse into one published row, with bounds taken as the
-intersection of the colliding regions, tagged
-``MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL``.
+**Example:** study A reports a locus at 1-200, study B at 150-300, and
+study C at 250-400. Since each pair overlaps, all three merge into one
+region spanning 1-400. The pipeline then picks each study's best variant
+inside that combined range.
 
-The command writes one locus-set Parquet file per published
-``fineMappingLocusSetId`` (published as *Collected Loci*, see
-:doc:`overview`), one stats Parquet file (one row per published set,
-including its QC tags), and one JSON statistics document per run
-(candidate/published/rejected counts, size distributions, and
-``notPromotedReasons``). The published output is the input for downstream
-LD annotation and fine-mapping.
+Regions never overlap each other. This means the same variant can never
+end up published as the "lead" for two different locus sets.
+
+Each published region becomes one locus set with a unique
+``fineMappingLocusSetId``, written as one Parquet file (shown as
+*Collected Loci* in :doc:`overview`). A stats file alongside it records
+how many candidate regions were published, dropped, or capped.
