@@ -133,6 +133,14 @@ def registered_ld_registry_ancestries(ld_registry) -> Set<String> {
 }
 
 
+def validate_canonical_region_size_floor() -> Void {
+    def locus_breaker_method = params.locus_breaker_method.toString().toLowerCase()
+    if (locus_breaker_method == 'collector' && params.canonical_region_max_region_span_bp < params.locus_breaker_large_loci_size) {
+        error "params.canonical_region_max_region_span_bp (${params.canonical_region_max_region_span_bp}) must be at least params.locus_breaker_large_loci_size (${params.locus_breaker_large_loci_size}) when locus_breaker_method is 'collector'; a smaller region-size limit cannot accommodate even a single locus-breaker locus."
+    }
+}
+
+
 def manifest_validation_status_record(row: Map) -> Map {
     return [
         runId: row.meta.runId,
@@ -296,6 +304,7 @@ workflow {
     if (params.validate_params) {
         validateParameters()
     }
+    validate_canonical_region_size_floor()
     log.info paramsSummaryLog(workflow)
     manifest_ch = read_manifest(params.manifest)
     filtered_ch = filter_manifest_by_route(manifest_ch, params.route)

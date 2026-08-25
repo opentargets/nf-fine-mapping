@@ -118,6 +118,71 @@ nextflow_pipeline {
         }
     }
 
+    test("fails when canonical_region_max_region_span_bp is below locus_breaker_large_loci_size for the collector backend") {
+        when {
+            params {
+                locus_breaker_method = "collector"
+                canonical_region_max_region_span_bp = 1_000_000
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("canonical_region_max_region_span_bp") },
+                { assert output.contains("locus_breaker_large_loci_size") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds when canonical_region_max_region_span_bp is at least locus_breaker_large_loci_size for the collector backend") {
+        when {
+            params {
+                locus_breaker_method = "collector"
+                canonical_region_max_region_span_bp = 2_000_000
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds for the gentropy backend even when canonical_region_max_region_span_bp is below locus_breaker_large_loci_size") {
+        when {
+            params {
+                manifest = new File("testdata/manifest.tsv").canonicalPath
+                manifest_base_dir = new File(".").canonicalPath
+                output_dir = "$outputDir"
+                locus_breaker_method = "gentropy"
+                ld_annotation_method = "gentropy"
+                canonical_region_max_region_span_bp = 1_000_000
+                ld_registry = [
+                    [ancestry: "nfe", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
+                    [ancestry: "eas", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
+                    [ancestry: "afr", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
+                ]
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 }
+            )
+        }
+    }
+
     test("succeeds and logs a parameter summary when parameters are valid") {
         then {
             // nf-test always runs Nextflow with `-quiet`, so `log.info` output
