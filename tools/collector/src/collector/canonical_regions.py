@@ -704,10 +704,10 @@ def build_regional_output_tables(
                 studyLocusId := md5(components.studyId || '|' || components.leadVariantId),
                 nVariants := components.nVariants,
                 nVariantsBelowMafCutoff := components.nVariants - components.nVariantsAboveMafCutoff,
-                qualityControls := list_distinct(list_concat(
-                    CASE WHEN list_contains(merged.qualityControls, '{DUPLICATE_FINE_MAPPING_SET_QC}') THEN ['{DUPLICATE_FINE_MAPPING_SET_QC}']::VARCHAR[] ELSE []::VARCHAR[] END,
+                qualityControls := list_sort(list_distinct(list_concat(
+                    merged.qualityControls,
                     CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
-                ))
+                )))
             ) ORDER BY components.studyId)::{component_type} AS components,
             CASE WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) THEN merged.fineMappingLocusSetId ELSE NULL END AS publishedFineMappingLocusSetId
         FROM canonical_region_merged_bounds AS merged

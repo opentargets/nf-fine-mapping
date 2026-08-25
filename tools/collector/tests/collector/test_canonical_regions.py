@@ -1124,3 +1124,45 @@ def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_inter
     assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in row[2] for row in loci)
     assert all("SOURCE_QC" in row[2] for row in loci)
     assert [row[3] for row in loci] == [["1_160_A_G", "1_180_A_G"], ["1_160_C_T", "1_180_C_T"]]
+
+
+def test_build_regional_output_tables_forwards_region_level_quality_controls_to_components(tmp_path: Path) -> None:
+    locus_a = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a", 100, 260)])
+    locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b", 150, 180)])
+    sum_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_200_A_G", 200, 0.1, -8, 1.0, 0.2, 0.01)],
+    )
+    sum_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_200_C_T", 200, 0.1, -8, 1.0, 0.2, 0.01)],
+    )
+    prepared = (
+        CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus_a, summary_statistics_path=sum_a),
+        CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=locus_b, summary_statistics_path=sum_b),
+    )
+    regions = [
+        CanonicalRegion(
+            chromosome="1",
+            region_start=100,
+            region_end=260,
+            quality_controls=(OVERSIZED_SOURCE_LOCUS_QC, MERGED_REGION_EXCEEDS_MAX_SPAN_QC),
+            input_loci=(
+                SourceLocus("STUDY_A", "a", "EUR", "1", 100, 260),
+                SourceLocus("STUDY_B", "b", "AFR", "1", 150, 180),
+            ),
+        )
+    ]
+
+    with duckdb.connect() as con:
+        validate_summary_statistics_inputs(con, prepared)
+        staged = create_regional_variants_table(con, prepared, regions)
+        stats_table, _loci_table = build_regional_output_tables(con, prepared, regions, staged)
+        component_qc = con.execute(f"SELECT list_transform(components, item -> item.qualityControls) FROM {stats_table}").fetchone()[0]
+
+    assert component_qc == [
+        [MERGED_REGION_EXCEEDS_MAX_SPAN_QC, OVERSIZED_SOURCE_LOCUS_QC],
+        [MERGED_REGION_EXCEEDS_MAX_SPAN_QC, OVERSIZED_SOURCE_LOCUS_QC],
+    ]
