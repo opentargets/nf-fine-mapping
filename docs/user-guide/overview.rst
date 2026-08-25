@@ -50,11 +50,19 @@ source for what gets published. All paths below are relative to
      - ``locus_annotation/stats/``
      - LD Annotation
      - Per-locus-set statistics on LD-pair coverage.
-   * - MultiSuSiE Results
-     - ``multisusie/<runId>/<fineMappingLocusSetId>/``
+   * - Credible Sets
+     - ``multisusie/<runId>/<fineMappingLocusSetId>/study_locus.parquet``
      - Fine Mapping
-     - Gentropy-compatible StudyLocus Parquet, extended AnnData (``.h5ad``)
-       results, and a JSON status record.
+     - Gentropy-compatible StudyLocus Parquet with the fitted credible sets.
+   * - AnnData
+     - ``multisusie/<runId>/<fineMappingLocusSetId>/fit.h5ad``
+     - Fine Mapping
+     - Extended AnnData (``.h5ad``) result with component-level posteriors
+       and provenance.
+   * - Fine-mapping Stats
+     - ``multisusie/<runId>/<fineMappingLocusSetId>/stats.json``
+     - Fine Mapping
+     - JSON status record for the locus-set fit.
    * - Manifest Validation Report
      - ``validation/manifest/``
      - Manifest Validation

@@ -10,7 +10,9 @@
 %%metro dir: collect_stats_out | Collection Stats
 %%metro dir: annotated_out | Annotated Locus Sets
 %%metro dir: ld_pair_stats_out | LD-pair Stats
-%%metro dir: multisusie_out | MultiSuSiE Results
+%%metro dir: credible_sets_out | Credible Sets
+%%metro dir: anndata_out | AnnData
+%%metro dir: fm_stats_out | Fine-mapping Stats
 %%metro dir: report_validation | Manifest Validation Report
 %%metro dir: status_lb | LocusBreaker Status
 %%metro dir: status_collection | Locus Collection Status
@@ -55,7 +57,9 @@ graph LR
         collect_stats_out[ ]
         annotated_out[ ]
         ld_pair_stats_out[ ]
-        multisusie_out[ ]
+        credible_sets_out[ ]
+        anndata_out[ ]
+        fm_stats_out[ ]
         report_validation[ ]
         status_lb[ ]
         status_collection[ ]
@@ -74,7 +78,9 @@ graph LR
     collect -->|main| collect_stats_out
     ld_hailing -->|main| annotated_out
     ld_hailing -->|main| ld_pair_stats_out
-    multisusie -->|main| multisusie_out
+    multisusie -->|main| credible_sets_out
+    multisusie -->|main| anndata_out
+    multisusie -->|main| fm_stats_out
 
     validate -->|validation| report_validation
     lb -->|validation| status_lb
