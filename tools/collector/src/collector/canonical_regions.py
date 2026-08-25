@@ -805,6 +805,7 @@ def _write_stats_json(
         "nCandidateLocusSets": len(regions),
         "nPublishedLocusSets": 0,
         "nNotPromotedLocusSets": len(regions),
+        "nRegionsExceedingSpanCap": sum(1 for region in regions if MERGED_REGION_EXCEEDS_MAX_SPAN_QC in region.quality_controls),
         "notPromotedReasons": {"NO_VARIANTS_IN_LOCUS": len(regions)} if regions else {},
         "studiesWithMissingEAF": [],
         "runQualityControls": [],

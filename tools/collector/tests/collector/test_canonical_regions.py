@@ -841,6 +841,47 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
     assert report["runQualityControls"] == ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"]
 
 
+def test_collect_canonical_regions_cli_reports_regions_exceeding_the_span_cap(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(tmp_path / "study_a.locus.parquet", study_id="STUDY_A", loci=[("a_large", 100, 260)])
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(tmp_path / "study_b.locus.parquet", study_id="STUDY_B", loci=[("b_small", 150, 180)])
+    sumstats_a = _write_single_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_id="STUDY_A")
+    sumstats_b = _write_single_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_id="STUDY_B")
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(tmp_path / "fine_mapping_locus_sets"),
+            "--stats_parquet_output",
+            str(tmp_path / "stats" / "run-1.stat.parquet"),
+            "--stats_json_output",
+            str(stats_json_output),
+            "--canonical_region_max_region_span_bp",
+            "100",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nRegionsExceedingSpanCap"] == 1
+
+
 def test_regional_staging_keeps_only_projected_variants_inside_regions(tmp_path: Path) -> None:
     prepared, regions = _regional_test_inputs(tmp_path)
     with duckdb.connect() as con:
