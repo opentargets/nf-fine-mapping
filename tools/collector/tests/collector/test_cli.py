@@ -1,7 +1,6 @@
 """Test collector command line interface (CLI)"""
 
 import gzip
-import hashlib
 import json
 from pathlib import Path
 
@@ -689,4 +688,3 @@ def test_locus_breaker_schema_contract_uses_pydantic_models():
         "standardError",
         "r2Overall",
     )
-
