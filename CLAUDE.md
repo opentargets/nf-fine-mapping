@@ -82,9 +82,10 @@ The **`meta` map** carries `trait`, `sampleSize`, `ancestry` (and sometimes `lea
 
 ## Configuration
 
-- `conf/base.config` — Docker enabled by default; sets Python env vars
+- `nextflow.config` — shared Docker, shell, environment, plugin, validation, resource, and reporting defaults
 - `conf/test-full-collector-hailing-ducks.config` — Local full-data integration profile for the collector locus breaker and Hailing Ducks LD annotation
-- `conf/google-batch.config` — Google Cloud Batch profile
+- `conf/google-cloud.config` — Google Cloud Batch production profile using Collector and Hailing Ducks
+- `conf/google-cloud-test.config` — Google Cloud Batch staging/test profile using Collector and Hailing Ducks
 
 Key pipeline parameters: `params.manifest`, `params.ld_registry`, `params.output_dir`. See `nextflow_schema.json` for the full, authoritative parameter list — `validateParameters()` (nf-schema) rejects any parameter not declared there.
 

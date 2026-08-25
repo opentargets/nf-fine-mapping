@@ -11,11 +11,11 @@
     "manifest_base_dir": {"type": "string", "format": "directory-path", "default": ".", "description": "Base directory used to resolve relative manifest paths.", "fa_icon": "fas fa-folder-open"},
     "output_dir": {"type": "string", "format": "directory-path", "description": "Directory where pipeline outputs and reports are written.", "fa_icon": "fas fa-folder-open"},
     "route": {"type": "string", "description": "Manifest route to execute.", "fa_icon": "fas fa-route"},
-    "locus_breaker_method": {"type": "string", "enum": ["collector", "gentropy"], "default": "collector", "description": "Implementation used for ancestry-specific locus breaking."},
+    "locus_breaker_method": {"type": "string", "enum": ["collector", "gentropy"], "default": "collector", "description": "Implementation used for ancestry-specific locus breaking. Collector is the supported default; Gentropy is an opt-in, slower alternative."},
     "canonical_region_min_maf": {"type": "number", "minimum": 0, "exclusiveMaximum": 0.5, "default": 0.01, "description": "Strict minimum MAF for canonical-region variants, calculated as min(EAF, 1-EAF)."},
     "locus_breaker_large_loci_size": {"type": "integer", "minimum": 1, "default": 1500000, "description": "Locus size threshold above which the collector locus-breaker replaces a locus with fixed-width WBC leads; every emitted locus is bounded to this size."},
     "canonical_region_max_region_span_bp": {"type": "integer", "minimum": 1, "default": 3000000, "description": "Inclusive maximum span of a merged canonical region in base pairs."},
-    "ld_annotation_method": {"type": "string", "enum": ["gentropy", "hailing_ducks"], "default": "hailing_ducks", "description": "Backend used for ancestry-specific LD annotation."},
+    "ld_annotation_method": {"type": "string", "enum": ["gentropy", "hailing_ducks"], "default": "hailing_ducks", "description": "Backend used for ancestry-specific LD annotation. Hailing Ducks is the supported default; Gentropy is an opt-in, slower alternative."},
     "ld_registry": {
       "type": "array", "default": [], "description": "Ancestry-specific LD reference registry.",
       "items": {"type": "object", "required": ["ancestry", "bm_path"], "additionalProperties": false, "properties": {"ancestry": {"type": "string", "minLength": 1}, "vi_path": {"type": "string", "format": "file-path"}, "ht_path": {"type": "string"}, "bm_path": {"type": "string"}}},
@@ -35,7 +35,6 @@
     "empty_status_stub_emit": {"type": "boolean", "default": false, "hidden": true, "description": "Emit empty-status records during stub execution."},
     "ld_pair_stats_stub_emit": {"type": "boolean", "default": false, "hidden": true, "description": "Emit LD-pair status records during stub execution."},
     "ld_pair_stats_stub_empty_locus_set_ids": {"type": "array", "default": [], "hidden": true, "description": "Locus-set IDs receiving empty-LD status in stub tests.", "items": {"type": "string"}},
-    "publish_dir_mode": {"type": "string", "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"], "default": "copy", "hidden": true, "description": "Nextflow publishDir mode."},
     "trace_report_suffix": {"type": "string", "description": "Suffix for trace, report, timeline, and DAG filenames."},
     "validate_params": {"type": "boolean", "default": true, "hidden": true, "description": "Validate pipeline parameters against this schema."}
   }

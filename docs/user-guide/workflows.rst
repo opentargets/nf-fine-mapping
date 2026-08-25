@@ -58,6 +58,11 @@ the native ``chr1_100_A_AT`` lookup convention, maps them back on output, and
 uses the study metadata to query each study-locus only against its registered
 ancestry.
 
+Hailing Ducks is the supported default and the only backend configured by the
+repository profiles. The Gentropy backend remains available through its local
+modules for comparison or specialized runs, but is discouraged for routine
+execution because its Spark-based processing is slower.
+
 Fine-mapping
 ------------
 

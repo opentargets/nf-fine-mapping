@@ -24,13 +24,34 @@ The principal profiles are:
    Full summary-statistics test data using the collector locus breaker and
    Hailing Ducks LD annotation.
 ``googleCloud`` / ``googleCloudTest``
-   Google Cloud execution profiles.
+   Google Cloud Batch execution profiles using Collector and Hailing Ducks.
 
 To run a profile directly:
 
 .. code-block:: bash
 
    nextflow run main.nf -profile testFullCollectorHailingDucks -resume
+
+Gentropy alternatives
+---------------------
+
+The pipeline still contains Gentropy-based locus-breaking and LD-annotation
+modules for comparison and specialized runs. They are not selected by any
+shipped profile and are discouraged for routine execution because they are
+slower than the Collector and Hailing Ducks path.
+
+To opt into a Gentropy module, override the relevant method and provide the
+required Gentropy container and Spark settings in a separate user config. For
+example:
+
+.. code-block:: bash
+
+   nextflow run main.nf -c gentropy.local.config \
+     --locus_breaker_method gentropy \
+     --ld_annotation_method gentropy
+
+The user config must provide the Gentropy process container and, for LD
+annotation, the appropriate ``gentropy_spark_uri`` and Spark configuration.
 
 The ``-resume`` flag reuses successful tasks when their process inputs and
 commands have not changed.
@@ -63,6 +84,10 @@ Build and smoke-test the local images before running the non-stub pipeline:
    docker run --rm susiex:local --help
    docker run --rm sushie:local --help
    make integration-test
+
+``multisusie_purity_min_r2`` must be strictly between 0 and 1. It defaults to
+0.01. MultiSuSiE publishes only credible sets at or above this R-squared
+threshold; low-memory mode is disabled so purity is available for filtering.
 
 The nf-test suite uses process stubs and therefore does not require Docker or
 the method images. CI separately runs Nextflow lint and the complete nf-test
