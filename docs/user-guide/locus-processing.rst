@@ -41,6 +41,9 @@ locus sets, ready for fine-mapping.
   between the results. This is what stops locus sets from growing without
   limit in densely packed regions.
 
+.. image:: ../architecture/lead-aware-resolution-examples.svg
+   :alt: Four worked examples of pairwise lead-aware boundary resolution
+
 **Example:** study A's locus (1–300, lead 120) fully contains study B's
 locus (150–200, lead 170), so they merge into one locus set spanning
 1–300. Study C's locus (250–400, lead 280) then overlaps that merged span

@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="820" viewBox="0 0 940 820">
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="6" height="6" fill="#f3f4f6"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#d1d5db" stroke-width="2"/>
+    </pattern>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .title { font-size: 14px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 11.5px; fill: #4b5563; }
+      .tag { font-size: 10px; font-weight: 700; fill: #6b7280; letter-spacing: 0.5px; }
+      .range-label { font-size: 10px; fill: #374151; }
+      .discard-label { font-size: 10px; font-weight: 600; fill: #6b7280; font-style: italic; }
+      .legend-title { font-size: 11px; font-weight: 700; fill: #111827; }
+      .legend-label { font-size: 11px; fill: #111827; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="820" fill="#ffffff"/>
+
+  <!-- ================= ROW 1 (panel top y=30) ================= -->
+  <text class="title" x="20" y="46">1 · Both leads fall inside the overlap → treated as one signal, both crop to the shared window</text>
+  <text class="subtitle" x="20" y="64">A's lead (32) and B's lead (38) both sit in the shared range [30, 45], so both loci tighten down to exactly that range.</text>
+  <text class="tag" x="140" y="80">BEFORE</text>
+  <text class="tag" x="550" y="80">AFTER</text>
+
+  <!-- before bars (identical in every row) -->
+  <text class="range-label" x="140" y="96">A: [10, 45]</text>
+  <rect x="140" y="98" width="175" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="240" y="116" width="150" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="240" y="146">B: [30, 60]</text>
+  <!-- lead markers (before): leadA=32 -> x=250, leadB=38 -> x=280 -->
+  <circle cx="250" cy="98" r="3" fill="#111827"/>
+  <line x1="250" y1="98" x2="250" y2="112" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="280" cy="116" r="3" fill="#111827"/>
+  <line x1="280" y1="116" x2="280" y2="130" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <!-- arrow -->
+  <line x1="410" y1="114" x2="483" y2="114" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="483,108 483,120 493,114" fill="#9ca3af"/>
+
+  <!-- after: ghosts then solid bars -->
+  <text class="range-label" x="650" y="96">A: [30, 45]</text>
+  <rect x="550" y="98" width="175" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="650" y="116" width="150" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="650" y="98" width="75" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="650" y="116" width="75" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="650" y="146">B: [30, 45]</text>
+  <!-- lead markers (after) -->
+  <circle cx="660" cy="98" r="3" fill="#111827"/>
+  <line x1="660" y1="98" x2="660" y2="112" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="690" cy="116" r="3" fill="#111827"/>
+  <line x1="690" y1="116" x2="690" y2="130" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <line x1="0" y1="202" x2="940" y2="202" stroke="#f3f4f6" stroke-width="1"/>
+
+  <!-- ================= ROW 2 (panel top y=210) ================= -->
+  <text class="title" x="20" y="226">2 · Only A's lead falls inside the overlap → A keeps the shared part, B keeps only its own remainder</text>
+  <text class="subtitle" x="20" y="244">A's lead (32) is in [30, 45]; B's lead (55) is not. A is left unchanged; B trims back to just past the disputed zone.</text>
+  <text class="tag" x="140" y="260">BEFORE</text>
+  <text class="tag" x="550" y="260">AFTER</text>
+
+  <text class="range-label" x="140" y="276">A: [10, 45]</text>
+  <rect x="140" y="278" width="175" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="240" y="296" width="150" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="240" y="326">B: [30, 60]</text>
+  <!-- lead markers (before): leadA=32 -> x=250, leadB=55 -> x=365 -->
+  <circle cx="250" cy="278" r="3" fill="#111827"/>
+  <line x1="250" y1="278" x2="250" y2="292" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="365" cy="296" r="3" fill="#111827"/>
+  <line x1="365" y1="296" x2="365" y2="310" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <line x1="410" y1="294" x2="483" y2="294" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="483,288 483,300 493,294" fill="#9ca3af"/>
+
+  <text class="range-label" x="550" y="276">A: [10, 45] (unchanged)</text>
+  <rect x="550" y="278" width="175" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="650" y="296" width="150" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="550" y="278" width="175" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="730" y="296" width="70" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="730" y="326">B: [46, 60]</text>
+  <circle cx="660" cy="278" r="3" fill="#111827"/>
+  <line x1="660" y1="278" x2="660" y2="292" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="775" cy="296" r="3" fill="#111827"/>
+  <line x1="775" y1="296" x2="775" y2="310" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <line x1="0" y1="382" x2="940" y2="382" stroke="#f3f4f6" stroke-width="1"/>
+
+  <!-- ================= ROW 3 (panel top y=390) ================= -->
+  <text class="title" x="20" y="406">3 · Only B's lead falls inside the overlap → B keeps the shared part, A keeps only its own remainder</text>
+  <text class="subtitle" x="20" y="424">B's lead (38) is in [30, 45]; A's lead (15) is not. B is left unchanged; A trims back to just before the disputed zone.</text>
+  <text class="tag" x="140" y="440">BEFORE</text>
+  <text class="tag" x="550" y="440">AFTER</text>
+
+  <text class="range-label" x="140" y="456">A: [10, 45]</text>
+  <rect x="140" y="458" width="175" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="240" y="476" width="150" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="240" y="506">B: [30, 60]</text>
+  <!-- lead markers (before): leadA=15 -> x=165, leadB=38 -> x=280 -->
+  <circle cx="165" cy="458" r="3" fill="#111827"/>
+  <line x1="165" y1="458" x2="165" y2="472" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="280" cy="476" r="3" fill="#111827"/>
+  <line x1="280" y1="476" x2="280" y2="490" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <line x1="410" y1="474" x2="483" y2="474" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="483,468 483,480 493,474" fill="#9ca3af"/>
+
+  <text class="range-label" x="550" y="456">A: [10, 29]</text>
+  <rect x="550" y="458" width="175" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="650" y="476" width="150" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="550" y="458" width="95" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="650" y="476" width="150" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="650" y="506">B: [30, 60] (unchanged)</text>
+  <circle cx="575" cy="458" r="3" fill="#111827"/>
+  <line x1="575" y1="458" x2="575" y2="472" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="690" cy="476" r="3" fill="#111827"/>
+  <line x1="690" y1="476" x2="690" y2="490" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <line x1="0" y1="562" x2="940" y2="562" stroke="#f3f4f6" stroke-width="1"/>
+
+  <!-- ================= ROW 4 (panel top y=570) ================= -->
+  <text class="title" x="20" y="586">4 · Neither lead falls inside the overlap → both keep only their own remainder</text>
+  <text class="subtitle" x="20" y="604">Neither A's lead (15) nor B's lead (55) sits in [30, 45]. Both loci trim to their own territory; the disputed middle is discarded, not handed to either side.</text>
+  <text class="tag" x="140" y="620">BEFORE</text>
+  <text class="tag" x="550" y="620">AFTER</text>
+
+  <text class="range-label" x="140" y="636">A: [10, 45]</text>
+  <rect x="140" y="638" width="175" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="240" y="656" width="150" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="240" y="686">B: [30, 60]</text>
+  <!-- lead markers (before): leadA=15 -> x=165, leadB=55 -> x=365 -->
+  <circle cx="165" cy="638" r="3" fill="#111827"/>
+  <line x1="165" y1="638" x2="165" y2="652" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="365" cy="656" r="3" fill="#111827"/>
+  <line x1="365" y1="656" x2="365" y2="670" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <line x1="410" y1="654" x2="483" y2="654" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="483,648 483,660 493,654" fill="#9ca3af"/>
+
+  <text class="range-label" x="550" y="636">A: [10, 29]</text>
+  <rect x="550" y="638" width="175" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="650" y="656" width="150" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <!-- discarded middle, drawn before the solid bars so bar edges sit crisply on top -->
+  <rect x="650" y="638" width="75" height="32" fill="url(#hatch)" stroke="#d1d5db" stroke-width="1" stroke-dasharray="3,2"/>
+  <text class="discard-label" x="687" y="686" text-anchor="middle">discarded — belongs to neither</text>
+  <rect x="550" y="638" width="95" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <rect x="730" y="656" width="70" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="range-label" x="730" y="702">B: [46, 60]</text>
+  <circle cx="575" cy="638" r="3" fill="#111827"/>
+  <line x1="575" y1="638" x2="575" y2="652" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <circle cx="775" cy="656" r="3" fill="#111827"/>
+  <line x1="775" y1="656" x2="775" y2="670" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <!-- ================= LEGEND ================= -->
+  <line x1="0" y1="730" x2="940" y2="730" stroke="#e5e7eb" stroke-width="1"/>
+  <text class="legend-title" x="20" y="753">Legend:</text>
+
+  <rect x="90" y="745" width="14" height="14" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.2"/>
+  <text class="legend-label" x="110" y="756">Locus A</text>
+
+  <rect x="200" y="745" width="14" height="14" rx="3" fill="#38bdf8" stroke="#0369a1" stroke-width="1.2"/>
+  <text class="legend-label" x="220" y="756">Locus B</text>
+
+  <circle cx="317" cy="752" r="3" fill="#111827"/>
+  <line x1="317" y1="745" x2="317" y2="759" stroke="#111827" stroke-width="1" stroke-dasharray="2,2"/>
+  <text class="legend-label" x="330" y="756">Locus's own fixed lead variant</text>
+
+  <rect x="560" y="745" width="14" height="14" rx="3" fill="none" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,2"/>
+  <text class="legend-label" x="580" y="756">Original (before) extent</text>
+
+  <rect x="780" y="745" width="14" height="14" fill="url(#hatch)" stroke="#d1d5db" stroke-width="1"/>
+  <text class="legend-label" x="800" y="756">Discarded territory</text>
+
+  <text class="subtitle" x="20" y="785">Example values are schematic (not base pairs). The overlap window is [30, 45] in every row; only the lead positions change to show why the outcome differs.</text>
+</svg>
