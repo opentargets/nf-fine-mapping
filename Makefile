@@ -5,7 +5,7 @@
 	integration-test integration-test-image \
 	unit-test unit-test-pipeline unit-test-workflows unit-test-all \
 	collector-dev collector-lint collector-test collector-check docs docs-clean collector-docs collector-docs-clean collector-build \
-	docs-metro-map docs-metro-map-compact
+	docs-metro-map docs-metro-map-compact docs-metro-map-output-lines
 
 NEXTFLOW ?= nextflow
 NF_TEST ?= nf-test
@@ -13,6 +13,8 @@ UVX ?= uvx
 METRO_MAP_SRC ?= docs/architecture/pipeline-metro-map.mmd
 METRO_MAP_SVG ?= docs/architecture/pipeline-metro-map.svg
 METRO_MAP_COMPACT_SVG ?= docs/architecture/pipeline-metro-map-compact.svg
+METRO_MAP_LINES_SRC ?= docs/architecture/pipeline-metro-map-output-lines.mmd
+METRO_MAP_LINES_SVG ?= docs/architecture/pipeline-metro-map-output-lines.svg
 JAVA_MIN_VERSION ?= 17
 
 help: ## Show available development and test targets
@@ -108,7 +110,7 @@ collector-test:
 
 collector-check: collector-lint collector-test
 
-docs: docs-metro-map docs-metro-map-compact ## Build the full pipeline documentation
+docs: docs-metro-map docs-metro-map-compact docs-metro-map-output-lines ## Build the full pipeline documentation
 	$(MAKE) -C tools/collector docs
 
 docs-metro-map: ## Regenerate the pipeline metro-map SVG from its nf-metro source
@@ -118,6 +120,10 @@ docs-metro-map: ## Regenerate the pipeline metro-map SVG from its nf-metro sourc
 docs-metro-map-compact: ## Regenerate a narrower, row-wrapped variant of the pipeline metro-map SVG
 	$(UVX) nf-metro render $(METRO_MAP_SRC) -o $(METRO_MAP_COMPACT_SVG) \
 		--theme nfcore --embed-font --validate --strict --fold-threshold 6
+
+docs-metro-map-output-lines: ## Regenerate the per-output-line variant of the pipeline metro-map SVG
+	$(UVX) nf-metro render $(METRO_MAP_LINES_SRC) -o $(METRO_MAP_LINES_SVG) \
+		--theme nfcore --embed-font --validate --strict --compact-offsets
 
 docs-clean: ## Remove generated pipeline documentation
 	$(MAKE) -C tools/collector docs-clean
