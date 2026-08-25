@@ -73,12 +73,14 @@ metadata-preserving record containing:
 Images are configured independently with ``params.multisusie_container``,
 ``params.susiex_container``, and ``params.sushie_container``. Their local
 defaults are ``multisusie:latest``, ``susiex:latest``, and ``sushie:latest``.
-Method options use the process ``task.ext.args`` interface. For example:
+Method options use the process ``task.ext.args`` interface. MultiSuSiE purity
+and low-memory settings are managed by the pipeline and must not be overridden
+through ``task.ext.args``. For example:
 
 .. code-block:: text
 
    withName: MULTISUSIE_FINE_MAPPING {
-       ext.args = '--L 10 --max-iter 100 --low-memory-mode'
+       ext.args = '--L 10 --max-iter 100'
    }
 
    withName: SUSIEX_FINE_MAPPING {
