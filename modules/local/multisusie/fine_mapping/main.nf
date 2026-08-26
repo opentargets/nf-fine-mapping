@@ -6,7 +6,7 @@ process MULTISUSIE_FINE_MAPPING {
     tag "${runId}:${fine_mapping_locus_set_id}"
 
     label "multisusie"
-    container params.multisusie_container ?: 'ghcr.io/project-defiant/multisusie:1982e8138f83778aaf0617a1ffd8753f2561775a'
+    container params.multisusie_container ?: 'ghcr.io/project-defiant/multisusie:5f29d00f913b0f51c82ae9b180c8ec3c01df291e'
     publishDir "${params.output_dir}", mode: 'copy', pattern: 'multisusie/*', saveAs: { filename -> "multisusie/${runId}/${fine_mapping_locus_set_id}/${filename.replace('multisusie/', '')}" }
 
     input:
