@@ -53,84 +53,17 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 4 },
+                { assert workflow.trace.succeeded().size() == 2 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 0 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2 },
                 { assert workflow.out.ch_locus.size() == 2 },
                 { assert workflow.out.ch_status.size() == 0 },
                 { assert workflow.out.ch_locus.collect { row -> row.meta.studyId }.sort() == ["GCST90002351", "GCST90018748"] },
                 { assert workflow.out.ch_locus.collect { row -> row.summary_statistics_path.toString().tokenize('/')[-1] }.sort() == ["GCST90002351", "GCST90018748"] },
                 { assert workflow.out.ch_locus.every { row -> row.study_locus_path.toString().endsWith(".parquet") } },
-                { assert topics.versions.size() == 4 },
+                { assert topics.versions.size() == 2 },
                 { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 2 },
-                { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2 },
                 { assert topics.versions.every { row -> row[1] == "collector" } },
                 { assert topics.versions.every { row -> row[2] == "1.1.0" } }
-            )
-        }
-    }
-
-    test("runs gentropy implementation for each input sumstat") {
-        tag "gentropy"
-
-        when {
-            params {
-                output_dir = "$outputDir"
-                locus_breaker_method = "gentropy"
-            }
-            workflow {
-                """
-                input[0] = channel.of(
-                    [
-                        meta: [
-                            runId: "RUN_A",
-                            studyId: "GCST90002351",
-                            route: "multi_susie_route",
-                            ancestry: "nfe",
-                            traitSet: ["EFO_0004833"],
-                            sampleSize: 519288,
-                        ],
-                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90002351"),
-                    ],
-                    [
-                        meta: [
-                            runId: "RUN_A",
-                            studyId: "GCST90018748",
-                            route: "multi_susie_route",
-                            ancestry: "eas",
-                            traitSet: ["EFO_0004833"],
-                            sampleSize: 82810,
-                        ],
-                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90018748"),
-                    ],
-                )
-                """
-            }
-        }
-
-        then {
-            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
-
-            assertAll(
-                { assert workflow.success },
-                { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 0 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2 },
-                { assert workflow.out.ch_locus.size() == 2 },
-                { assert workflow.out.ch_status.size() == 0 },
-                { assert workflow.out.ch_locus.collect { row -> row.meta.studyId }.sort() == ["GCST90002351", "GCST90018748"] },
-                { assert workflow.out.ch_locus.collect { row -> row.summary_statistics_path.toString().tokenize('/')[-1] }.sort() == ["GCST90002351", "GCST90018748"] },
-                { assert workflow.out.ch_locus.every { row -> row.study_locus_path.toString().contains("gentropy_locus_breaker_clumped_study_locus") } },
-                { assert topics.versions.size() == 4 },
-                { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 2 },
-                { assert topics.versions.count { row -> row[0].startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 2 },
-                { assert topics.versions.count { row -> row[1] == "gentropy" } == 2 },
-                { assert topics.versions.count { row -> row[1] == "collector" } == 2 },
-                { assert topics.versions.count { row -> row[2] == "3.4.0-dev.1-ld-pair-extraction-v2" } == 2 },
-                { assert topics.versions.count { row -> row[2] == "1.1.0" } == 2 }
             )
         }
     }
@@ -167,50 +100,10 @@ nextflow_workflow {
         then {
             assertAll(
                 { assert workflow.success },
-                { assert workflow.out.ch_locus.size() == 1 },
+                { assert workflow.out.ch_locus.size() == 0 },
                 { assert workflow.out.ch_status.size() == 1 },
                 { assert workflow.out.ch_status[0].toString().endsWith("RUN_EMPTY--locus_breaker_clumped_study_locus__GCST90002351.parquet.jsonl") },
                 { assert new File(workflow.out.ch_status[0].toString()).text.trim() == '{"runId":"RUN_EMPTY","path":"locus_breaker_clumped_study_locus/GCST90002351.parquet","validationStage":"LOCUS_BREAKER","reason":"EMPTY_DATASET"}' }
-            )
-        }
-    }
-
-    test("emits gentropy empty-dataset status with the logical dataset path") {
-        tag "gentropy"
-        tag "status"
-
-        when {
-            params {
-                output_dir = "$outputDir"
-                locus_breaker_method = "gentropy"
-                empty_status_stub_emit = true
-            }
-            workflow {
-                """
-                input[0] = channel.of(
-                    [
-                        meta: [
-                            runId: "RUN_EMPTY",
-                            studyId: "GCST90002351",
-                            route: "multi_susie_route",
-                            ancestry: "nfe",
-                            traitSet: ["EFO_0004833"],
-                            sampleSize: 100,
-                        ],
-                        summary_statistics_path: file("${projectDir}/testdata/sumstats/GCST90002351"),
-                    ],
-                )
-                """
-            }
-        }
-
-        then {
-            assertAll(
-                { assert workflow.success },
-                { assert workflow.out.ch_locus.size() == 1 },
-                { assert workflow.out.ch_status.size() == 1 },
-                { assert workflow.out.ch_status[0].toString().endsWith("RUN_EMPTY--gentropy_locus_breaker_clumped_study_locus__GCST90002351.jsonl") },
-                { assert new File(workflow.out.ch_status[0].toString()).text.trim() == '{"runId":"RUN_EMPTY","path":"gentropy_locus_breaker_clumped_study_locus/GCST90002351","validationStage":"LOCUS_BREAKER","reason":"EMPTY_DATASET"}' }
             )
         }
     }

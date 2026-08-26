@@ -9,16 +9,15 @@ nextflow_workflow {
     topics "versions"
     options "-stub-run"
 
-    test("runs Gentropy LD annotation for full-overlap loci") {
+    test("runs Hailing Ducks LD annotation for full-overlap loci") {
         when {
             params {
                 output_dir = "$outputDir"
-                ld_annotation_method = "gentropy"
-                ld_pair_stats_stub_emit = true
+                ld_annotation_method = "hailing_ducks"
+                ld_pair_stats_stub_emit = false
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "${projectDir}/testdata/sumstats/GCST90002351/GCST90002351.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
-                    [ancestry: "afr", vi_path: "${projectDir}/testdata/sumstats/GCST90018748/GCST90018748.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
-                    [ancestry: "eas", vi_path: "${projectDir}/testdata/does-not-exist.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
+                    [ancestry: "nfe", ht_path: "s3://bucket/nfe.ht", bm_path: "s3://bucket/nfe.bm"],
+                    [ancestry: "afr", ht_path: "s3://bucket/afr.ht", bm_path: "s3://bucket/afr.bm"],
                 ]
             }
             workflow {
@@ -79,32 +78,29 @@ nextflow_workflow {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 2 },
+                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 2 },
                 { assert workflow.out.ch_locus_annotation.size() == 2 },
                 { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
                 { assert workflow.out.ch_locus_annotation.collect { r -> r.fine_mapping_locus_set_path.toString().tokenize('/')[-1] }.sort() == ["GCST90278661.parquet", "chr1.parquet"] },
-                { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld") } },
+                { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld.parquet") } },
                 { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().contains("RUN_A_") } },
                 { assert workflow.out.ch_locus_annotation.every { r -> r.stats_path.toString().endsWith("stats.jsonl") } },
                 { assert workflow.out.ch_fine_mapping_locus_sets.size() == 2 },
                 { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 2 },
                 { assert workflow.out.ch_ld_pair_stats.size() == 2 },
-                { assert workflow.out.ch_ld_pair_stats_status.size() == 2 },
-                { assert workflow.out.ch_ld_pair_stats_status.every { path -> new File(path.toString()).text.contains('"fineMappingLocusSetId"') } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 2 },
                 { assert topics.versions.size() == 2 },
-                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") && row[1] == "collector" && row[2] == "1.1.0" } },
+                { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") && row[1] == "collector" && row[2] == "1.1.0" } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 0 },
             )
         }
     }
 
-    test("skips Gentropy LD annotation when full-overlap channel is empty") {
+    test("skips LD annotation when full-overlap channel is empty") {
         when {
             params {
                 output_dir = "$outputDir"
-                ld_annotation_method = "gentropy"
+                ld_annotation_method = "hailing_ducks"
             }
             workflow {
                 """
@@ -126,12 +122,12 @@ nextflow_workflow {
         }
     }
 
-    test("runs Hailing Ducks LD annotation with the Gentropy-compatible channel contract") {
+    test("filters locus sets with invalid LD pairs") {
         when {
             params {
                 output_dir = "$outputDir"
                 ld_annotation_method = "hailing_ducks"
-                ld_pair_stats_stub_emit = false
+                ld_pair_stats_stub_emit = true
                 ld_registry = [
                     [ancestry: "nfe", ht_path: "s3://bucket/nfe.ht", bm_path: "s3://bucket/nfe.bm"],
                     [ancestry: "afr", ht_path: "s3://bucket/afr.ht", bm_path: "s3://bucket/afr.bm"],
@@ -155,21 +151,17 @@ nextflow_workflow {
 
         then {
             def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
-            def annotation = workflow.out.ch_locus_annotation[0]
 
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
-                { assert workflow.out.ch_locus_annotation.size() == 1 },
-                { assert annotation.runId == "RUN_HAILING" },
-                { assert annotation.fine_mapping_locus_set_id == "chr1" },
-                { assert annotation.fine_mapping_locus_set_path.toString().endsWith("chr1.parquet") },
-                { assert annotation.multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld.parquet") },
-                { assert annotation.stats_path.toString().endsWith("stats.jsonl") },
-                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 1 },
-                { assert workflow.out.ch_ld_pair_stats.size() == 1 },
+                { assert workflow.out.ch_locus_annotation.size() == 0 },
+                { assert workflow.out.ch_fine_mapping_locus_sets.size() == 0 },
+                { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 0 },
+                { assert workflow.out.ch_ld_pair_stats.size() == 0 },
+                { assert workflow.out.ch_ld_pair_stats_status.size() == 1 },
+                { assert workflow.out.ch_ld_pair_stats_status.every { path -> new File(path.toString()).text.contains('"fineMappingLocusSetId"') } },
             )
         }
     }

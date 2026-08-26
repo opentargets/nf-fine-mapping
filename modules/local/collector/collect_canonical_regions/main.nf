@@ -62,11 +62,20 @@ process COLLECT_CANONICAL_REGIONS {
     """
 
     stub:
+    def logical_path = "collected_loci/fine_mapping_locus_sets/${runId}"
+    def safe_logical_path = logical_path.replaceAll(/[^A-Za-z0-9._-]+/, "__")
+    def status_filename = "${runId}--${safe_logical_path}.jsonl"
+    def emit_status = task.ext.emit_status ?: params.empty_status_stub_emit ?: false
     """
     mkdir -p fine_mapping_locus_sets
     mkdir -p status
-    touch fine_mapping_locus_sets/set-a.parquet
-    touch fine_mapping_locus_sets/set-b.parquet
     touch stats.parquet stats.json
+
+    if [[ "${emit_status}" == "true" ]]; then
+        printf '%s\\n' '{"runId":"${runId}","path":"fine_mapping_locus_sets","validationStage":"LOCUS_COLLECTION","reason":"EMPTY_DATASET"}' > status/${status_filename}
+    else
+        touch fine_mapping_locus_sets/set-a.parquet
+        touch fine_mapping_locus_sets/set-b.parquet
+    fi
     """
 }

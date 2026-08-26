@@ -69,9 +69,18 @@ process COLLECTOR_LOCUS_BREAKER {
 
     stub:
     def prefix = task.ext.prefix ?: meta.studyId
+    def logical_path = "locus_breaker_clumped_study_locus/${meta.studyId}.parquet"
+    def safe_logical_path = logical_path.replaceAll(/[^A-Za-z0-9._-]+/, "__")
+    def status_filename = "${meta.runId}--${safe_logical_path}.jsonl"
+    def emit_status = task.ext.emit_status ?: params.empty_status_stub_emit ?: false
     """
     mkdir -p locus_breaker_clumped_study_locus
     mkdir -p status
-    touch locus_breaker_clumped_study_locus/${prefix}.parquet
+
+    if [[ "${emit_status}" == "true" ]]; then
+        printf '%s\\n' '{"runId":"${meta.runId}","path":"${logical_path}","validationStage":"LOCUS_BREAKER","reason":"EMPTY_DATASET"}' > status/${status_filename}
+    else
+        touch locus_breaker_clumped_study_locus/${prefix}.parquet
+    fi
     """
 }

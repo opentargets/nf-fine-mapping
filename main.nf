@@ -15,7 +15,7 @@ params {
     output_dir: String
     route: String
     ld_registry: List = []
-    ld_annotation_method: String = 'gentropy'
+    ld_annotation_method: String = 'hailing_ducks'
     hailing_ducks_container: String = 'ghcr.io/project-defiant/hailing-ducks:v1.1.0'
     hailing_ducks_max_cached_blocks: Integer = 8
     fine_mapping_methods: List = ['multisusie']
@@ -91,12 +91,7 @@ def registered_ld_registry_ancestries(ld_registry) -> Set<String> {
         error "Manifest ancestry validation requires non-empty params.ld_registry."
     }
 
-    def required_fields = ['ancestry', 'bm_path']
-    if (params.ld_annotation_method.toString() == 'hailing_ducks') {
-        required_fields << 'ht_path'
-    } else {
-        required_fields << 'vi_path'
-    }
+    def required_fields = ['ancestry', 'bm_path', 'ht_path']
 
     def ancestry_labels = ld_registry.collect { entry ->
         if (!(entry instanceof Map) || !entry.containsKey('ancestry')) {

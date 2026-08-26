@@ -2,8 +2,6 @@ nextflow.enable.dsl = 2
 nextflow.enable.types = true
 
 include { COLLECTOR_LOCUS_BREAKER } from '../../modules/local/collector/locus_breaker/main.nf'
-include { COLLECTOR_EMPTY_STATUS as LOCUS_BREAKER_EMPTY_STATUS } from '../../modules/local/collector/empty_status/main.nf'
-include { GENTROPY_LOCUS_BREAKER_CLUMPING } from '../../modules/local/gentropy/locus_breaker_clumping/main.nf'
 
 
 workflow LOCUS_BREAKER {
@@ -34,26 +32,8 @@ workflow LOCUS_BREAKER {
         ch_status = ch_locus_out
             .map { r -> r.status_path }
             .filter { path -> path }
-    } else if (locus_breaker_method == 'gentropy') {
-        ch_locus_out = GENTROPY_LOCUS_BREAKER_CLUMPING(ch_input)
-        ch_locus = ch_locus_out
-        ch_empty_status_input = ch_locus_out
-            .map { r ->
-                record(
-                    runId: r.meta.runId,
-                    logical_path: "gentropy_locus_breaker_clumped_study_locus/${r.meta.studyId}",
-                    validation_stage: "LOCUS_BREAKER",
-                    dataset_path: r.study_locus_path,
-                )
-            }
-            .unique { row -> "${row.runId}\t${row.logical_path}" }
-            .map { row ->
-                tuple(row.runId, row.logical_path, row.validation_stage, row.dataset_path)
-            }
-        ch_status = LOCUS_BREAKER_EMPTY_STATUS(ch_empty_status_input)
-            .filter { status_path -> status_path != null }
     } else {
-        error "Unsupported locus_breaker_method '${params.locus_breaker_method}'. Expected 'collector' or 'gentropy'."
+        error "Unsupported locus_breaker_method '${params.locus_breaker_method}'. Expected 'collector'."
     }
 
     emit:
