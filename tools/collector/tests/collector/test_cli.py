@@ -563,6 +563,34 @@ def test_empty_status_fails_for_unreadable_parquet(tmp_path: Path):
     assert "Unable to inspect parquet metadata" in result.output
 
 
+def test_empty_status_emits_jsonl_for_empty_directory(tmp_path: Path):
+    empty_dir = tmp_path / "fine_mapping_locus_sets"
+    empty_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "empty_status",
+            "--run_id",
+            "run-123",
+            "--path",
+            str(empty_dir),
+            "--logical_path",
+            "collected_loci/fine_mapping_locus_sets/run-123",
+            "--validation_stage",
+            "LOCUS_COLLECTION",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "runId": "run-123",
+        "path": "collected_loci/fine_mapping_locus_sets/run-123",
+        "validationStage": "LOCUS_COLLECTION",
+        "reason": "EMPTY_DATASET",
+    }
+
+
 # ---------------------------------------------------------------------------
 # locus_breaker command tests
 # ---------------------------------------------------------------------------

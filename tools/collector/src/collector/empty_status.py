@@ -47,6 +47,8 @@ def emit_empty_status(
 def parquet_row_count(path: Path) -> int:
     """Count logical rows from parquet metadata for a flat file or partitioned directory."""
     parquet_inputs = _parquet_metadata_inputs(path)
+    if not parquet_inputs:
+        return 0
     try:
         with duckdb.connect() as con:
             row = con.execute(
@@ -77,7 +79,4 @@ def _parquet_metadata_inputs(path: Path) -> list[str]:
     if not path.is_dir():
         raise ValueError(f"Input path {path} must be a parquet file or directory")
 
-    parquet_files = sorted(file.as_posix() for file in path.rglob("*.parquet") if file.is_file())
-    if not parquet_files:
-        raise FileNotFoundError(f"Input directory {path} does not contain parquet files")
-    return parquet_files
+    return sorted(file.as_posix() for file in path.rglob("*.parquet") if file.is_file())
