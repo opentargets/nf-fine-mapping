@@ -13,10 +13,10 @@ nextflow_workflow {
     test("passes through supported rows without emitting status") {
         when {
             params {
-                ld_annotation_method = "gentropy"
+                ld_annotation_method = "hailing_ducks"
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
-                    [ancestry: "eas", vi_path: "vi://eas", bm_path: "bm://eas"],
+                    [ancestry: "nfe", ht_path: "ht://nfe", bm_path: "bm://nfe"],
+                    [ancestry: "eas", ht_path: "ht://eas", bm_path: "bm://eas"],
                 ]
             }
             workflow {
@@ -64,9 +64,9 @@ nextflow_workflow {
     test("emits one JSONL status file per invalid run and preserves supported rows") {
         when {
             params {
-                ld_annotation_method = "gentropy"
+                ld_annotation_method = "hailing_ducks"
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "bm://nfe"],
+                    [ancestry: "nfe", ht_path: "ht://nfe", bm_path: "bm://nfe"],
                 ]
             }
             workflow {
@@ -140,7 +140,7 @@ nextflow_workflow {
     test("fails when ld_registry is missing") {
         when {
             params {
-                ld_annotation_method = "gentropy"
+                ld_annotation_method = "hailing_ducks"
                 ld_registry = null
             }
             workflow {
@@ -180,7 +180,7 @@ nextflow_workflow {
     test("fails when ld_registry is empty") {
         when {
             params {
-                ld_annotation_method = "gentropy"
+                ld_annotation_method = "hailing_ducks"
                 ld_registry = []
             }
             workflow {
@@ -220,10 +220,10 @@ nextflow_workflow {
     test("fails when ld_registry contains duplicate ancestry labels") {
         when {
             params {
-                ld_annotation_method = "gentropy"
+                ld_annotation_method = "hailing_ducks"
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "vi://nfe-1", bm_path: "bm://nfe-1"],
-                    [ancestry: "nfe", vi_path: "vi://nfe-2", bm_path: "bm://nfe-2"],
+                    [ancestry: "nfe", ht_path: "ht://nfe-1", bm_path: "bm://nfe-1"],
+                    [ancestry: "nfe", ht_path: "ht://nfe-2", bm_path: "bm://nfe-2"],
                 ]
             }
             workflow {
@@ -303,7 +303,7 @@ nextflow_workflow {
             params {
                 ld_annotation_method = "hailing_ducks"
                 ld_registry = [
-                    [ancestry: "nfe", vi_path: "vi://nfe", bm_path: "s3://bucket/nfe.bm"],
+                    [ancestry: "nfe", bm_path: "s3://bucket/nfe.bm"],
                 ]
             }
             workflow {

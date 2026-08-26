@@ -15,7 +15,7 @@ params {
     output_dir: String
     route: String
     ld_registry: List = []
-    ld_annotation_method: String = 'gentropy'
+    ld_annotation_method: String = 'hailing_ducks'
     hailing_ducks_container: String = 'ghcr.io/project-defiant/hailing-ducks:v1.1.0'
     hailing_ducks_max_cached_blocks: Integer = 8
     fine_mapping_methods: List = ['multisusie']
@@ -91,12 +91,7 @@ def registered_ld_registry_ancestries(ld_registry) -> Set<String> {
         error "Manifest ancestry validation requires non-empty params.ld_registry."
     }
 
-    def required_fields = ['ancestry', 'bm_path']
-    if (params.ld_annotation_method.toString() == 'hailing_ducks') {
-        required_fields << 'ht_path'
-    } else {
-        required_fields << 'vi_path'
-    }
+    def required_fields = ['ancestry', 'bm_path', 'ht_path']
 
     def ancestry_labels = ld_registry.collect { entry ->
         if (!(entry instanceof Map) || !entry.containsKey('ancestry')) {
@@ -226,6 +221,7 @@ def filter_rows_by_invalid_run_ids(rows, invalid_run_ids, extract_run_id) {
 
 process MANIFEST_VALIDATION_REPORT {
     tag "${runId}"
+    container 'ubuntu:22.04'
 
     input:
     tuple(runId: String, status_records: List<String>)
@@ -252,6 +248,8 @@ process MANIFEST_VALIDATION_REPORT {
 
 
 process PIPELINE_VERSIONS_REPORT {
+    container 'ubuntu:22.04'
+
     input:
     version_records: List<String>
 
@@ -326,53 +324,42 @@ workflow {
 
     locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)
     locus_breaker_status = locus_breaker_out.ch_status
-    locus_invalid_run_ids = invalid_run_ids_from_status_channels([manifest_validation_status, locus_breaker_status])
     locus_out = filter_rows_by_invalid_run_ids(
         locus_breaker_out.ch_locus,
-        locus_invalid_run_ids,
+        manifest_invalid_run_ids,
         { locus_row -> locus_row.meta.runId },
     )
 
     locus_collection_out = LOCUS_COLLECTION(locus_out)
     locus_collection_status = locus_collection_out.ch_locus_collection_status
-    collection_invalid_run_ids = invalid_run_ids_from_status_channels([
-        manifest_validation_status,
-        locus_breaker_status,
-        locus_collection_status,
-    ])
     published_locus_out = filter_rows_by_invalid_run_ids(
         locus_out,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { locus_row -> locus_row.meta.runId },
     )
     full_overlap_loci = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_full_overlap_loci,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     partial_overlap_loci = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_partial_overlap_loci,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     non_overlap_loci = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_non_overlap_loci,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     collect_loci_stats = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_collect_loci_stats,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
     locus_annotation_status = locus_annotation_out.ch_ld_pair_stats_status
-    annotation_invalid_locus_set_ids = invalid_fine_mapping_locus_set_ids_from_status_channels([locus_annotation_status])
-    locus_annotation = filter_rows_by_invalid_run_ids(
-        locus_annotation_out.ch_locus_annotation,
-        annotation_invalid_locus_set_ids,
-        { annotation_row -> annotation_row.fine_mapping_locus_set_path.toString().tokenize('/')[-1].replaceFirst(/\.parquet$/, '') },
-    )
+    locus_annotation = locus_annotation_out.ch_locus_annotation
     fine_mapping_locus_sets = locus_annotation.map { annotation_row -> annotation_row.fine_mapping_locus_set_path }
     ld_pair_stats = locus_annotation.map { annotation_row -> annotation_row.stats_path }
     fine_mapping_out = FINE_MAPPING(locus_annotation)
@@ -407,64 +394,71 @@ workflow {
 
 
 output {
+    // workflow.output.dir is set to params.output_dir in nextflow.config;
+    // all paths here are relative to that base.
     manifest_validation_status {
-        path 'validation/manifest'
+        path '.'
         mode 'copy'
     }
     loci {
-        path 'locus_breaker_clumped_study_locus'
+        path '.'
         mode 'copy'
     }
+    multisusie_results {
+        path '.'
+        mode 'copy'
+    }
+    susiex_results {
+        path '.'
+        mode 'copy'
+    }
+    sushie_results {
+        path '.'
+        mode 'copy'
+    }
+    pipeline_versions {
+        path '.'
+        mode 'copy'
+    }
+    locus_breaker_status {
+        path '.'
+        mode 'copy'
+    }
+    locus_collection_status {
+        path '.'
+        mode 'copy'
+    }
+    locus_annotation_status {
+        path '.'
+        mode 'copy'
+    }
+    // COLLECT_CANONICAL_REGIONS writes locus parquets under fine_mapping_locus_sets/;
+    // publishing to collected_loci/ makes the final path collected_loci/fine_mapping_locus_sets/*.
     full_overlap_loci {
-        path 'collected_loci/full_overlaps'
+        path 'collected_loci'
         mode 'copy'
     }
     partial_overlap_loci {
-        path 'collected_loci/partial_overlaps'
+        path 'collected_loci'
         mode 'copy'
     }
     non_overlap_loci {
-        path 'collected_loci/non_overlaps'
+        path 'collected_loci'
         mode 'copy'
     }
+    // stats.parquet / stats.json are flat files — collected_loci/stats/ is the target.
     collect_loci_stats {
         path 'collected_loci/stats'
         mode 'copy'
     }
-    locus_breaker_status {
-        path 'status/locus_breaker'
-        mode 'copy'
-    }
-    locus_collection_status {
-        path 'status/locus_collection'
-        mode 'copy'
-    }
-    locus_annotation_status {
-        path 'status/locus_annotation'
-        mode 'copy'
-    }
+    // HAILING_DUCKS_LD_ANNOTATION writes fine_mapping_locus_sets/ and
+    // hailing_ducks_ld_annotation/ — locus_annotation/ is the correct base.
     fine_mapping_locus_sets {
         path 'locus_annotation'
         mode 'copy'
     }
     ld_pair_stats {
-        path 'locus_annotation/stats'
-        mode 'copy'
-    }
-    multisusie_results {
-        path 'multisusie'
-        mode 'copy'
-    }
-    susiex_results {
-        path 'susiex'
-        mode 'copy'
-    }
-    sushie_results {
-        path 'sushie'
-        mode 'copy'
-    }
-    pipeline_versions {
-        path 'pipeline_info'
+        path 'locus_annotation'
         mode 'copy'
     }
 }

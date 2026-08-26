@@ -198,31 +198,6 @@ nextflow_pipeline {
         }
     }
 
-    test("succeeds for the gentropy backend even when canonical_region_max_region_span_bp is below locus_breaker_large_loci_size") {
-        when {
-            params {
-                manifest = new File("testdata/manifest.tsv").canonicalPath
-                manifest_base_dir = new File(".").canonicalPath
-                output_dir = "$outputDir"
-                locus_breaker_method = "gentropy"
-                ld_annotation_method = "gentropy"
-                canonical_region_max_region_span_bp = 1_000_000
-                ld_registry = [
-                    [ancestry: "nfe", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
-                    [ancestry: "eas", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
-                    [ancestry: "afr", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
-                ]
-            }
-        }
-
-        then {
-            assertAll(
-                { assert workflow.success },
-                { assert workflow.trace.failed().size() == 0 }
-            )
-        }
-    }
-
     test("succeeds and logs a parameter summary when parameters are valid") {
         then {
             // nf-test always runs Nextflow with `-quiet`, so `log.info` output

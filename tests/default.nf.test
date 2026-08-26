@@ -23,50 +23,10 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 57 },
+                { assert workflow.trace.succeeded().size() == 41 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 12 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_CANONICAL_REGIONS") } == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 8 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
-                { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 8 }
-            )
-        }
-    }
-
-    test("runs gentropy locus breaker and Gentropy LD annotation on chr1 test data") {
-        tag "gentropy"
-
-        when {
-            params {
-                manifest = new File("testdata/manifest.tsv").canonicalPath
-                manifest_base_dir = new File(".").canonicalPath
-                output_dir = "$outputDir"
-                locus_breaker_method = "gentropy"
-                ld_annotation_method = "gentropy"
-                ld_registry = [
-                    [ancestry: "nfe", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.EUR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm"],
-                    [ancestry: "eas", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.CSA.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.CSA.ldadj.bm"],
-                    [ancestry: "afr", vi_path: "${projectDir}/data/reference/panukbb/chr1/UKBB.AFR.aligned.parquet", bm_path: "s3://pan-ukb-us-east-1/ld_release/UKBB.AFR.ldadj.bm"],
-                ]
-            }
-        }
-
-        then {
-            def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
-
-            assertAll(
-                { assert workflow.success },
-                { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 57 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 0 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:GENTROPY_LOCUS_BREAKER_CLUMPING") } == 12 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_CANONICAL_REGIONS") } == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 4 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 0 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 8 }
             )
@@ -89,15 +49,15 @@ nextflow_pipeline {
 
         then {
             def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+            def outputText = workflow.stdout.join('\n')
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 8 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 4 },
-                { assert new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-b.parquet").exists() },
-                { assert !new File("${outputDir}/../results/locus_annotation/fine_mapping_locus_sets/set-a.parquet").exists() }
+                { assert outputText.contains("locus_annotation/fine_mapping_locus_sets/set-b.parquet") },
+                { assert !outputText.contains("locus_annotation/fine_mapping_locus_sets/set-a.parquet") }
             )
         }
     }
@@ -126,14 +86,11 @@ nextflow_pipeline {
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
-                { assert workflow.trace.succeeded().size() == 12 },
+                { assert workflow.trace.succeeded().size() == 10 },
                 { assert succeededTasks.count { task -> task.startsWith("MANIFEST_VALIDATION:MANIFEST_VALIDATION_REPORT") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:COLLECTOR_LOCUS_BREAKER") } == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_BREAKER:LOCUS_BREAKER_EMPTY_STATUS") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECT_CANONICAL_REGIONS") } == 1 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_COLLECTION:COLLECTOR_EMPTY_STATUS") } == 1 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 2 },
-                { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:GENTROPY_FINE_MAPPING_LOCUS_SET_LD_ANNOTATION") } == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 2 },
                 { assert outputText.contains("RUN_INVALID.jsonl") },
                 { assert outputText.contains("RUN_VALID") },

@@ -1,0 +1,3 @@
+runId	studyId	route	summarystatsLocation	majorAncestry	traitFromSourceMappedIds	effectiveSampleSize
+GCST90692423,GCST90693006	GCST90693006	multi_susie_route	gs://gwas_catalog_inputs/harmonised_summary_statistics/GCST90693006	nfe	['MONDO_0024644']	141955
+GCST90692423,GCST90693006	GCST90692423	multi_susie_route	gs://gwas_catalog_inputs/harmonised_summary_statistics/GCST90692423	eas	['MONDO_0024644']	4644
