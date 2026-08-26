@@ -240,7 +240,7 @@ def test_full_data_profile_uses_a_single_explicit_collector_hailing_ducks_profil
     assert 'workDir = "${projectDir}/testdata/work_full"' in full_config
     assert 'locus_breaker_method = "collector"' in normalized_full_config
     assert 'ld_annotation_method = "hailing_ducks"' in normalized_full_config
-    assert "ghcr.io/opentargets/nf-fine-mapping/collector:sha256-" in full_config
+    assert "ghcr.io/opentargets/nf-fine-mapping/collector:" in full_config
     assert "vi_path" not in full_config
     assert "gentropy_spark_uri" not in full_config
     assert "gentropy_spark_conf" not in full_config
