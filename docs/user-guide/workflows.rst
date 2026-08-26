@@ -106,10 +106,10 @@ The current pinned defaults are:
 .. code-block:: groovy
 
    params {
-       multisusie_container = 'ghcr.io/project-defiant/multisusie:sha256-db07e794d00c8cac8bfc162fa43015254612a2ff627641078e09d0695339c8a5'
+       multisusie_container = 'ghcr.io/project-defiant/multisusie:1982e8138f83778aaf0617a1ffd8753f2561775a'
        multisusie_purity_min_r2 = 0.01
-       susiex_container = 'ghcr.io/project-defiant/susiex/susiex:sha256-bf751e492d4bb3b7267f58a0583a1e00c3a9fc8dca3c1e565758d9e4754698cc'
-       sushie_container = 'ghcr.io/project-defiant/sushie/sushie:sha256-adedefcfe352f0ea80345654c6969e78a351ac333b10cd054721e32dd9b182d6'
+       susiex_container = 'ghcr.io/project-defiant/susiex/susiex:600051c01bdd14a2783d34066f8aaaa0e3dececf'
+       sushie_container = 'ghcr.io/project-defiant/sushie/sushie:dd7e4ae3cb96cc7c6f5718e0bf4fbe77ab07bf93'
    }
 
 The Google Cloud profiles likewise set ``params.collector_container`` to the
