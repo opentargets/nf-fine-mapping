@@ -369,51 +369,73 @@ def _chromosome_sort_key(chromosome: str) -> tuple[int, int | str]:
 
 
 def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...], min_maf: float) -> list[SourceLocus]:
-    loci: list[SourceLocus] = []
+    locus_inputs = " UNION ALL ".join(
+        f"""
+        SELECT
+            {_quote_sql_string(prepared_input.study_id)} AS studyId,
+            CAST(studyLocusId AS VARCHAR) AS studyLocusId,
+            CAST(chromosome AS VARCHAR) AS chromosome,
+            CAST(locusStart AS INTEGER) AS locusStart,
+            CAST(locusEnd AS INTEGER) AS locusEnd
+        FROM {_read_parquet_sql(prepared_input.locus_breaker_path)}
+        """
+        for prepared_input in prepared_inputs
+    )
+    summary_statistics = " UNION ALL ".join(
+        f"""
+        SELECT
+            {_quote_sql_string(prepared_input.study_id)} AS studyId,
+            CAST(variantId AS VARCHAR) AS variantId,
+            CAST(chromosome AS VARCHAR) AS chromosome,
+            CAST(position AS INTEGER) AS position,
+            CAST(pValueMantissa AS FLOAT) AS pValueMantissa,
+            CAST(pValueExponent AS INTEGER) AS pValueExponent,
+            CAST(effectAlleleFrequencyFromSource AS DOUBLE) AS effectAlleleFrequencyFromSource
+        FROM {_deduplicated_sumstats_sql(prepared_input.summary_statistics_path)}
+        """
+        for prepared_input in prepared_inputs
+    )
     with _managed_duckdb() as con:
-        for prepared_input in prepared_inputs:
-            locus_rows = con.execute(
-                f"""
+        rows = con.execute(
+            f"""
+            WITH candidate_leads AS (
                 SELECT
-                    CAST(studyLocusId AS VARCHAR) AS studyLocusId,
-                    CAST(chromosome AS VARCHAR) AS chromosome,
-                    CAST(locusStart AS INTEGER) AS locusStart,
-                    CAST(locusEnd AS INTEGER) AS locusEnd
-                FROM {_read_parquet_sql(prepared_input.locus_breaker_path)}
-                ORDER BY
-                    CASE WHEN try_cast(chromosome AS INTEGER) IS NULL THEN 1 ELSE 0 END,
-                    try_cast(chromosome AS INTEGER),
-                    chromosome,
-                    locusStart,
-                    locusEnd,
-                    studyLocusId
-                """
-            ).fetchall()
-            for study_locus_id, chromosome, locus_start, locus_end in locus_rows:
-                lead_row = con.execute(
-                    f"""
-                    SELECT position
-                    FROM {_deduplicated_sumstats_sql(prepared_input.summary_statistics_path)}
-                    WHERE chromosome = {_quote_sql_string(chromosome)}
-                      AND position BETWEEN {locus_start} AND {locus_end}
-                      AND least(CAST(effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf}
-                    ORDER BY pValueExponent, pValueMantissa, position, variantId
-                    LIMIT 1
-                    """
-                ).fetchone()
-                if lead_row is None:
-                    continue
-                loci.append(
-                    SourceLocus(
-                        study_id=prepared_input.study_id,
-                        study_locus_id=study_locus_id,
-                        ancestry=prepared_input.ancestry,
-                        chromosome=chromosome,
-                        locus_start=locus_start,
-                        locus_end=locus_end,
-                        lead_position=int(lead_row[0]),
-                    )
-                )
+                    loci.studyId,
+                    loci.studyLocusId,
+                    loci.chromosome,
+                    loci.locusStart,
+                    loci.locusEnd,
+                    stats.position,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY loci.studyId, loci.studyLocusId
+                        ORDER BY stats.pValueExponent, stats.pValueMantissa, stats.position, stats.variantId
+                    ) AS leadRank
+                FROM ({locus_inputs}) AS loci
+                INNER JOIN ({summary_statistics}) AS stats
+                  ON stats.studyId = loci.studyId
+                 AND stats.chromosome = loci.chromosome
+                 AND stats.position BETWEEN loci.locusStart AND loci.locusEnd
+                 AND least(stats.effectAlleleFrequencyFromSource, 1.0::DOUBLE - stats.effectAlleleFrequencyFromSource) > {min_maf}
+            )
+            SELECT studyId, studyLocusId, chromosome, locusStart, locusEnd, position
+            FROM candidate_leads
+            WHERE leadRank = 1
+            """
+        ).fetchall()
+
+    ancestry_by_study = {prepared_input.study_id: prepared_input.ancestry for prepared_input in prepared_inputs}
+    loci = [
+        SourceLocus(
+            study_id=study_id,
+            study_locus_id=study_locus_id,
+            ancestry=ancestry_by_study[study_id],
+            chromosome=chromosome,
+            locus_start=int(locus_start),
+            locus_end=int(locus_end),
+            lead_position=int(position),
+        )
+        for study_id, study_locus_id, chromosome, locus_start, locus_end, position in rows
+    ]
     return sorted(
         loci,
         key=lambda locus: (

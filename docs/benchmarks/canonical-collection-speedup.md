@@ -27,3 +27,27 @@ Logical Parquet comparison reported **0 differing rows** for the locus-set outpu
 - statistics: 0.034 s
 
 This is a synthetic benchmark, not a production-data guarantee. The final PR should include the fixture construction and machine/runtime details when the benchmark is rerun in CI or on representative data.
+
+## Testdata correctness and performance check
+
+The optimized command was compared with the legacy per-locus reader using the
+first three summary-statistics Parquet files under ``testdata/sumstats``. The
+benchmark creates 60 locus-breaker windows per study, runs the complete
+``collect_canonical_regions`` command through both readers, and compares every
+published Parquet row plus the stats JSON (excluding phase timings).
+
+Run it from ``tools/collector`` with:
+
+```bash
+.venv/bin/python scripts/benchmark_canonical_regions.py --loci-per-study 60
+```
+
+Observed on 2026-08-26:
+
+| Reader | Wall time |
+|---|---:|
+| Legacy per-locus reader | 8.31 s |
+| Set-based reader | 0.808 s |
+
+The run produced 79 locus-set files. Logical outputs were equal and stats JSON
+was equal apart from ``timingsSeconds`` (10.29× speedup).

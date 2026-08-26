@@ -524,6 +524,42 @@ def test_prepare_collect_canonical_region_inputs_rejects_mismatched_study_ids(tm
     assert "STUDY_B" in str(excinfo.value)
 
 
+def test_read_source_loci_selects_each_locus_lead_setwise_with_maf_and_tie_breaking(tmp_path: Path) -> None:
+    locus_breaker = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_a.locus.parquet",
+        study_id="STUDY_A",
+        loci=[
+            ("locus_one", 100, 180),
+            ("locus_two", 180, 260),
+            ("locus_without_qualifying_variant", 300, 320),
+        ],
+    )
+    summary_statistics = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_110_A_G", 110, 0.20, -7, 1.0, 0.20, 0.01),
+            ("1_120_A_G", 120, 0.10, -8, 1.0, 0.20, 0.01),
+            ("1_180_A_G", 180, 0.05, -8, 1.0, 0.20, 0.01),
+            ("1_200_A_G", 200, 0.01, -8, 0.01, 0.20, 0.01),
+            ("1_310_A_G", 310, 0.01, -8, 1.0, 0.01, 0.01),
+        ],
+    )
+    prepared = (
+        CanonicalRegionInput(
+            study_id="STUDY_A",
+            ancestry="EUR",
+            locus_breaker_path=locus_breaker,
+            summary_statistics_path=summary_statistics,
+        ),
+    )
+
+    assert [(locus.study_locus_id, locus.lead_position) for locus in _read_source_loci(prepared, 0.01)] == [
+        ("locus_one", 120),
+        ("locus_two", 200),
+    ]
+
+
 def test_collect_canonical_regions_cli_rejects_fewer_than_two_input_triples(tmp_path: Path) -> None:
     locus_breaker_path = _write_locus_breaker_dataset(tmp_path / "single.locus.parquet", study_ids=["STUDY_A"])
     sumstats_path = _write_sumstats_dataset(tmp_path / "single.sumstats.parquet", study_ids=["STUDY_A"])
