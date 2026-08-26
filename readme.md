@@ -37,14 +37,13 @@ The generated site is available at `docs/_build/html/index.html`.
 
 ## Summary Statistics Clumping
 
-Summary statistics are converted into Gentropy-compatible study-locus
-datasets. The default collector implementation uses DuckDB; the Gentropy
-implementation remains available for parity checks.
+Summary statistics are clumped into study-locus datasets using the
+collector implementation backed by DuckDB.
 
 ## Unified LD interface
 
-Fine-mapping routes consume an ancestry-aware LD interface so that LD storage
-and retrieval remain independent from locus processing.
+Fine-mapping routes consume an ancestry-aware LD interface backed by Hailing
+Ducks so that LD storage and retrieval remain independent from locus processing.
 
 ## Available fine-mapping routes
 
