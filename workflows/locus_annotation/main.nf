@@ -59,5 +59,5 @@ workflow LOCUS_ANNOTATION {
     ch_fine_mapping_locus_sets = ch_locus_annotation.map { r -> r.fine_mapping_locus_set_path }
     ch_multi_ancestry_pairwise_ld = ch_locus_annotation.map { r -> r.multi_ancestry_pairwise_ld_path }
     ch_ld_pair_stats = ch_locus_annotation.map { r -> r.stats_path }
-    ch_ld_pair_stats_status = ch_ld_pair_stats_status
+    ch_ld_pair_stats_status = ch_ld_pair_stats_status.filter { path -> path }
 }

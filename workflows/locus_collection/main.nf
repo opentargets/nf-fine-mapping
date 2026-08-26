@@ -44,5 +44,5 @@ workflow LOCUS_COLLECTION {
             stats_parquet_path: stats_parquet,
         )
     }
-    ch_locus_collection_status = collected.status
+    ch_locus_collection_status = collected.status.filter { path -> path }
 }

@@ -49,14 +49,15 @@ nextflow_pipeline {
 
         then {
             def succeededTasks = workflow.trace.succeeded().collect { task -> task.name.toString() }
+            def outputText = workflow.stdout.join('\n')
             assertAll(
                 { assert workflow.success },
                 { assert workflow.trace.failed().size() == 0 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 8 },
                 { assert succeededTasks.count { task -> task.startsWith("FINE_MAPPING:MULTISUSIE_FINE_MAPPING") } == 4 },
-                { assert new File("${outputDir}/locus_annotation/fine_mapping_locus_sets/set-b.parquet").exists() },
-                { assert !new File("${outputDir}/locus_annotation/fine_mapping_locus_sets/set-a.parquet").exists() }
+                { assert outputText.contains("locus_annotation/fine_mapping_locus_sets/set-b.parquet") },
+                { assert !outputText.contains("locus_annotation/fine_mapping_locus_sets/set-a.parquet") }
             )
         }
     }

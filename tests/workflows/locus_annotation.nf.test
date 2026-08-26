@@ -89,7 +89,7 @@ nextflow_workflow {
                 { assert workflow.out.ch_multi_ancestry_pairwise_ld.size() == 2 },
                 { assert workflow.out.ch_ld_pair_stats.size() == 2 },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:COLLECTOR_CHECK_LD_PAIR_STATS") } == 2 },
-                { assert topics.versions.size() == 2 },
+                { assert topics.versions.size() == 4 },
                 { assert topics.versions.any { row -> row[0].startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") && row[1] == "collector" && row[2] == "1.1.0" } },
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:MULTISUSIE_FINE_MAPPING") } == 0 },
             )
