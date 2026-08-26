@@ -32,9 +32,11 @@ later duplicate removal, so collector/Gentropy parity is not expected for
 inputs with duplicates.
 
 Treat duplicates as an input validation failure and repair or reject the
-affected study before comparing backends. The canonical-region collector
-already rejects duplicate summary-statistics inputs during preflight; duplicate
-counts and a shared Gentropy preflight are tracked in GitHub issue #11.
+affected study before comparing backends. Both the LocusBreaker and the
+canonical-region collector silently drop all rows for a duplicated
+``(studyId, variantId)`` — both copies are removed, not just the weaker one.
+A shared Gentropy preflight and duplicate counts in the run report are tracked
+in GitHub issue #11.
 
 After running the pipeline with both collector and Gentropy LocusBreaker outputs enabled, compare logical rows with:
 

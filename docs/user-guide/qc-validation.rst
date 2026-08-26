@@ -137,10 +137,12 @@ most significant duplicate. A simple DuckDB check is:
    GROUP BY studyId
    HAVING COUNT(*) > COUNT(DISTINCT variantId);
 
-The current collector canonical-region command rejects duplicate summary
-statistics during preflight. Its duplicate counts are not yet included in the
-run report, and the Gentropy route does not yet share that same fail-fast
-check; track this gap in GitHub issue #11.
+The collector canonical-region command silently drops all rows for any
+duplicated ``variantId`` before processing — both copies are removed, not
+just the weaker one. This is consistent with the collector LocusBreaker's
+``QUALIFY count(*) OVER (PARTITION BY studyId, variantId) = 1`` filter.
+Duplicate counts in the run report and a shared Gentropy preflight are
+tracked in GitHub issue #11.
 
 Triggering validation paths in stub tests
 -------------------------------------------

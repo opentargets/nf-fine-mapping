@@ -144,28 +144,6 @@ class CanonicalRegion:
         return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
-def validate_summary_statistics_inputs(
-    con: duckdb.DuckDBPyConnection,
-    prepared_inputs: tuple[CanonicalRegionInput, ...],
-) -> None:
-    """Validate complete EAF coverage and unique study/variant rows in one pass per input."""
-    for prepared in prepared_inputs:
-        row = con.execute(
-            f"""
-            SELECT
-                count(*)::BIGINT AS n_rows,
-                count(effectAlleleFrequencyFromSource)::BIGINT AS n_eaf,
-                (count(*) - count(DISTINCT CAST(variantId AS VARCHAR)))::BIGINT AS n_duplicate_variants
-            FROM {_read_parquet_sql(prepared.summary_statistics_path)}
-            """
-        ).fetchone()
-        if row is None:
-            raise RuntimeError(f"Unable to validate summary statistics for {prepared.study_id}")
-        n_rows, n_eaf, n_duplicate_variants = (int(value or 0) for value in row)
-        if n_duplicate_variants:
-            raise ValueError(f"Summary statistics for {prepared.study_id} contain duplicate variantId rows")
-        if n_rows and n_eaf != n_rows:
-            raise ValueError(f"Summary statistics for {prepared.study_id} have incomplete effectAlleleFrequencyFromSource")
 
 
 def create_regional_variants_table(
@@ -202,7 +180,7 @@ def create_regional_variants_table(
             CAST(effectAlleleFrequencyFromSource AS FLOAT) AS effectAlleleFrequencyFromSource,
             CAST(beta AS DOUBLE) AS beta,
             CAST(standardError AS DOUBLE) AS standardError
-        FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+        FROM {_deduplicated_sumstats_sql(prepared.summary_statistics_path)}
         """
         for prepared in prepared_inputs
     )
@@ -324,6 +302,11 @@ def _read_parquet_sql(path: Path) -> str:
     return f"read_parquet({_quote_sql_string(_parquet_glob(path))}, union_by_name = true, hive_partitioning = true)"
 
 
+def _deduplicated_sumstats_sql(path: Path) -> str:
+    """Return summary statistics with ambiguous variantId rows removed, matching locus_breaker semantics."""
+    return f"(SELECT * FROM {_read_parquet_sql(path)} QUALIFY count(*) OVER (PARTITION BY CAST(variantId AS VARCHAR)) = 1)"
+
+
 def _prepare_output_paths(config: CollectCanonicalRegionsConfig) -> None:
     config.fine_mapping_locus_set_output_dir.mkdir(parents=True, exist_ok=True)
     for output_path in config.fine_mapping_locus_set_output_dir.glob("*.parquet"):
@@ -412,7 +395,7 @@ def _read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...], min_maf
                 lead_row = con.execute(
                     f"""
                     SELECT position
-                    FROM {_read_parquet_sql(prepared_input.summary_statistics_path)}
+                    FROM {_deduplicated_sumstats_sql(prepared_input.summary_statistics_path)}
                     WHERE chromosome = {_quote_sql_string(chromosome)}
                       AND position BETWEEN {locus_start} AND {locus_end}
                       AND least(CAST(effectAlleleFrequencyFromSource AS DOUBLE), 1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)) > {min_maf}
@@ -932,14 +915,11 @@ def _studies_with_missing_eaf(
                 f"""
                 SELECT
                     count(*)::BIGINT AS n_rows,
-                    count(effectAlleleFrequencyFromSource)::BIGINT AS n_eaf,
-                    (count(*) - count(DISTINCT CAST(variantId AS VARCHAR)))::BIGINT AS n_duplicate_variants
-                FROM {_read_parquet_sql(prepared.summary_statistics_path)}
+                    count(effectAlleleFrequencyFromSource)::BIGINT AS n_eaf
+                FROM {_deduplicated_sumstats_sql(prepared.summary_statistics_path)}
                 """
-            ).fetchone() or (0, 0, 0)
-            n_rows, n_eaf, n_duplicate_variants = (int(value or 0) for value in count_row)
-            if n_duplicate_variants:
-                raise ValueError(f"Summary statistics for {prepared.study_id} contain duplicate variantId rows")
+            ).fetchone() or (0, 0)
+            n_rows, n_eaf = (int(value or 0) for value in count_row)
             if n_rows and n_eaf != n_rows:
                 missing.append(prepared.study_id)
     return sorted(missing)

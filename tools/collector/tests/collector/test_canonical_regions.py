@@ -18,11 +18,11 @@ from collector.canonical_regions import (
     _read_source_loci,
     _resolve_overlap,
     _ResolvingLocus,
+    _studies_with_missing_eaf,
     _sweep_canonical_regions,
     build_regional_output_tables,
     create_regional_variants_table,
     prepare_collect_canonical_region_inputs,
-    validate_summary_statistics_inputs,
 )
 
 runner = CliRunner()
@@ -1027,7 +1027,6 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
 def test_regional_staging_keeps_only_projected_variants_inside_regions(tmp_path: Path) -> None:
     prepared, regions = _regional_test_inputs(tmp_path)
     with duckdb.connect() as con:
-        validate_summary_statistics_inputs(con, prepared)
         table_name = create_regional_variants_table(con, prepared, regions)
         rows = con.execute(f"SELECT studyId, ancestry, variantId, position FROM {table_name} ORDER BY studyId, position").fetchall()
     assert rows == [("STUDY_A", "EUR", "1_110_A_G", 110), ("STUDY_B", "AFR", "1_120_A_G", 120)]
@@ -1081,7 +1080,6 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
     ).hexdigest()
 
     with duckdb.connect() as con:
-        validate_summary_statistics_inputs(con, prepared)
         staged_variants = create_regional_variants_table(con, prepared, regions)
         stats_table, loci_table = build_regional_output_tables(con, prepared, regions, staged_variants)
         stats_rows = con.execute(
@@ -1171,26 +1169,55 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
     ]
 
 
-def test_summary_validation_rejects_duplicate_variants(tmp_path: Path) -> None:
+def test_duplicate_variants_are_silently_dropped_from_eaf_check(tmp_path: Path) -> None:
+    # Both copies of 1_110_A_G are dropped; only 1_120_A_G survives deduplication.
+    # EAF is present on the surviving row so the study must not appear as missing.
     path = _write_sumstats_dataset_with_rows(
         tmp_path / "duplicate.sumstats.parquet",
         study_id="STUDY_A",
-        rows=[("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01), ("1_110_A_G", 110, 0.2, -7, 1.0, 0.2, 0.01)],
+        rows=[
+            ("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01),
+            ("1_110_A_G", 110, 0.2, -7, 1.0, 0.2, 0.01),
+            ("1_120_A_G", 120, 0.1, -8, 1.0, 0.3, 0.01),
+        ],
     )
     prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
-    with duckdb.connect() as con, pytest.raises(ValueError, match="duplicate variantId"):
-        validate_summary_statistics_inputs(con, prepared)
+    assert _studies_with_missing_eaf(prepared) == []
 
 
-def test_summary_validation_rejects_all_null_eaf(tmp_path: Path) -> None:
+def test_duplicate_variants_are_excluded_from_staged_variants(tmp_path: Path) -> None:
+    # 1_110_A_G appears twice for STUDY_A; both copies must be dropped entirely.
+    locus = _write_locus_breaker_dataset_with_loci(tmp_path / "a.locus.parquet", study_id="STUDY_A", loci=[("a", 100, 200)])
+    sumstats = _write_sumstats_dataset_with_rows(
+        tmp_path / "a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_110_A_G", 110, 0.1, -8, 1.0, 0.2, 0.01),
+            ("1_110_A_G", 110, 0.2, -7, 1.0, 0.2, 0.01),
+            ("1_150_C_T", 150, 0.1, -9, 1.0, 0.3, 0.01),
+        ],
+    )
+    locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b", 100, 200)])
+    sumstats_b = _write_sumstats_dataset_with_rows(tmp_path / "b.sumstats.parquet", study_id="STUDY_B", rows=[("1_130_A_G", 130, 0.1, -8, 1.0, 0.2, 0.01)])
+    prepared = (
+        CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus, summary_statistics_path=sumstats),
+        CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=locus_b, summary_statistics_path=sumstats_b),
+    )
+    regions = [CanonicalRegion(chromosome="1", region_start=100, region_end=200, quality_controls=(), input_loci=(SourceLocus("STUDY_A", "a", "EUR", "1", 100, 200, 150), SourceLocus("STUDY_B", "b", "AFR", "1", 100, 200, 130)))]
+    with duckdb.connect() as con:
+        table = create_regional_variants_table(con, prepared, regions)
+        rows = con.execute(f"SELECT studyId, variantId FROM {table} ORDER BY studyId, variantId").fetchall()
+    assert rows == [("STUDY_A", "1_150_C_T"), ("STUDY_B", "1_130_A_G")]
+
+
+def test_studies_with_missing_eaf_detects_null_eaf(tmp_path: Path) -> None:
     path = tmp_path / "null-eaf.sumstats.parquet"
     with duckdb.connect() as con:
         con.execute(
             f"COPY (SELECT 'STUDY_A'::VARCHAR AS studyId, '1_110_A_G'::VARCHAR AS variantId, '1'::VARCHAR AS chromosome, 110::INTEGER AS position, 1.0::FLOAT AS pValueMantissa, -8::INTEGER AS pValueExponent, NULL::FLOAT AS effectAlleleFrequencyFromSource, 0.1::DOUBLE AS beta, 0.01::DOUBLE AS standardError) TO '{path}' (FORMAT PARQUET)"
         )
     prepared = (CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=path, summary_statistics_path=path),)
-    with duckdb.connect() as con, pytest.raises(ValueError, match="incomplete effectAlleleFrequencyFromSource"):
-        validate_summary_statistics_inputs(con, prepared)
+    assert _studies_with_missing_eaf(prepared) == ["STUDY_A"]
 
 
 def test_collect_canonical_regions_materializes_all_inputs_for_single_ancestry_boundary(tmp_path: Path) -> None:
@@ -1290,7 +1317,6 @@ def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_inter
     ]
 
     with duckdb.connect() as con:
-        validate_summary_statistics_inputs(con, prepared)
         staged = create_regional_variants_table(con, prepared, regions)
         stats_table, loci_table = build_regional_output_tables(con, prepared, regions, staged)
         stats = con.execute(
@@ -1345,7 +1371,6 @@ def test_build_regional_output_tables_forwards_region_level_quality_controls_to_
     ]
 
     with duckdb.connect() as con:
-        validate_summary_statistics_inputs(con, prepared)
         staged = create_regional_variants_table(con, prepared, regions)
         stats_table, _loci_table = build_regional_output_tables(con, prepared, regions, staged)
         component_qc = con.execute(f"SELECT list_transform(components, item -> item.qualityControls) FROM {stats_table}").fetchone()[0]
