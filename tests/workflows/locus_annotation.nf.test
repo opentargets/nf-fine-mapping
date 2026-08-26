@@ -65,7 +65,7 @@ nextflow_workflow {
                                 sampleSize: 200,
                             ],
                         ],
-                        collected_locus_path: file("${projectDir}/testdata/output/locus_breaker_clumped_study_locus/GCST90278661.parquet"),
+                        collected_locus_path: file("${projectDir}/testdata/sumstats/GCST90018748/GCST90018748.parquet"),
                     ],
                 )
                 """
@@ -81,7 +81,7 @@ nextflow_workflow {
                 { assert succeededTasks.count { task -> task.startsWith("LOCUS_ANNOTATION:HAILING_DUCKS_LD_ANNOTATION") } == 2 },
                 { assert workflow.out.ch_locus_annotation.size() == 2 },
                 { assert workflow.out.ch_locus_annotation[0].runId == "RUN_A" },
-                { assert workflow.out.ch_locus_annotation.collect { r -> r.fine_mapping_locus_set_path.toString().tokenize('/')[-1] }.sort() == ["GCST90278661.parquet", "chr1.parquet"] },
+                { assert workflow.out.ch_locus_annotation.collect { r -> r.fine_mapping_locus_set_path.toString().tokenize('/')[-1] }.sort() == ["GCST90018748.parquet", "chr1.parquet"] },
                 { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().endsWith("multi_ancestry_pairwise_ld.parquet") } },
                 { assert workflow.out.ch_locus_annotation.every { r -> r.multi_ancestry_pairwise_ld_path.toString().contains("RUN_A_") } },
                 { assert workflow.out.ch_locus_annotation.every { r -> r.stats_path.toString().endsWith("stats.jsonl") } },

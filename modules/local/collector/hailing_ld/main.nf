@@ -85,11 +85,17 @@ process HAILING_DUCKS_LD_ANNOTATION {
     stub:
     def locus_set_id = fine_mapping_locus_set_path.baseName
     def prefix = task.ext.prefix ? "${task.ext.prefix}_${locus_set_id}" : "${runId}_${locus_set_id}"
+    def emit_status = params.ld_pair_stats_stub_emit ?: false
+    def invalid_ids = (params.ld_pair_stats_stub_empty_locus_set_ids ?: []).collect { it.toString() }
+    def is_invalid = emit_status && (invalid_ids.isEmpty() || invalid_ids.contains(locus_set_id))
     """
     mkdir -p fine_mapping_locus_sets
     mkdir -p hailing_ducks_ld_annotation/${prefix}
-    touch fine_mapping_locus_sets/${fine_mapping_locus_set_path.getName()}
-    touch hailing_ducks_ld_annotation/${prefix}/multi_ancestry_pairwise_ld.parquet
     touch hailing_ducks_ld_annotation/${prefix}/stats.jsonl
+
+    if [[ "${is_invalid}" != "true" ]]; then
+        touch fine_mapping_locus_sets/${fine_mapping_locus_set_path.getName()}
+        touch hailing_ducks_ld_annotation/${prefix}/multi_ancestry_pairwise_ld.parquet
+    fi
     """
 }

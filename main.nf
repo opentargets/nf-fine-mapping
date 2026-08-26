@@ -394,73 +394,71 @@ workflow {
 
 
 output {
-    // Files already live inside a named subdir in the work dir — using output_dir
-    // as the base lets Nextflow append that subdir without duplicating it.
+    // workflow.output.dir is set to params.output_dir in nextflow.config;
+    // all paths here are relative to that base.
     manifest_validation_status {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     loci {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     multisusie_results {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     susiex_results {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     sushie_results {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     pipeline_versions {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
-    // Status files live under status/ in the work dir; stage-level subdirs
-    // (locus_breaker/, locus_collection/, locus_annotation/) would double it.
     locus_breaker_status {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     locus_collection_status {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
     locus_annotation_status {
-        path "${params.output_dir}"
+        path '.'
         mode 'copy'
     }
-    // Files from COLLECT_CANONICAL_REGIONS: locus parquets live inside
-    // fine_mapping_locus_sets/ — collected_loci/ becomes the correct base.
+    // COLLECT_CANONICAL_REGIONS writes locus parquets under fine_mapping_locus_sets/;
+    // publishing to collected_loci/ makes the final path collected_loci/fine_mapping_locus_sets/*.
     full_overlap_loci {
-        path "${params.output_dir}/collected_loci"
+        path 'collected_loci'
         mode 'copy'
     }
     partial_overlap_loci {
-        path "${params.output_dir}/collected_loci"
+        path 'collected_loci'
         mode 'copy'
     }
     non_overlap_loci {
-        path "${params.output_dir}/collected_loci"
+        path 'collected_loci'
         mode 'copy'
     }
-    // Stats are flat files (stats.parquet, stats.json) — no subdir in work dir.
+    // stats.parquet / stats.json are flat files — collected_loci/stats/ is the target.
     collect_loci_stats {
-        path "${params.output_dir}/collected_loci/stats"
+        path 'collected_loci/stats'
         mode 'copy'
     }
-    // Hailing Ducks outputs: fine_mapping_locus_sets/ and hailing_ducks_ld_annotation/
-    // are already meaningful subdirs; locus_annotation/ is the correct base.
+    // HAILING_DUCKS_LD_ANNOTATION writes fine_mapping_locus_sets/ and
+    // hailing_ducks_ld_annotation/ — locus_annotation/ is the correct base.
     fine_mapping_locus_sets {
-        path "${params.output_dir}/locus_annotation"
+        path 'locus_annotation'
         mode 'copy'
     }
     ld_pair_stats {
-        path "${params.output_dir}/locus_annotation"
+        path 'locus_annotation'
         mode 'copy'
     }
 }
