@@ -7,12 +7,15 @@ process COLLECT_CANONICAL_REGIONS {
     label "collector"
     label "locus_collection"
 
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'status/*.jsonl'
+
     input:
     tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)
 
     output:
     loci = tuple(runId, metas, file("fine_mapping_locus_sets", type: 'dir'))
     stats = tuple(runId, metas, file("stats.parquet"), file("stats.json"))
+    status = file("status/*.jsonl", optional: true)
 
     topic:
     tuple("${task.process}", "collector", "1.1.0") >> "versions"
@@ -22,11 +25,15 @@ process COLLECT_CANONICAL_REGIONS {
     def lb_args = locus_breaker_paths.collect { "--locus_breaker ${it}" }.join(' ')
     def ancestry_args = ancestries.collect { "--ancestry '${it}'" }.join(' ')
     def ss_args = summary_statistics_paths.collect { "--summary_statistics ${it}" }.join(' ')
+    def logical_path = "collected_loci/fine_mapping_locus_sets/${runId}"
+    def safe_logical_path = logical_path.replaceAll(/[^A-Za-z0-9._-]+/, "__")
+    def status_filename = "${runId}--${safe_logical_path}.jsonl"
     """
     export DUCKDB_TMPDIR="\$PWD/duckdb_tmp"
     export TMPDIR="\$DUCKDB_TMPDIR"
     mkdir -p "\$DUCKDB_TMPDIR"
     mkdir -p fine_mapping_locus_sets
+    mkdir -p status
 
     collector collect_canonical_regions \\
         --run_id '${runId}' \\
@@ -39,11 +46,25 @@ process COLLECT_CANONICAL_REGIONS {
         --canonical_region_min_maf '${params.canonical_region_min_maf}' \\
         --canonical_region_max_region_span_bp ${params.canonical_region_max_region_span_bp} \\
         ${args}
+
+    collector empty_status \\
+        --run_id '${runId}' \\
+        --path fine_mapping_locus_sets \\
+        --logical_path '${logical_path}' \\
+        --validation_stage 'LOCUS_COLLECTION' \\
+        > status/${status_filename}
+
+    if [[ -s status/${status_filename} ]]; then
+        rm -f fine_mapping_locus_sets/*.parquet
+    else
+        rm -f status/${status_filename}
+    fi
     """
 
     stub:
     """
     mkdir -p fine_mapping_locus_sets
+    mkdir -p status
     touch fine_mapping_locus_sets/set-a.parquet
     touch fine_mapping_locus_sets/set-b.parquet
     touch stats.parquet stats.json

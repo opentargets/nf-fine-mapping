@@ -26,8 +26,8 @@ process HAILING_DUCKS_LD_ANNOTATION {
         runId,
         metas,
         fine_mapping_locus_set_id,
-        file("fine_mapping_locus_sets/*.parquet"),
-        file("hailing_ducks_ld_annotation/*/multi_ancestry_pairwise_ld.parquet"),
+        file("fine_mapping_locus_sets/*.parquet", optional: true),
+        file("hailing_ducks_ld_annotation/*/multi_ancestry_pairwise_ld.parquet", optional: true),
         file("hailing_ducks_ld_annotation/*/stats.jsonl"),
     )
     stats = tuple(
@@ -71,6 +71,15 @@ process HAILING_DUCKS_LD_ANNOTATION {
         --max_cached_blocks ${params.hailing_ducks_max_cached_blocks} \\
         ${registry_args} \\
         ${args}
+
+    check_result=\$(collector check_ld_pair_stats \\
+        --run_id '${runId}' \\
+        --fine_mapping_locus_set_id '${fine_mapping_locus_set_id}' \\
+        --path hailing_ducks_ld_annotation/${prefix}/stats.jsonl)
+    if [[ -n "\$check_result" ]]; then
+        rm -rf fine_mapping_locus_sets
+        rm -f hailing_ducks_ld_annotation/${prefix}/multi_ancestry_pairwise_ld.parquet
+    fi
     """
 
     stub:

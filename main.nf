@@ -226,6 +226,7 @@ def filter_rows_by_invalid_run_ids(rows, invalid_run_ids, extract_run_id) {
 
 process MANIFEST_VALIDATION_REPORT {
     tag "${runId}"
+    container 'ubuntu:22.04'
 
     input:
     tuple(runId: String, status_records: List<String>)
@@ -252,6 +253,8 @@ process MANIFEST_VALIDATION_REPORT {
 
 
 process PIPELINE_VERSIONS_REPORT {
+    container 'ubuntu:22.04'
+
     input:
     version_records: List<String>
 
@@ -326,53 +329,42 @@ workflow {
 
     locus_breaker_out = LOCUS_BREAKER(supported_manifest_ch)
     locus_breaker_status = locus_breaker_out.ch_status
-    locus_invalid_run_ids = invalid_run_ids_from_status_channels([manifest_validation_status, locus_breaker_status])
     locus_out = filter_rows_by_invalid_run_ids(
         locus_breaker_out.ch_locus,
-        locus_invalid_run_ids,
+        manifest_invalid_run_ids,
         { locus_row -> locus_row.meta.runId },
     )
 
     locus_collection_out = LOCUS_COLLECTION(locus_out)
     locus_collection_status = locus_collection_out.ch_locus_collection_status
-    collection_invalid_run_ids = invalid_run_ids_from_status_channels([
-        manifest_validation_status,
-        locus_breaker_status,
-        locus_collection_status,
-    ])
     published_locus_out = filter_rows_by_invalid_run_ids(
         locus_out,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { locus_row -> locus_row.meta.runId },
     )
     full_overlap_loci = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_full_overlap_loci,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     partial_overlap_loci = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_partial_overlap_loci,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     non_overlap_loci = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_non_overlap_loci,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     collect_loci_stats = filter_rows_by_invalid_run_ids(
         locus_collection_out.ch_collect_loci_stats,
-        collection_invalid_run_ids,
+        manifest_invalid_run_ids,
         { collected_locus_row -> collected_locus_row.runId },
     )
     locus_annotation_out = LOCUS_ANNOTATION(full_overlap_loci)
     locus_annotation_status = locus_annotation_out.ch_ld_pair_stats_status
-    annotation_invalid_locus_set_ids = invalid_fine_mapping_locus_set_ids_from_status_channels([locus_annotation_status])
-    locus_annotation = filter_rows_by_invalid_run_ids(
-        locus_annotation_out.ch_locus_annotation,
-        annotation_invalid_locus_set_ids,
-        { annotation_row -> annotation_row.fine_mapping_locus_set_path.toString().tokenize('/')[-1].replaceFirst(/\.parquet$/, '') },
-    )
+    locus_annotation = locus_annotation_out.ch_locus_annotation
     fine_mapping_locus_sets = locus_annotation.map { annotation_row -> annotation_row.fine_mapping_locus_set_path }
     ld_pair_stats = locus_annotation.map { annotation_row -> annotation_row.stats_path }
     fine_mapping_out = FINE_MAPPING(locus_annotation)
@@ -407,64 +399,73 @@ workflow {
 
 
 output {
+    // Files already live inside a named subdir in the work dir — using output_dir
+    // as the base lets Nextflow append that subdir without duplicating it.
     manifest_validation_status {
-        path 'validation/manifest'
+        path "${params.output_dir}"
         mode 'copy'
     }
     loci {
-        path 'locus_breaker_clumped_study_locus'
-        mode 'copy'
-    }
-    full_overlap_loci {
-        path 'collected_loci/full_overlaps'
-        mode 'copy'
-    }
-    partial_overlap_loci {
-        path 'collected_loci/partial_overlaps'
-        mode 'copy'
-    }
-    non_overlap_loci {
-        path 'collected_loci/non_overlaps'
-        mode 'copy'
-    }
-    collect_loci_stats {
-        path 'collected_loci/stats'
-        mode 'copy'
-    }
-    locus_breaker_status {
-        path 'status/locus_breaker'
-        mode 'copy'
-    }
-    locus_collection_status {
-        path 'status/locus_collection'
-        mode 'copy'
-    }
-    locus_annotation_status {
-        path 'status/locus_annotation'
-        mode 'copy'
-    }
-    fine_mapping_locus_sets {
-        path 'locus_annotation'
-        mode 'copy'
-    }
-    ld_pair_stats {
-        path 'locus_annotation/stats'
+        path "${params.output_dir}"
         mode 'copy'
     }
     multisusie_results {
-        path 'multisusie'
+        path "${params.output_dir}"
         mode 'copy'
     }
     susiex_results {
-        path 'susiex'
+        path "${params.output_dir}"
         mode 'copy'
     }
     sushie_results {
-        path 'sushie'
+        path "${params.output_dir}"
         mode 'copy'
     }
     pipeline_versions {
-        path 'pipeline_info'
+        path "${params.output_dir}"
+        mode 'copy'
+    }
+    // Status files live under status/ in the work dir; stage-level subdirs
+    // (locus_breaker/, locus_collection/, locus_annotation/) would double it.
+    locus_breaker_status {
+        path "${params.output_dir}"
+        mode 'copy'
+    }
+    locus_collection_status {
+        path "${params.output_dir}"
+        mode 'copy'
+    }
+    locus_annotation_status {
+        path "${params.output_dir}"
+        mode 'copy'
+    }
+    // Files from COLLECT_CANONICAL_REGIONS: locus parquets live inside
+    // fine_mapping_locus_sets/ — collected_loci/ becomes the correct base.
+    full_overlap_loci {
+        path "${params.output_dir}/collected_loci"
+        mode 'copy'
+    }
+    partial_overlap_loci {
+        path "${params.output_dir}/collected_loci"
+        mode 'copy'
+    }
+    non_overlap_loci {
+        path "${params.output_dir}/collected_loci"
+        mode 'copy'
+    }
+    // Stats are flat files (stats.parquet, stats.json) — no subdir in work dir.
+    collect_loci_stats {
+        path "${params.output_dir}/collected_loci/stats"
+        mode 'copy'
+    }
+    // Hailing Ducks outputs: fine_mapping_locus_sets/ and hailing_ducks_ld_annotation/
+    // are already meaningful subdirs; locus_annotation/ is the correct base.
+    fine_mapping_locus_sets {
+        path "${params.output_dir}/locus_annotation"
+        mode 'copy'
+    }
+    ld_pair_stats {
+        path "${params.output_dir}/locus_annotation"
         mode 'copy'
     }
 }

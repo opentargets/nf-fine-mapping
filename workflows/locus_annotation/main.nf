@@ -61,16 +61,20 @@ workflow LOCUS_ANNOTATION {
     }
     ch_ld_pair_stats_status = COLLECTOR_CHECK_LD_PAIR_STATS(ch_ld_annotation.stats)
 
-    ch_locus_annotation = ch_ld_annotation.annotation.map { runId, metas, fine_mapping_locus_set_id, fine_mapping_locus_set_path, multi_ancestry_pairwise_ld_path, stats_path ->
-        record(
-            runId: runId,
-            fine_mapping_locus_set_id: fine_mapping_locus_set_id,
-            metas: metas,
-            fine_mapping_locus_set_path: fine_mapping_locus_set_path,
-            multi_ancestry_pairwise_ld_path: multi_ancestry_pairwise_ld_path,
-            stats_path: stats_path,
-        )
-    }
+    ch_locus_annotation = ch_ld_annotation.annotation
+        .filter { runId, metas, fine_mapping_locus_set_id, fine_mapping_locus_set_path, multi_ancestry_pairwise_ld_path, stats_path ->
+            fine_mapping_locus_set_path
+        }
+        .map { runId, metas, fine_mapping_locus_set_id, fine_mapping_locus_set_path, multi_ancestry_pairwise_ld_path, stats_path ->
+            record(
+                runId: runId,
+                fine_mapping_locus_set_id: fine_mapping_locus_set_id,
+                metas: metas,
+                fine_mapping_locus_set_path: fine_mapping_locus_set_path,
+                multi_ancestry_pairwise_ld_path: multi_ancestry_pairwise_ld_path,
+                stats_path: stats_path,
+            )
+        }
 
     emit:
     ch_locus_annotation = ch_locus_annotation

@@ -29,39 +29,34 @@ workflow LOCUS_BREAKER {
 
     locus_breaker_method = params.locus_breaker_method.toString().toLowerCase()
     if (locus_breaker_method == 'collector') {
-        ch_locus = COLLECTOR_LOCUS_BREAKER(ch_input)
-        ch_empty_status_input = ch_locus.map { r ->
-            record(
-                runId: r.meta.runId,
-                logical_path: "locus_breaker_clumped_study_locus/${r.meta.studyId}.parquet",
-                validation_stage: "LOCUS_BREAKER",
-                dataset_path: r.study_locus_path,
-            )
-        }
+        ch_locus_out = COLLECTOR_LOCUS_BREAKER(ch_input)
+        ch_locus = ch_locus_out.filter { r -> r.study_locus_path }
+        ch_status = ch_locus_out
+            .map { r -> r.status_path }
+            .filter { path -> path }
     } else if (locus_breaker_method == 'gentropy') {
-        ch_locus = GENTROPY_LOCUS_BREAKER_CLUMPING(ch_input)
-        ch_empty_status_input = ch_locus.map { r ->
-            record(
-                runId: r.meta.runId,
-                logical_path: "gentropy_locus_breaker_clumped_study_locus/${r.meta.studyId}",
-                validation_stage: "LOCUS_BREAKER",
-                dataset_path: r.study_locus_path,
-            )
-        }
+        ch_locus_out = GENTROPY_LOCUS_BREAKER_CLUMPING(ch_input)
+        ch_locus = ch_locus_out
+        ch_empty_status_input = ch_locus_out
+            .map { r ->
+                record(
+                    runId: r.meta.runId,
+                    logical_path: "gentropy_locus_breaker_clumped_study_locus/${r.meta.studyId}",
+                    validation_stage: "LOCUS_BREAKER",
+                    dataset_path: r.study_locus_path,
+                )
+            }
+            .unique { row -> "${row.runId}\t${row.logical_path}" }
+            .map { row ->
+                tuple(row.runId, row.logical_path, row.validation_stage, row.dataset_path)
+            }
+        ch_status = LOCUS_BREAKER_EMPTY_STATUS(ch_empty_status_input)
+            .filter { status_path -> status_path != null }
     } else {
         error "Unsupported locus_breaker_method '${params.locus_breaker_method}'. Expected 'collector' or 'gentropy'."
     }
 
-    ch_empty_status_input = ch_empty_status_input
-        .unique { row -> "${row.runId}\t${row.logical_path}" }
-        .map { row ->
-            tuple(row.runId, row.logical_path, row.validation_stage, row.dataset_path)
-        }
-
-    ch_empty_status = LOCUS_BREAKER_EMPTY_STATUS(ch_empty_status_input)
-        .filter { status_path -> status_path != null }
-
     emit:
     ch_locus = ch_locus
-    ch_status = ch_empty_status
+    ch_status = ch_status
 }

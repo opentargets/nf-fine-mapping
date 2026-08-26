@@ -2,7 +2,6 @@ nextflow.enable.dsl = 2
 nextflow.enable.types = true
 
 include { COLLECT_CANONICAL_REGIONS } from '../../modules/local/collector/collect_canonical_regions/main.nf'
-include { COLLECTOR_EMPTY_STATUS } from '../../modules/local/collector/empty_status/main.nf'
 
 
 workflow LOCUS_COLLECTION {
@@ -28,16 +27,6 @@ workflow LOCUS_COLLECTION {
         }
 
     collected = COLLECT_CANONICAL_REGIONS(ch_input)
-    ch_collection_status_input = collected.loci.map { runId, metas, locus_dir ->
-        tuple(
-            runId,
-            "collected_loci/fine_mapping_locus_sets/${runId}",
-            "LOCUS_COLLECTION",
-            locus_dir,
-        )
-    }
-    ch_collection_status = COLLECTOR_EMPTY_STATUS(ch_collection_status_input)
-        .filter { status_path -> status_path != null }
 
     emit:
     ch_full_overlap_loci = collected.loci.flatMap { runId, metas, locus_dir ->
@@ -55,5 +44,5 @@ workflow LOCUS_COLLECTION {
             stats_parquet_path: stats_parquet,
         )
     }
-    ch_locus_collection_status = ch_collection_status
+    ch_locus_collection_status = collected.status
 }
