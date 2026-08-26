@@ -1198,12 +1198,22 @@ def test_duplicate_variants_are_excluded_from_staged_variants(tmp_path: Path) ->
         ],
     )
     locus_b = _write_locus_breaker_dataset_with_loci(tmp_path / "b.locus.parquet", study_id="STUDY_B", loci=[("b", 100, 200)])
-    sumstats_b = _write_sumstats_dataset_with_rows(tmp_path / "b.sumstats.parquet", study_id="STUDY_B", rows=[("1_130_A_G", 130, 0.1, -8, 1.0, 0.2, 0.01)])
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "b.sumstats.parquet", study_id="STUDY_B", rows=[("1_130_A_G", 130, 0.1, -8, 1.0, 0.2, 0.01)]
+    )
     prepared = (
         CanonicalRegionInput(study_id="STUDY_A", ancestry="EUR", locus_breaker_path=locus, summary_statistics_path=sumstats),
         CanonicalRegionInput(study_id="STUDY_B", ancestry="AFR", locus_breaker_path=locus_b, summary_statistics_path=sumstats_b),
     )
-    regions = [CanonicalRegion(chromosome="1", region_start=100, region_end=200, quality_controls=(), input_loci=(SourceLocus("STUDY_A", "a", "EUR", "1", 100, 200, 150), SourceLocus("STUDY_B", "b", "AFR", "1", 100, 200, 130)))]
+    regions = [
+        CanonicalRegion(
+            chromosome="1",
+            region_start=100,
+            region_end=200,
+            quality_controls=(),
+            input_loci=(SourceLocus("STUDY_A", "a", "EUR", "1", 100, 200, 150), SourceLocus("STUDY_B", "b", "AFR", "1", 100, 200, 130)),
+        )
+    ]
     with duckdb.connect() as con:
         table = create_regional_variants_table(con, prepared, regions)
         rows = con.execute(f"SELECT studyId, variantId FROM {table} ORDER BY studyId, variantId").fetchall()

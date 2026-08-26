@@ -144,8 +144,6 @@ class CanonicalRegion:
         return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
-
-
 def create_regional_variants_table(
     con: duckdb.DuckDBPyConnection,
     prepared_inputs: tuple[CanonicalRegionInput, ...],
