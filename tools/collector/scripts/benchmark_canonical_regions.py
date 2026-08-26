@@ -9,6 +9,7 @@ per-locus reader and once with the optimized set-based reader.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import tempfile
 import time
@@ -75,6 +76,7 @@ def _legacy_read_source_loci(prepared_inputs: tuple[CanonicalRegionInput, ...], 
 
 
 def _make_locus_breaker_inputs(summary_paths: list[Path], output_dir: Path, loci_per_study: int) -> list[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
     output_paths = []
     for index, summary_path in enumerate(summary_paths):
         output_path = output_dir / f"study_{index}.locus.parquet"
@@ -130,52 +132,78 @@ def main() -> None:
     parser.add_argument("--loci-per-study", type=int, default=60)
     args = parser.parse_args()
 
-    summary_paths = sorted((args.repo_root / "testdata" / "sumstats").glob("*/**/*.parquet"))[:3]
-    if len(summary_paths) != 3:
-        raise SystemExit("expected at least three testdata summary-statistics Parquet files")
+    sumstats_root = args.repo_root / "testdata" / "sumstats"
+    with (args.repo_root / "testdata" / "manifest.full.tsv").open(newline="") as manifest_file:
+        manifest_rows = list(csv.DictReader(manifest_file, delimiter="\t"))
+    runs: dict[str, list[dict[str, str]]] = {}
+    for row in manifest_rows:
+        runs.setdefault(row["runId"], []).append(row)
+    if len(runs) != 4 or any(len(rows) != 3 for rows in runs.values()):
+        raise SystemExit("expected four three-study runs in testdata/manifest.full.tsv")
 
     with tempfile.TemporaryDirectory(prefix="canonical-benchmark-") as temporary_dir:
         root = Path(temporary_dir)
-        input_dir = root / "inputs"
-        input_dir.mkdir()
-        locus_paths = _make_locus_breaker_inputs(summary_paths, input_dir, args.loci_per_study)
-        ancestries = ("NFE", "EAS", "AFR")
+        case_results = []
+        for case_index, (run_id, rows) in enumerate(runs.items(), start=1):
+            summary_paths = [next((sumstats_root / row["studyId"]).glob("*.parquet")) for row in rows]
+            ancestries = tuple(row["majorAncestry"] for row in rows)
+            input_dir = root / f"case_{case_index}" / "inputs"
+            locus_paths = _make_locus_breaker_inputs(summary_paths, input_dir, args.loci_per_study)
 
-        def config(label: str) -> CollectCanonicalRegionsConfig:
-            return CollectCanonicalRegionsConfig(
-                run_id="benchmark",
-                locus_breaker_paths=tuple(locus_paths),
-                ancestries=ancestries,
-                summary_statistics_paths=tuple(summary_paths),
-                fine_mapping_locus_set_output_dir=root / label / "locus_sets",
-                stats_parquet_output=root / label / "stats.parquet",
-                stats_json_output=root / label / "stats.json",
-            )
+            def config(
+                label: str,
+                *,
+                case_run_id: str = run_id,
+                case_locus_paths: list[Path] = locus_paths,
+                case_ancestries: tuple[str, ...] = ancestries,
+                case_summary_paths: list[Path] = summary_paths,
+                case_number: int = case_index,
+            ) -> CollectCanonicalRegionsConfig:
+                return CollectCanonicalRegionsConfig(
+                    run_id=case_run_id,
+                    locus_breaker_paths=tuple(case_locus_paths),
+                    ancestries=case_ancestries,
+                    summary_statistics_paths=tuple(case_summary_paths),
+                    fine_mapping_locus_set_output_dir=root / f"case_{case_number}" / label / "locus_sets",
+                    stats_parquet_output=root / f"case_{case_number}" / label / "stats.parquet",
+                    stats_json_output=root / f"case_{case_number}" / label / "stats.json",
+                )
 
-        baseline_seconds, baseline_outputs = _run(config("baseline"), _legacy_read_source_loci)
-        optimized_seconds, optimized_outputs = _run(config("optimized"), canonical_regions._read_source_loci)
+            baseline_seconds, baseline_outputs = _run(config("baseline"), _legacy_read_source_loci)
+            optimized_seconds, optimized_outputs = _run(config("optimized"), canonical_regions._read_source_loci)
+            if baseline_outputs != optimized_outputs:
+                raise SystemExit(f"FAIL: logical outputs differ for {run_id}")
 
-        if baseline_outputs != optimized_outputs:
-            raise SystemExit("FAIL: logical outputs differ between pre- and post-optimization runs")
-
-        baseline_stats = json.loads((root / "baseline" / "stats.json").read_text())
-        optimized_stats = json.loads((root / "optimized" / "stats.json").read_text())
-        baseline_stats.pop("timingsSeconds", None)
-        optimized_stats.pop("timingsSeconds", None)
-        if baseline_stats != optimized_stats:
-            raise SystemExit("FAIL: stats JSON differs apart from timingsSeconds")
-
-        print(
-            json.dumps(
+            baseline_stats = json.loads(config("baseline").stats_json_output.read_text())
+            optimized_stats = json.loads(config("optimized").stats_json_output.read_text())
+            baseline_stats.pop("timingsSeconds", None)
+            optimized_stats.pop("timingsSeconds", None)
+            if baseline_stats != optimized_stats:
+                raise SystemExit(f"FAIL: stats JSON differs apart from timingsSeconds for {run_id}")
+            case_results.append(
                 {
-                    "summaryStatistics": [str(path.relative_to(args.repo_root)) for path in summary_paths],
-                    "lociPerStudy": args.loci_per_study,
+                    "runId": run_id,
+                    "studies": [row["studyId"] for row in rows],
                     "baselineSeconds": round(baseline_seconds, 3),
                     "optimizedSeconds": round(optimized_seconds, 3),
                     "speedup": round(baseline_seconds / optimized_seconds, 2),
                     "logicalOutputsEqual": True,
                     "statsEqualApartFromTimings": True,
                     "nOutputFiles": len(optimized_outputs) - 1,
+                }
+            )
+
+        baseline_total = sum(result["baselineSeconds"] for result in case_results)
+        optimized_total = sum(result["optimizedSeconds"] for result in case_results)
+        print(
+            json.dumps(
+                {
+                    "cases": case_results,
+                    "lociPerStudy": args.loci_per_study,
+                    "baselineSecondsTotal": round(baseline_total, 3),
+                    "optimizedSecondsTotal": round(optimized_total, 3),
+                    "speedupTotal": round(baseline_total / optimized_total, 2),
+                    "allCasesPassed": True,
                 },
                 indent=2,
             )
