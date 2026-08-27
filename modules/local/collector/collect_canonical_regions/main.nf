@@ -8,6 +8,7 @@ process COLLECT_CANONICAL_REGIONS {
     label "locus_collection"
 
     publishDir "${params.output_dir}", mode: 'copy', pattern: 'status/*.jsonl'
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'stats.*', saveAs: { filename -> "collected_loci/stats/${filename}" }
 
     input:
     tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)
