@@ -8,7 +8,11 @@ process COLLECT_CANONICAL_REGIONS {
     label "locus_collection"
 
     publishDir "${params.output_dir}", mode: 'copy', pattern: 'status/*.jsonl'
-    publishDir "${params.output_dir}", mode: 'copy', pattern: 'stats.*', saveAs: { filename -> "collected_loci/stats/${filename}" }
+    publishDir "${params.output_dir}", mode: 'copy', pattern: 'stats.*', saveAs: { filename ->
+        def study_set = metas.collect { meta -> meta.studyId.toString() }.sort().join('__')
+        def safe_study_set = study_set.replaceAll(/[^A-Za-z0-9._-]+/, "__")
+        "collected_loci/stats/${runId}--${safe_study_set}--${filename}"
+    }
 
     input:
     tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)
