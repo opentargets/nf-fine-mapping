@@ -151,8 +151,8 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
 def test_collect_canonical_regions_publishes_stats_artifacts():
     module = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
 
-    assert 'publishDir "${params.output_dir}", mode: \'copy\', pattern: \'stats.*\'' in module
-    assert '"collected_loci/stats/${filename}"' in module
+    assert "publishDir \"${params.output_dir}\", mode: 'copy', pattern: 'stats.*'" in module
+    assert '"collected_loci/stats/${runId}--${safe_study_set}--${filename}"' in module
 
 
 def test_main_workflow_filters_invalid_runs_from_manifest_locus_and_collection_channels():
