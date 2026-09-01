@@ -86,8 +86,8 @@ class CollectCanonicalRegionsConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_parallel_arrays(self) -> CollectCanonicalRegionsConfig:
-        if len(self.locus_breaker_paths) < 2:
-            raise ValueError("At least two input triples are required")
+        if len(self.locus_breaker_paths) < 1:
+            raise ValueError("At least one input triple is required")
         expected_length = len(self.locus_breaker_paths)
         if len(self.ancestries) != expected_length or len(self.summary_statistics_paths) != expected_length:
             raise ValueError("locus_breaker, ancestry, and summary_statistics arrays must have equal length")

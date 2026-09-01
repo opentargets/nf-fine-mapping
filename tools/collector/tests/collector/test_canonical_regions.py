@@ -6,6 +6,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from collector import app
@@ -560,7 +561,7 @@ def test_read_source_loci_selects_each_locus_lead_setwise_with_maf_and_tie_break
     ]
 
 
-def test_collect_canonical_regions_cli_rejects_fewer_than_two_input_triples(tmp_path: Path) -> None:
+def test_collect_canonical_regions_cli_accepts_a_single_input_triple(tmp_path: Path) -> None:
     locus_breaker_path = _write_locus_breaker_dataset(tmp_path / "single.locus.parquet", study_ids=["STUDY_A"])
     sumstats_path = _write_sumstats_dataset(tmp_path / "single.sumstats.parquet", study_ids=["STUDY_A"])
 
@@ -585,8 +586,23 @@ def test_collect_canonical_regions_cli_rejects_fewer_than_two_input_triples(tmp_
         ],
     )
 
-    assert result.exit_code != 0
-    assert "at least two" in result.output.lower()
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "stats" / "run-1.stat.json").exists()
+    assert (tmp_path / "stats" / "run-1.stat.parquet").exists()
+
+
+def test_collect_canonical_regions_config_rejects_zero_input_triples(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="At least one") as excinfo:
+        CollectCanonicalRegionsConfig(
+            run_id="run-1",
+            locus_breaker_paths=(),
+            ancestries=(),
+            summary_statistics_paths=(),
+            fine_mapping_locus_set_output_dir=tmp_path / "fine_mapping_locus_sets",
+            stats_parquet_output=tmp_path / "stats" / "run-1.stat.parquet",
+            stats_json_output=tmp_path / "stats" / "run-1.stat.json",
+        )
+    assert "at least one" in str(excinfo.value).lower()
 
 
 def test_collect_canonical_regions_cli_rejects_duplicate_ancestries(tmp_path: Path) -> None:
