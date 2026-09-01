@@ -870,66 +870,42 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     assert result.exit_code == 0, result.output
 
     files = sorted(output_dir.glob("*.parquet"))
-    assert len(files) == 1
-
-    # STUDY_A's published lead within the (125, 220) region is "1_140_C_T"
-    # (position 140), not its own-bounds lead "1_110_A_G": position 110 falls
-    # outside the published region once a_locus is trimmed away from the
-    # disagreement above, and every study is still cross-joined against every
-    # region regardless of sweep membership, so STUDY_A's qualifying variant
-    # inside b_locus's own region is what ends up published for it.
-    expected_study_locus_ids = {
-        "STUDY_A": hashlib.md5(b"STUDY_A|1_140_C_T", usedforsecurity=False).hexdigest(),
-        "STUDY_B": hashlib.md5(b"STUDY_B|1_125_A_C", usedforsecurity=False).hexdigest(),
-    }
-    expected_locus_set_id = hashlib.md5(
-        "|".join(sorted(expected_study_locus_ids.values())).encode(),
-        usedforsecurity=False,
-    ).hexdigest()
+    assert files == []
 
     with duckdb.connect() as con:
         rows = con.execute(
             f"""
             SELECT
                 fineMappingLocusSetId,
-                studyId,
-                studyLocusId,
-                chromosome,
                 locusStart,
                 locusEnd,
-                list_transform(locus, item -> item.variantId) AS locusVariants
-            FROM read_parquet('{files[0]}')
-            ORDER BY studyId
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                qualityControls
+            FROM read_parquet('{tmp_path / "stats" / "run-1.stat.parquet"}')
+            ORDER BY locusStart
             """
         ).fetchall()
 
     assert rows == [
         (
-            expected_locus_set_id,
-            "STUDY_A",
-            expected_study_locus_ids["STUDY_A"],
-            "1",
+            None,
             125,
             220,
-            ["1_140_C_T"],
-        ),
-        (
-            expected_locus_set_id,
-            "STUDY_B",
-            expected_study_locus_ids["STUDY_B"],
-            "1",
-            125,
-            220,
-            ["1_125_A_C", "1_130_A_G"],
+            0,
+            3,
+            0.0,
+            ["INSUFFICIENT_VARIANT_OVERLAP"],
         ),
     ]
 
     stats = json.loads(stats_json_output.read_text())
-    assert stats["nPublishedLocusSets"] == 1
-    # Two candidate regions now: a_locus's disagreement-trimmed (100, 124)
-    # and the published (125, 220).
+    assert stats["nPublishedLocusSets"] == 0
+    assert stats["nNotPromotedLocusSets"] == 2
+    assert stats["notPromotedReasons"] == {"INSUFFICIENT_VARIANT_OVERLAP": 1, "NO_VARIANTS_IN_LOCUS": 1}
     assert stats["candidateLocusSizeBp"] == {"n": 2, "mean": 60.5, "min": 25, "max": 96}
-    assert stats["publishedLocusSizeBp"] == {"n": 1, "mean": 96.0, "min": 96, "max": 96}
+    assert stats["publishedLocusSizeBp"] == {"n": 0, "mean": None, "min": None, "max": None}
 
 
 def test_collect_canonical_regions_cli_records_overlap_metrics_without_trimming_passing_outputs(tmp_path: Path) -> None:
@@ -1041,6 +1017,232 @@ def test_collect_canonical_regions_cli_records_overlap_metrics_without_trimming_
         ("STUDY_B", ["1_150_A_G"]),
         ("STUDY_C", ["1_150_A_G", "1_160_C_T"]),
     ]
+
+
+def test_collect_canonical_regions_cli_retains_below_threshold_candidate_without_publishing_it(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_a.locus.parquet",
+        study_id="STUDY_A",
+        loci=[("a_locus", 100, 220)],
+    )
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_b.locus.parquet",
+        study_id="STUDY_B",
+        loci=[("b_locus", 120, 240)],
+    )
+    locus_breaker_c = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_c.locus.parquet",
+        study_id="STUDY_C",
+        loci=[("c_locus", 130, 230)],
+    )
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_150_A_G", 150, 0.10, -8, 1.0, 0.20, 0.01),
+            ("1_160_C_T", 160, 0.20, -7, 1.0, 0.25, 0.01),
+        ],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_150_A_G", 150, 0.15, -8, 1.0, 0.30, 0.01)],
+    )
+    sumstats_c = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_c.sumstats.parquet",
+        study_id="STUDY_C",
+        rows=[
+            ("1_150_A_G", 150, 0.12, -8, 1.0, 0.35, 0.01),
+            ("1_160_C_T", 160, 0.18, -7, 1.0, 0.22, 0.01),
+        ],
+    )
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--locus_breaker",
+            str(locus_breaker_c),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--ancestry",
+            "EAS",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--summary_statistics",
+            str(sumstats_c),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(stats_json_output),
+            "--canonical_region_min_variant_overlap_proportion",
+            "0.6",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert list(output_dir.glob("*.parquet")) == []
+
+    with duckdb.connect() as con:
+        stats_rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                minimumVariantOverlapProportion,
+                qualityControls
+            FROM read_parquet('{stats_parquet_output}')
+            """
+        ).fetchall()
+
+    assert stats_rows == [(None, 1, 2, 0.5, 0.6, ["INSUFFICIENT_VARIANT_OVERLAP"])]
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nCandidateLocusSets"] == 1
+    assert stats["nPublishedLocusSets"] == 0
+    assert stats["nNotPromotedLocusSets"] == 1
+    assert stats["notPromotedReasons"] == {"INSUFFICIENT_VARIANT_OVERLAP": 1}
+
+
+def test_collect_canonical_regions_cli_materializes_only_passing_candidates_in_mixed_overlap_run(tmp_path: Path) -> None:
+    loci = {
+        "STUDY_A": [("pass_a", 100, 220), ("fail_a", 400, 520)],
+        "STUDY_B": [("pass_b", 120, 240), ("fail_b", 405, 540)],
+        "STUDY_C": [("pass_c", 130, 230), ("fail_c", 410, 530)],
+    }
+    locus_breakers = {
+        study_id: _write_locus_breaker_dataset_with_loci(tmp_path / f"{study_id}.locus.parquet", study_id=study_id, loci=study_loci)
+        for study_id, study_loci in loci.items()
+    }
+    sumstats = {
+        "STUDY_A": _write_sumstats_dataset_with_rows(
+            tmp_path / "study_a.sumstats.parquet",
+            study_id="STUDY_A",
+            rows=[
+                ("1_150_A_G", 150, 0.10, -8, 1.0, 0.20, 0.01),
+                ("1_160_C_T", 160, 0.20, -7, 1.0, 0.25, 0.01),
+                ("1_410_A_G", 410, 0.15, -8, 1.0, 0.30, 0.01),
+                ("1_420_C_T", 420, 0.18, -7, 1.0, 0.35, 0.01),
+            ],
+        ),
+        "STUDY_B": _write_sumstats_dataset_with_rows(
+            tmp_path / "study_b.sumstats.parquet",
+            study_id="STUDY_B",
+            rows=[
+                ("1_150_A_G", 150, 0.11, -8, 1.0, 0.22, 0.01),
+                ("1_410_A_G", 410, 0.16, -8, 1.0, 0.32, 0.01),
+            ],
+        ),
+        "STUDY_C": _write_sumstats_dataset_with_rows(
+            tmp_path / "study_c.sumstats.parquet",
+            study_id="STUDY_C",
+            rows=[
+                ("1_150_A_G", 150, 0.12, -8, 1.0, 0.24, 0.01),
+                ("1_160_C_T", 160, 0.22, -7, 1.0, 0.28, 0.01),
+                ("1_410_A_G", 410, 0.17, -8, 1.0, 0.34, 0.01),
+                ("1_430_G_A", 430, 0.19, -7, 1.0, 0.36, 0.01),
+            ],
+        ),
+    }
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breakers["STUDY_A"]),
+            "--locus_breaker",
+            str(locus_breakers["STUDY_B"]),
+            "--locus_breaker",
+            str(locus_breakers["STUDY_C"]),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--ancestry",
+            "EAS",
+            "--summary_statistics",
+            str(sumstats["STUDY_A"]),
+            "--summary_statistics",
+            str(sumstats["STUDY_B"]),
+            "--summary_statistics",
+            str(sumstats["STUDY_C"]),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(stats_json_output),
+            "--canonical_region_min_variant_overlap_proportion",
+            "0.5",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    files = sorted(output_dir.glob("*.parquet"))
+    assert len(files) == 1
+
+    with duckdb.connect() as con:
+        stats_rows = con.execute(
+            f"""
+            SELECT
+                locusStart,
+                fineMappingLocusSetId IS NOT NULL AS isPublished,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                qualityControls
+            FROM read_parquet('{stats_parquet_output}')
+            ORDER BY locusStart
+            """
+        ).fetchall()
+        published_rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                studyId,
+                list_transform(locus, item -> item.variantId) AS locusVariants
+            FROM read_parquet('{files[0]}')
+            ORDER BY studyId
+            """
+        ).fetchall()
+
+    assert stats_rows == [
+        (130, True, 1, 2, 0.5, []),
+        (410, False, 1, 3, 1 / 3, ["INSUFFICIENT_VARIANT_OVERLAP"]),
+    ]
+    assert published_rows == [
+        (published_rows[0][0], "STUDY_A", ["1_150_A_G", "1_160_C_T"]),
+        (published_rows[0][0], "STUDY_B", ["1_150_A_G"]),
+        (published_rows[0][0], "STUDY_C", ["1_150_A_G", "1_160_C_T"]),
+    ]
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nCandidateLocusSets"] == 2
+    assert stats["nPublishedLocusSets"] == 1
+    assert stats["nNotPromotedLocusSets"] == 1
+    assert stats["notPromotedReasons"] == {"INSUFFICIENT_VARIANT_OVERLAP": 1}
 
 
 @pytest.mark.parametrize("threshold", [0.0, 1.0])
@@ -1417,10 +1619,6 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
         "STUDY_A": hashlib.md5(b"STUDY_A|1_110_A_G", usedforsecurity=False).hexdigest(),
         "STUDY_B": hashlib.md5(b"STUDY_B|1_125_A_C", usedforsecurity=False).hexdigest(),
     }
-    expected_locus_set_id = hashlib.md5(
-        "|".join(sorted(expected_study_locus_ids.values())).encode(),
-        usedforsecurity=False,
-    ).hexdigest()
 
     with duckdb.connect() as con:
         staged_variants = create_regional_variants_table(con, prepared, regions)
@@ -1434,6 +1632,10 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
                 locusEnd,
                 nVariants,
                 nVariantsAboveMafCutoff,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                qualityControls,
                 list_transform(inputLoci, item -> item.studyLocusId) AS inputStudyLocusIds,
                 list_transform(
                     components,
@@ -1465,12 +1667,16 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
 
     assert stats_rows == [
         (
-            expected_locus_set_id,
+            None,
             "1",
             100,
             220,
             6,
             4,
+            0,
+            4,
+            0.0,
+            ["INSUFFICIENT_VARIANT_OVERLAP"],
             ["a_locus", "b_locus"],
             [
                 {
@@ -1490,26 +1696,7 @@ def test_build_regional_output_tables_derives_stats_and_published_loci_from_stag
             ],
         )
     ]
-    assert locus_rows == [
-        (
-            expected_locus_set_id,
-            "STUDY_A",
-            expected_study_locus_ids["STUDY_A"],
-            "1",
-            100,
-            220,
-            ["1_110_A_G", "1_140_C_T"],
-        ),
-        (
-            expected_locus_set_id,
-            "STUDY_B",
-            expected_study_locus_ids["STUDY_B"],
-            "1",
-            100,
-            220,
-            ["1_125_A_C", "1_130_A_G"],
-        ),
-    ]
+    assert locus_rows == []
 
 
 def test_duplicate_variants_are_silently_dropped_from_eaf_check(tmp_path: Path) -> None:
@@ -1619,14 +1806,20 @@ def test_collect_canonical_regions_materializes_all_inputs_for_single_ancestry_b
     assert result.exit_code == 0, result.output
     with duckdb.connect() as con:
         stats = con.execute(
-            f"SELECT fineMappingLocusSetId, list_transform(components, item -> item.studyId) FROM read_parquet('{stats_path}')"
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                list_transform(components, item -> item.studyId)
+            FROM read_parquet('{stats_path}')
+            """
         ).fetchall()
-        output_rows = con.execute(f"SELECT studyId FROM read_parquet('{next(output_dir.glob('*.parquet'))}') ORDER BY studyId").fetchall()
 
     assert len(stats) == 1
-    assert stats[0][0] is not None
-    assert stats[0][1] == ["STUDY_A", "STUDY_B"]
-    assert output_rows == [("STUDY_A",), ("STUDY_B",)]
+    assert stats[0] == (None, 0, 2, 0.0, ["STUDY_A", "STUDY_B"])
+    assert list(output_dir.glob("*.parquet")) == []
 
 
 def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_intersection(tmp_path: Path) -> None:
@@ -1673,19 +1866,33 @@ def test_build_regional_output_tables_consolidates_duplicate_set_ids_using_inter
         staged = create_regional_variants_table(con, prepared, regions)
         stats_table, loci_table = build_regional_output_tables(con, prepared, regions, staged)
         stats = con.execute(
-            f"SELECT fineMappingLocusSetId, locusStart, locusEnd, list_transform(components, item -> item.qualityControls) FROM {stats_table}"
+            f"""
+            SELECT
+                fineMappingLocusSetId,
+                locusStart,
+                locusEnd,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                qualityControls,
+                list_transform(components, item -> item.qualityControls)
+            FROM {stats_table}
+            """
         ).fetchall()
         loci = con.execute(
             f"SELECT locusStart, locusEnd, qualityControls, list_transform(locus, item -> item.variantId) FROM {loci_table} ORDER BY studyId"
         ).fetchall()
 
     assert len(stats) == 1
-    assert stats[0][1:3] == (150, 200)
-    assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in qc for qc in stats[0][3])
-    assert all(row[0:2] == (150, 200) for row in loci)
-    assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in row[2] for row in loci)
-    assert all("SOURCE_QC" in row[2] for row in loci)
-    assert [row[3] for row in loci] == [["1_160_A_G", "1_180_A_G"], ["1_160_C_T", "1_180_C_T"]]
+    assert stats[0][0] is None
+    assert stats[0][1:6] == (150, 200, 0, 4, 0.0)
+    assert stats[0][6] == [
+        "INSUFFICIENT_VARIANT_OVERLAP",
+        "MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL",
+        "SOURCE_QC",
+    ]
+    assert all("MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL" in qc for qc in stats[0][7])
+    assert loci == []
 
 
 def test_build_regional_output_tables_forwards_region_level_quality_controls_to_components(tmp_path: Path) -> None:

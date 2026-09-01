@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
+from typing import TypedDict
 
 import duckdb
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -102,6 +103,25 @@ class CollectCanonicalRegionsConfig(BaseModel):
         _assert_distinct(self.summary_statistics_paths, "summary-statistics paths")
         _assert_distinct(self.ancestries, "ancestry labels")
         return self
+
+
+class StatsSummary(TypedDict):
+    """Typed run-level candidate/publication summary derived from final stats rows."""
+
+    nCandidateLocusSets: int
+    nPublishedLocusSets: int
+    nNotPromotedLocusSets: int
+    notPromotedReasons: dict[str, int]
+
+
+def _default_stats_summary(regions: list[CanonicalRegion]) -> StatsSummary:
+    """Return the legacy summary shape used before stats rows are fully derived."""
+    return {
+        "nCandidateLocusSets": len(regions),
+        "nPublishedLocusSets": 0,
+        "nNotPromotedLocusSets": len(regions),
+        "notPromotedReasons": {"NO_VARIANTS_IN_LOCUS": len(regions)} if regions else {},
+    }
 
 
 @dataclass(frozen=True)
@@ -888,7 +908,13 @@ def build_regional_output_tables(
                     ELSE []::VARCHAR[]
                 END
             ))) AS qualityControls,
-            CASE WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) THEN merged.fineMappingLocusSetId ELSE NULL END AS publishedFineMappingLocusSetId
+            count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) AS hasCompleteComponentLeads,
+            CASE
+                WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*)
+                 AND overlap.variantOverlapProportion >= {min_variant_overlap_proportion}
+                THEN merged.fineMappingLocusSetId
+                ELSE NULL
+            END AS publishedFineMappingLocusSetId
         FROM canonical_region_merged_bounds AS merged
         INNER JOIN canonical_region_final_component_stats AS components
           ON components.fineMappingLocusSetId = merged.fineMappingLocusSetId
@@ -924,7 +950,7 @@ def build_regional_output_tables(
             {min_variant_overlap_proportion}::DOUBLE AS minimumVariantOverlapProportion,
             qualityControls
         FROM canonical_region_final_status
-        WHERE publishedFineMappingLocusSetId IS NOT NULL
+        WHERE hasCompleteComponentLeads
         ORDER BY locusStart, locusEnd, fineMappingLocusSetId
         """
     )
@@ -978,12 +1004,14 @@ def _write_stats_json(
     regions: list[CanonicalRegion],
     timings_seconds: dict[str, float] | None = None,
     published_locus_sizes: list[int] | None = None,
+    stats_summary: StatsSummary | None = None,
 ) -> None:
     def size_summary(sizes: list[int]) -> dict[str, float | int | None]:
         if not sizes:
             return {"n": 0, "mean": None, "min": None, "max": None}
         return {"n": len(sizes), "mean": sum(sizes) / len(sizes), "min": min(sizes), "max": max(sizes)}
 
+    summary = stats_summary if stats_summary is not None else _default_stats_summary(regions)
     payload = {
         "runId": config.run_id,
         "canonicalRegionMinMaf": config.canonical_region_min_maf,
@@ -997,10 +1025,10 @@ def _write_stats_json(
             }
             for prepared in prepared_inputs
         ],
-        "nCandidateLocusSets": len(regions),
-        "nPublishedLocusSets": 0,
-        "nNotPromotedLocusSets": len(regions),
-        "notPromotedReasons": {"NO_VARIANTS_IN_LOCUS": len(regions)} if regions else {},
+        "nCandidateLocusSets": summary["nCandidateLocusSets"],
+        "nPublishedLocusSets": summary["nPublishedLocusSets"],
+        "nNotPromotedLocusSets": summary["nNotPromotedLocusSets"],
+        "notPromotedReasons": summary["notPromotedReasons"],
         "studiesWithMissingEAF": [],
         "runQualityControls": [],
         "timingsSeconds": timings_seconds or {},
@@ -1094,6 +1122,44 @@ def _write_stats_parquet_from_table(con: duckdb.DuckDBPyConnection, stats_table_
     )
 
 
+def _stats_summary_from_table(con: duckdb.DuckDBPyConnection, stats_table_name: str) -> StatsSummary:
+    counts_row = con.execute(
+        f"""
+        SELECT
+            count(*)::INTEGER AS nCandidateLocusSets,
+            count(*) FILTER (WHERE fineMappingLocusSetId IS NOT NULL)::INTEGER AS nPublishedLocusSets,
+            count(*) FILTER (WHERE fineMappingLocusSetId IS NULL)::INTEGER AS nNotPromotedLocusSets
+        FROM {stats_table_name}
+        """
+    ).fetchone()
+    n_candidate_locus_sets, n_published_locus_sets, n_not_promoted_locus_sets = (int(value or 0) for value in (counts_row or (0, 0, 0)))
+    reasons = dict(
+        con.execute(
+            f"""
+            SELECT
+                reason,
+                count(*)::INTEGER AS nRows
+            FROM (
+                SELECT
+                    fineMappingLocusSetId,
+                    unnest(qualityControls) AS reason
+                FROM {stats_table_name}
+            )
+            WHERE fineMappingLocusSetId IS NULL
+              AND reason IN ('NO_VARIANTS_IN_LOCUS', '{INSUFFICIENT_VARIANT_OVERLAP_QC}')
+            GROUP BY reason
+            ORDER BY reason
+            """
+        ).fetchall()
+    )
+    return {
+        "nCandidateLocusSets": n_candidate_locus_sets,
+        "nPublishedLocusSets": n_published_locus_sets,
+        "nNotPromotedLocusSets": n_not_promoted_locus_sets,
+        "notPromotedReasons": reasons,
+    }
+
+
 def _write_fine_mapping_locus_sets_from_table(
     con: duckdb.DuckDBPyConnection,
     output_dir: Path,
@@ -1153,7 +1219,8 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
             min_maf=config.canonical_region_min_maf,
             min_variant_overlap_proportion=config.canonical_region_min_variant_overlap_proportion,
         )
-        published_count, published_locus_sizes = _write_fine_mapping_locus_sets_from_table(
+        stats_summary = _stats_summary_from_table(con, stats_table_name)
+        _published_count, published_locus_sizes = _write_fine_mapping_locus_sets_from_table(
             con,
             config.fine_mapping_locus_set_output_dir,
             loci_table_name,
@@ -1162,11 +1229,23 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    _write_stats_json(config.stats_json_output, config, prepared_inputs, regions, timings, published_locus_sizes)
-    if config.stats_json_output.exists():
-        payload = json.loads(config.stats_json_output.read_text())
-        payload["nPublishedLocusSets"] = published_count
-        payload["nNotPromotedLocusSets"] = len(regions) - published_count
-        payload["notPromotedReasons"] = {"NO_VARIANTS_IN_LOCUS": len(regions) - published_count} if len(regions) > published_count else {}
-        config.stats_json_output.write_text(json.dumps(payload, indent=2) + "\n")
+    missing_no_variant_count = max(0, len(regions) - int(stats_summary["nCandidateLocusSets"]))
+    not_promoted_reasons = dict(stats_summary["notPromotedReasons"])
+    if missing_no_variant_count:
+        not_promoted_reasons["NO_VARIANTS_IN_LOCUS"] = missing_no_variant_count
+    final_stats_summary: StatsSummary = {
+        "nCandidateLocusSets": len(regions),
+        "nPublishedLocusSets": stats_summary["nPublishedLocusSets"],
+        "nNotPromotedLocusSets": len(regions) - stats_summary["nPublishedLocusSets"],
+        "notPromotedReasons": dict(sorted(not_promoted_reasons.items())),
+    }
+    _write_stats_json(
+        config.stats_json_output,
+        config,
+        prepared_inputs,
+        regions,
+        timings,
+        published_locus_sizes,
+        stats_summary=final_stats_summary,
+    )
     return prepared_inputs
