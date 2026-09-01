@@ -25,7 +25,7 @@
     "hailing_ducks_max_cached_blocks": {"type": "integer", "minimum": 1, "default": 8, "description": "Maximum Hailing Ducks LD blocks cached per task."},
     "fine_mapping_methods": {"type": "array", "default": ["multisusie"], "description": "Fine-mapping methods to execute.", "items": {"type": "string", "enum": ["multisusie", "susiex", "sushie"]}},
     "multisusie_container": {"type": "string", "default": "ghcr.io/project-defiant/multisusie:5f29d00f913b0f51c82ae9b180c8ec3c01df291e", "description": "Container image used by MultiSuSiE."},
-    "multisusie_purity_min_r2": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1, "default": 0.01, "description": "Minimum credible-set purity on the R-squared scale for reportable MultiSuSiE components."},
+    "multisusie_purity_min_r2": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1, "default": 0.25, "description": "Minimum credible-set purity on the R-squared scale for reportable MultiSuSiE components."},
     "susiex_container": {"type": "string", "default": "ghcr.io/project-defiant/susiex/susiex:600051c01bdd14a2783d34066f8aaaa0e3dececf", "description": "Container image used by SuSiEx."},
     "sushie_container": {"type": "string", "default": "ghcr.io/project-defiant/sushie/sushie:dd7e4ae3cb96cc7c6f5718e0bf4fbe77ab07bf93", "description": "Container image used by SuShiE."},
     "collector_container": {"type": "string", "description": "Collector image used by cloud profiles."},
