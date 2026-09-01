@@ -394,7 +394,7 @@ workflow {
 
 
 output {
-    // workflow.output.dir is set to params.output_dir in nextflow.config;
+    // outputDir is set to params.output_dir in nextflow.config;
     // all paths here are relative to that base.
     manifest_validation_status {
         path '.'
