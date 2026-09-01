@@ -127,20 +127,19 @@ def test_lbc_lead_cutoff_is_strict_after_ranking(tmp_path: Path):
         ],
     )
 
-    with pytest.raises(ValueError, match="LocusBreaker produced no study loci"):
-        run_locus_breaker(
-            input_path,
-            output_path,
-            LocusBreakerConfig(
-                lbc_baseline_pvalue=1e-5,
-                lbc_distance_cutoff=100,
-                lbc_pvalue_threshold=1e-8,
-                lbc_flanking_distance=10,
-                collect_locus=False,
-                remove_mhc=False,
-            ),
-        )
-    assert not output_path.exists()
+    run_locus_breaker(
+        input_path,
+        output_path,
+        LocusBreakerConfig(
+            lbc_baseline_pvalue=1e-5,
+            lbc_distance_cutoff=100,
+            lbc_pvalue_threshold=1e-8,
+            lbc_flanking_distance=10,
+            collect_locus=False,
+            remove_mhc=False,
+        ),
+    )
+    assert read_lbc_rows(output_path) == []
 
 
 def test_lbc_splits_on_distance_greater_than_cutoff_and_applies_flanking_floor(tmp_path: Path):
@@ -245,23 +244,22 @@ def test_wbc_is_skipped_when_lbc_produces_no_loci(tmp_path: Path):
         ],
     )
 
-    with pytest.raises(ValueError, match="LocusBreaker produced no study loci"):
-        run_locus_breaker(
-            input_path,
-            output_path,
-            LocusBreakerConfig(
-                lbc_baseline_pvalue=1e-5,
-                lbc_distance_cutoff=100,
-                lbc_pvalue_threshold=1e-8,
-                lbc_flanking_distance=0,
-                large_loci_size=100,
-                wbc_clump_distance=50,
-                wbc_pvalue_threshold=1e-5,
-                collect_locus=False,
-                remove_mhc=False,
-            ),
-        )
-    assert not output_path.exists()
+    run_locus_breaker(
+        input_path,
+        output_path,
+        LocusBreakerConfig(
+            lbc_baseline_pvalue=1e-5,
+            lbc_distance_cutoff=100,
+            lbc_pvalue_threshold=1e-8,
+            lbc_flanking_distance=0,
+            large_loci_size=100,
+            wbc_clump_distance=50,
+            wbc_pvalue_threshold=1e-5,
+            collect_locus=False,
+            remove_mhc=False,
+        ),
+    )
+    assert read_lbc_rows(output_path) == []
 
 
 def test_wbc_is_skipped_when_lbc_has_no_large_loci(tmp_path: Path):

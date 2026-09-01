@@ -511,13 +511,6 @@ def run_locus_breaker(input_path: Path, output_path: Path, config: LocusBreakerC
         con.execute("CREATE TEMP TABLE mhc_filtered_loci AS " + mhc_filtered_loci_sql(config))
         con.execute("CREATE TEMP TABLE final_loci AS " + final_loci_sql(source, config))
 
-        final_count_row = con.execute("SELECT COUNT(*) FROM final_loci").fetchone()
-        if final_count_row is None:
-            raise RuntimeError("DuckDB returned no final-loci count")
-        final_count = final_count_row[0]
-        if final_count == 0:
-            raise ValueError("LocusBreaker produced no study loci")
-
         if output_path.exists():
             output_path.unlink()
 
