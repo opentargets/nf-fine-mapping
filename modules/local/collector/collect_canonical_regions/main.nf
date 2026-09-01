@@ -49,6 +49,7 @@ process COLLECT_CANONICAL_REGIONS {
         --stats_parquet_output stats.parquet \\
         --stats_json_output stats.json \\
         --canonical_region_min_maf '${params.canonical_region_min_maf}' \\
+        --canonical_region_min_variant_overlap_proportion '${params.canonical_region_min_variant_overlap_proportion}' \\
         --canonical_region_max_region_span_bp ${params.canonical_region_max_region_span_bp} \\
         ${args}
 

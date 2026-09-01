@@ -643,6 +643,46 @@ def test_collect_canonical_regions_cli_rejects_duplicate_ancestries(tmp_path: Pa
     assert "distinct" in result.output
 
 
+def test_collect_canonical_regions_cli_rejects_variant_overlap_threshold_above_one(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset(tmp_path / "study_a.locus.parquet", study_ids=["STUDY_A"])
+    locus_breaker_b = _write_locus_breaker_dataset(tmp_path / "study_b.locus.parquet", study_ids=["STUDY_B"])
+    sumstats_a = _write_sumstats_dataset(tmp_path / "study_a.sumstats.parquet", study_ids=["STUDY_A"])
+    sumstats_b = _write_sumstats_dataset(tmp_path / "study_b.sumstats.parquet", study_ids=["STUDY_B"])
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(tmp_path / "fine_mapping_locus_sets"),
+            "--stats_parquet_output",
+            str(tmp_path / "stats" / "run-1.stat.parquet"),
+            "--stats_json_output",
+            str(tmp_path / "stats" / "run-1.stat.json"),
+            "--canonical_region_min_variant_overlap_proportion",
+            "1.1",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "canonical_region_min_variant_overlap_proportion" in result.output
+    assert "no such option" not in result.output.lower()
+
+
 def test_collect_canonical_regions_cli_rejects_unequal_array_lengths(tmp_path: Path) -> None:
     locus_breaker_a = _write_locus_breaker_dataset(tmp_path / "study_a.locus.parquet", study_ids=["STUDY_A"])
     locus_breaker_b = _write_locus_breaker_dataset(tmp_path / "study_b.locus.parquet", study_ids=["STUDY_B"])
@@ -890,6 +930,257 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     # and the published (125, 220).
     assert stats["candidateLocusSizeBp"] == {"n": 2, "mean": 60.5, "min": 25, "max": 96}
     assert stats["publishedLocusSizeBp"] == {"n": 1, "mean": 96.0, "min": 96, "max": 96}
+
+
+def test_collect_canonical_regions_cli_records_overlap_metrics_without_trimming_passing_outputs(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_a.locus.parquet",
+        study_id="STUDY_A",
+        loci=[("a_locus", 100, 220)],
+    )
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_b.locus.parquet",
+        study_id="STUDY_B",
+        loci=[("b_locus", 120, 240)],
+    )
+    locus_breaker_c = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_c.locus.parquet",
+        study_id="STUDY_C",
+        loci=[("c_locus", 130, 230)],
+    )
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_150_A_G", 150, 0.10, -8, 1.0, 0.20, 0.01),
+            ("1_160_C_T", 160, 0.20, -7, 1.0, 0.25, 0.01),
+        ],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_150_A_G", 150, 0.15, -8, 1.0, 0.30, 0.01)],
+    )
+    sumstats_c = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_c.sumstats.parquet",
+        study_id="STUDY_C",
+        rows=[
+            ("1_150_A_G", 150, 0.12, -8, 1.0, 0.35, 0.01),
+            ("1_160_C_T", 160, 0.18, -7, 1.0, 0.22, 0.01),
+        ],
+    )
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--locus_breaker",
+            str(locus_breaker_c),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--ancestry",
+            "EAS",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--summary_statistics",
+            str(sumstats_c),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(tmp_path / "stats" / "run-1.stat.json"),
+            "--canonical_region_min_variant_overlap_proportion",
+            "0.5",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    files = sorted(output_dir.glob("*.parquet"))
+    assert len(files) == 1
+
+    with duckdb.connect() as con:
+        stats_rows = con.execute(
+            f"""
+            SELECT
+                fineMappingLocusSetId IS NOT NULL AS isPublished,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                minimumVariantOverlapProportion,
+                qualityControls
+            FROM read_parquet('{stats_parquet_output}')
+            """
+        ).fetchall()
+        locus_rows = con.execute(
+            f"""
+            SELECT
+                studyId,
+                list_transform(locus, item -> item.variantId) AS locusVariants
+            FROM read_parquet('{files[0]}')
+            ORDER BY studyId
+            """
+        ).fetchall()
+
+    assert stats_rows == [(True, 1, 2, 0.5, 0.5, [])]
+    assert locus_rows == [
+        ("STUDY_A", ["1_150_A_G", "1_160_C_T"]),
+        ("STUDY_B", ["1_150_A_G"]),
+        ("STUDY_C", ["1_150_A_G", "1_160_C_T"]),
+    ]
+
+
+@pytest.mark.parametrize("threshold", [0.0, 1.0])
+def test_collect_canonical_regions_cli_accepts_variant_overlap_threshold_endpoints(tmp_path: Path, threshold: float) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_a.locus.parquet",
+        study_id="STUDY_A",
+        loci=[("a_locus", 100, 200)],
+    )
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_b.locus.parquet",
+        study_id="STUDY_B",
+        loci=[("b_locus", 110, 210)],
+    )
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[("1_150_A_G", 150, 0.10, -8, 1.0, 0.20, 0.01)],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[("1_150_A_G", 150, 0.15, -8, 1.0, 0.25, 0.01)],
+    )
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(tmp_path / "fine_mapping_locus_sets"),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(tmp_path / "stats" / "run-1.stat.json"),
+            "--canonical_region_min_variant_overlap_proportion",
+            str(threshold),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as con:
+        thresholds = con.execute(
+            f"""
+            SELECT minimumVariantOverlapProportion
+            FROM read_parquet('{stats_parquet_output}')
+            """
+        ).fetchall()
+
+    assert thresholds == [(threshold,)]
+
+
+def test_collect_canonical_regions_cli_uses_exact_variant_ids_for_overlap_metrics(tmp_path: Path) -> None:
+    locus_breaker_a = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_a.locus.parquet",
+        study_id="STUDY_A",
+        loci=[("a_locus", 100, 200)],
+    )
+    locus_breaker_b = _write_locus_breaker_dataset_with_loci(
+        tmp_path / "study_b.locus.parquet",
+        study_id="STUDY_B",
+        loci=[("b_locus", 110, 210)],
+    )
+    sumstats_a = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_a.sumstats.parquet",
+        study_id="STUDY_A",
+        rows=[
+            ("1_150_A_G", 150, 0.10, -8, 1.0, 0.20, 0.01),
+            ("1_160_C_T", 160, 0.10, -7, 1.0, 0.25, 0.01),
+        ],
+    )
+    sumstats_b = _write_sumstats_dataset_with_rows(
+        tmp_path / "study_b.sumstats.parquet",
+        study_id="STUDY_B",
+        rows=[
+            ("1_150_A_T", 150, 0.15, -8, 1.0, 0.30, 0.01),
+            ("1_160_C_T", 160, 0.15, -7, 1.0, 0.35, 0.01),
+        ],
+    )
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breaker_a),
+            "--locus_breaker",
+            str(locus_breaker_b),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--summary_statistics",
+            str(sumstats_a),
+            "--summary_statistics",
+            str(sumstats_b),
+            "--fine_mapping_locus_set_output_dir",
+            str(tmp_path / "fine_mapping_locus_sets"),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(tmp_path / "stats" / "run-1.stat.json"),
+            "--canonical_region_min_variant_overlap_proportion",
+            "0.0",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as con:
+        overlap_rows = con.execute(
+            f"""
+            SELECT
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion
+            FROM read_parquet('{stats_parquet_output}')
+            """
+        ).fetchall()
+
+    assert overlap_rows == [(1, 3, 1 / 3)]
 
 
 def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_when_publication_is_blocked(

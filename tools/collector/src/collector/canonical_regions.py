@@ -19,7 +19,9 @@ from collector.schema import CANONICAL_REGION_INPUT_LOCUS_SCHEMA, CANONICAL_REGI
 
 OVERSIZED_SOURCE_LOCUS_QC = "SOURCE_LOCUS_EXCEEDS_MAX_REGION_SPAN"
 DUPLICATE_FINE_MAPPING_SET_QC = "MULTIPLE_FINE_MAPPING_LOCUS_SETS_OVERLAP_THE_SAME_SIGNAL"
+INSUFFICIENT_VARIANT_OVERLAP_QC = "INSUFFICIENT_VARIANT_OVERLAP"
 DEFAULT_CANONICAL_REGION_MIN_MAF = 0.01
+DEFAULT_CANONICAL_REGION_MIN_VARIANT_OVERLAP_PROPORTION = 0.5
 DISK_EXHAUSTION_EXIT_CODE = 75
 
 
@@ -82,6 +84,11 @@ class CollectCanonicalRegionsConfig(BaseModel):
     stats_parquet_output: Path
     stats_json_output: Path
     canonical_region_min_maf: float = Field(default=DEFAULT_CANONICAL_REGION_MIN_MAF, ge=0, lt=0.5)
+    canonical_region_min_variant_overlap_proportion: float = Field(
+        default=DEFAULT_CANONICAL_REGION_MIN_VARIANT_OVERLAP_PROPORTION,
+        ge=0,
+        le=1,
+    )
     canonical_region_max_region_span_bp: int = Field(default=3_000_000, ge=1)
 
     @model_validator(mode="after")
@@ -626,6 +633,7 @@ def build_regional_output_tables(
     stats_table_name: str = "canonical_region_stats_output",
     loci_table_name: str = "published_locus_rows",
     min_maf: float = DEFAULT_CANONICAL_REGION_MIN_MAF,
+    min_variant_overlap_proportion: float = DEFAULT_CANONICAL_REGION_MIN_VARIANT_OVERLAP_PROPORTION,
 ) -> tuple[str, str]:
     """Derive canonical-region stats and published-locus rows from staged variants."""
     con.execute(f"DROP TABLE IF EXISTS {stats_table_name}")
@@ -795,6 +803,58 @@ def build_regional_output_tables(
         GROUP BY components.fineMappingLocusSetId, components.studyId
         """
     )
+    con.execute("DROP TABLE IF EXISTS canonical_region_final_variant_membership")
+    con.execute(
+        f"""
+        CREATE TEMP TABLE canonical_region_final_variant_membership AS
+        SELECT DISTINCT
+            fineMappingLocusSetId,
+            studyId,
+            variantId
+        FROM canonical_region_final_variants
+        WHERE least(
+            CAST(effectAlleleFrequencyFromSource AS DOUBLE),
+            1.0::DOUBLE - CAST(effectAlleleFrequencyFromSource AS DOUBLE)
+        ) > {min_maf}
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS canonical_region_final_overlap_stats")
+    con.execute(
+        """
+        CREATE TEMP TABLE canonical_region_final_overlap_stats AS
+        WITH component_counts AS (
+            SELECT
+                fineMappingLocusSetId,
+                count(*)::INTEGER AS nComponents
+            FROM canonical_region_final_component_stats
+            GROUP BY fineMappingLocusSetId
+        ),
+        variant_membership AS (
+            SELECT
+                fineMappingLocusSetId,
+                variantId,
+                count(DISTINCT studyId)::INTEGER AS nStudiesWithVariant
+            FROM canonical_region_final_variant_membership
+            GROUP BY fineMappingLocusSetId, variantId
+        )
+        SELECT
+            component_counts.fineMappingLocusSetId,
+            count(DISTINCT variant_membership.variantId)::INTEGER AS nUnionVariants,
+            count(DISTINCT variant_membership.variantId) FILTER (
+                WHERE variant_membership.nStudiesWithVariant = component_counts.nComponents
+            )::INTEGER AS nIntersectionVariants,
+            CASE
+                WHEN count(DISTINCT variant_membership.variantId) = 0 THEN NULL
+                ELSE count(DISTINCT variant_membership.variantId) FILTER (
+                    WHERE variant_membership.nStudiesWithVariant = component_counts.nComponents
+                )::DOUBLE / count(DISTINCT variant_membership.variantId)::DOUBLE
+            END AS variantOverlapProportion
+        FROM component_counts
+        LEFT JOIN variant_membership
+          ON variant_membership.fineMappingLocusSetId = component_counts.fineMappingLocusSetId
+        GROUP BY component_counts.fineMappingLocusSetId, component_counts.nComponents
+        """
+    )
     con.execute("DROP TABLE IF EXISTS canonical_region_final_status")
     con.execute(
         f"""
@@ -804,7 +864,6 @@ def build_regional_output_tables(
             merged.chromosome,
             merged.locusStart,
             merged.locusEnd,
-            merged.qualityControls,
             merged.inputLoci,
             sum(components.nVariants)::INTEGER AS nVariants,
             sum(components.nVariantsAboveMafCutoff)::INTEGER AS nVariantsAboveMafCutoff,
@@ -818,11 +877,33 @@ def build_regional_output_tables(
                     CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
                 )))
             ) ORDER BY components.studyId)::{component_type} AS components,
+            overlap.nIntersectionVariants,
+            overlap.nUnionVariants,
+            overlap.variantOverlapProportion,
+            list_sort(list_distinct(list_concat(
+                merged.qualityControls,
+                CASE
+                    WHEN overlap.variantOverlapProportion < {min_variant_overlap_proportion}
+                    THEN ['{INSUFFICIENT_VARIANT_OVERLAP_QC}']::VARCHAR[]
+                    ELSE []::VARCHAR[]
+                END
+            ))) AS qualityControls,
             CASE WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) THEN merged.fineMappingLocusSetId ELSE NULL END AS publishedFineMappingLocusSetId
         FROM canonical_region_merged_bounds AS merged
         INNER JOIN canonical_region_final_component_stats AS components
           ON components.fineMappingLocusSetId = merged.fineMappingLocusSetId
-        GROUP BY merged.fineMappingLocusSetId, merged.chromosome, merged.locusStart, merged.locusEnd, merged.qualityControls, merged.inputLoci
+        INNER JOIN canonical_region_final_overlap_stats AS overlap
+          ON overlap.fineMappingLocusSetId = merged.fineMappingLocusSetId
+        GROUP BY
+            merged.fineMappingLocusSetId,
+            merged.chromosome,
+            merged.locusStart,
+            merged.locusEnd,
+            merged.qualityControls,
+            merged.inputLoci,
+            overlap.nIntersectionVariants,
+            overlap.nUnionVariants,
+            overlap.variantOverlapProportion
         """
     )
     con.execute(
@@ -836,7 +917,12 @@ def build_regional_output_tables(
             nVariants,
             nVariantsAboveMafCutoff,
             inputLoci,
-            components
+            components,
+            nIntersectionVariants,
+            nUnionVariants,
+            variantOverlapProportion,
+            {min_variant_overlap_proportion}::DOUBLE AS minimumVariantOverlapProportion,
+            qualityControls
         FROM canonical_region_final_status
         WHERE publishedFineMappingLocusSetId IS NOT NULL
         ORDER BY locusStart, locusEnd, fineMappingLocusSetId
@@ -1065,6 +1151,7 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
             regions,
             region_variants_table=region_variants_table or "region_variants",
             min_maf=config.canonical_region_min_maf,
+            min_variant_overlap_proportion=config.canonical_region_min_variant_overlap_proportion,
         )
         published_count, published_locus_sizes = _write_fine_mapping_locus_sets_from_table(
             con,
