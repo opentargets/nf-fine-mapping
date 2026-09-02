@@ -95,6 +95,11 @@ suite on pull requests.
 threshold; the process always runs with low-memory mode disabled so purity is
 available for filtering.
 
+``canonical_region_min_variant_overlap_proportion`` must be between 0 and 1,
+inclusive. It defaults to 0.5. During locus collection the collector compares
+each final candidate's exact-``variantId`` post-MAF Jaccard overlap against
+this threshold before deciding whether to publish a locus-set Parquet file.
+
 Hailing Ducks LD validation
 ---------------------------
 

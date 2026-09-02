@@ -25,6 +25,7 @@ from collector.canonical_regions import (
     create_regional_variants_table,
     prepare_collect_canonical_region_inputs,
 )
+from collector.schema import CANONICAL_REGION_STATS_SCHEMA
 
 runner = CliRunner()
 
@@ -891,6 +892,15 @@ def test_collect_canonical_regions_cli_materializes_per_ancestry_locus_set_with_
     assert rows == [
         (
             None,
+            100,
+            124,
+            None,
+            None,
+            None,
+            ["NO_VARIANTS_IN_LOCUS"],
+        ),
+        (
+            None,
             125,
             220,
             0,
@@ -1496,6 +1506,10 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
                 locusEnd,
                 nVariants,
                 nVariantsAboveMafCutoff,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                qualityControls,
                 list_transform(inputLoci, item -> item.studyLocusId) AS inputStudyLocusIds,
                 list_transform(
                     components,
@@ -1511,7 +1525,80 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
             """
         ).fetchall()
 
-    assert rows == []
+    assert rows == [
+        (
+            None,
+            "1",
+            100,
+            179,
+            5,
+            2,
+            None,
+            None,
+            None,
+            ["NO_VARIANTS_IN_LOCUS"],
+            ["a_locus"],
+            [
+                {
+                    "studyId": "STUDY_A",
+                    "studyLocusId": hashlib.md5(b"STUDY_A|1_110_A_G", usedforsecurity=False).hexdigest(),
+                    "nVariants": 3,
+                    "nVariantsBelowMafCutoff": 1,
+                    "qualityControls": [],
+                },
+                {
+                    "studyId": "STUDY_B",
+                    "studyLocusId": None,
+                    "nVariants": 2,
+                    "nVariantsBelowMafCutoff": 2,
+                    "qualityControls": ["NO_VARIANTS_IN_LOCUS"],
+                },
+                {
+                    "studyId": "STUDY_C",
+                    "studyLocusId": None,
+                    "nVariants": 0,
+                    "nVariantsBelowMafCutoff": 0,
+                    "qualityControls": ["NO_VARIANTS_IN_LOCUS"],
+                },
+            ],
+        ),
+        (
+            None,
+            "1",
+            180,
+            220,
+            2,
+            1,
+            None,
+            None,
+            None,
+            ["NO_VARIANTS_IN_LOCUS"],
+            ["b_locus"],
+            [
+                {
+                    "studyId": "STUDY_A",
+                    "studyLocusId": None,
+                    "nVariants": 0,
+                    "nVariantsBelowMafCutoff": 0,
+                    "qualityControls": ["NO_VARIANTS_IN_LOCUS"],
+                },
+                {
+                    "studyId": "STUDY_B",
+                    "studyLocusId": hashlib.md5(b"STUDY_B|1_200_G_T", usedforsecurity=False).hexdigest(),
+                    "nVariants": 2,
+                    "nVariantsBelowMafCutoff": 1,
+                    "qualityControls": [],
+                },
+                {
+                    "studyId": "STUDY_C",
+                    "studyLocusId": None,
+                    "nVariants": 0,
+                    "nVariantsBelowMafCutoff": 0,
+                    "qualityControls": ["NO_VARIANTS_IN_LOCUS"],
+                },
+            ],
+        ),
+    ]
 
     stats = json.loads(stats_json_output.read_text())
     # Two candidate regions now (a_locus's disagreement-trimmed (100, 179)
@@ -1524,6 +1611,120 @@ def test_collect_canonical_regions_cli_records_fatal_no_variants_in_locus_stats_
     assert all(value >= 0 for value in stats["timingsSeconds"].values())
     assert stats["candidateLocusSizeBp"]["n"] == 2
     assert stats["publishedLocusSizeBp"] == {"n": 0, "mean": None, "min": None, "max": None}
+
+
+def test_collect_canonical_regions_cli_reconciles_mixed_passing_overlap_and_no_variant_candidates(tmp_path: Path) -> None:
+    loci = {
+        "STUDY_A": [("pass_a", 100, 220), ("fail_a", 400, 520), ("empty_a", 700, 820)],
+        "STUDY_B": [("pass_b", 120, 240), ("fail_b", 405, 540), ("empty_b", 720, 840)],
+        "STUDY_C": [("pass_c", 130, 230), ("fail_c", 410, 530), ("empty_c", 730, 830)],
+    }
+    locus_breakers = {
+        study_id: _write_locus_breaker_dataset_with_loci(tmp_path / f"{study_id}.locus.parquet", study_id=study_id, loci=study_loci)
+        for study_id, study_loci in loci.items()
+    }
+    sumstats = {
+        "STUDY_A": _write_sumstats_dataset_with_rows(
+            tmp_path / "study_a.sumstats.parquet",
+            study_id="STUDY_A",
+            rows=[
+                ("1_150_A_G", 150, 0.10, -8, 1.0, 0.20, 0.01),
+                ("1_160_C_T", 160, 0.20, -7, 1.0, 0.25, 0.01),
+                ("1_410_A_G", 410, 0.15, -8, 1.0, 0.30, 0.01),
+                ("1_420_C_T", 420, 0.18, -7, 1.0, 0.35, 0.01),
+                ("1_710_A_G", 710, 0.13, -8, 1.0, 0.20, 0.01),
+            ],
+        ),
+        "STUDY_B": _write_sumstats_dataset_with_rows(
+            tmp_path / "study_b.sumstats.parquet",
+            study_id="STUDY_B",
+            rows=[
+                ("1_150_A_G", 150, 0.11, -8, 1.0, 0.22, 0.01),
+                ("1_410_A_G", 410, 0.16, -8, 1.0, 0.32, 0.01),
+                ("1_730_C_T", 730, 0.17, -8, 1.0, 0.009, 0.01),
+            ],
+        ),
+        "STUDY_C": _write_sumstats_dataset_with_rows(
+            tmp_path / "study_c.sumstats.parquet",
+            study_id="STUDY_C",
+            rows=[
+                ("1_150_A_G", 150, 0.12, -8, 1.0, 0.24, 0.01),
+                ("1_160_C_T", 160, 0.22, -7, 1.0, 0.28, 0.01),
+                ("1_410_A_G", 410, 0.17, -8, 1.0, 0.34, 0.01),
+                ("1_430_G_A", 430, 0.19, -7, 1.0, 0.36, 0.01),
+                ("1_735_A_C", 735, 0.18, -8, 1.0, 0.991, 0.01),
+            ],
+        ),
+    }
+    output_dir = tmp_path / "fine_mapping_locus_sets"
+    stats_parquet_output = tmp_path / "stats" / "run-1.stat.parquet"
+    stats_json_output = tmp_path / "stats" / "run-1.stat.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "collect_canonical_regions",
+            "--run_id",
+            "run-1",
+            "--locus_breaker",
+            str(locus_breakers["STUDY_A"]),
+            "--locus_breaker",
+            str(locus_breakers["STUDY_B"]),
+            "--locus_breaker",
+            str(locus_breakers["STUDY_C"]),
+            "--ancestry",
+            "EUR",
+            "--ancestry",
+            "AFR",
+            "--ancestry",
+            "EAS",
+            "--summary_statistics",
+            str(sumstats["STUDY_A"]),
+            "--summary_statistics",
+            str(sumstats["STUDY_B"]),
+            "--summary_statistics",
+            str(sumstats["STUDY_C"]),
+            "--fine_mapping_locus_set_output_dir",
+            str(output_dir),
+            "--stats_parquet_output",
+            str(stats_parquet_output),
+            "--stats_json_output",
+            str(stats_json_output),
+            "--canonical_region_min_variant_overlap_proportion",
+            "0.5",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    files = sorted(output_dir.glob("*.parquet"))
+    assert len(files) == 1
+
+    with duckdb.connect() as con:
+        stats_rows = con.execute(
+            f"""
+            SELECT
+                locusStart,
+                fineMappingLocusSetId IS NOT NULL AS isPublished,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                qualityControls
+            FROM read_parquet('{stats_parquet_output}')
+            ORDER BY locusStart
+            """
+        ).fetchall()
+
+    assert stats_rows == [
+        (130, True, 1, 2, 0.5, []),
+        (410, False, 1, 3, 1 / 3, ["INSUFFICIENT_VARIANT_OVERLAP"]),
+        (700, False, None, None, None, ["NO_VARIANTS_IN_LOCUS"]),
+    ]
+    stats = json.loads(stats_json_output.read_text())
+    assert stats["nCandidateLocusSets"] == 3
+    assert stats["nPublishedLocusSets"] == 1
+    assert stats["nNotPromotedLocusSets"] == 2
+    assert stats["notPromotedReasons"] == {"INSUFFICIENT_VARIANT_OVERLAP": 1, "NO_VARIANTS_IN_LOCUS": 1}
 
 
 def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishing(tmp_path: Path) -> None:
@@ -1567,6 +1768,9 @@ def test_collect_canonical_regions_missing_eaf_invalidates_run_without_publishin
     report = json.loads((tmp_path / "stats.json").read_text())
     assert report["studiesWithMissingEAF"] == ["STUDY_B"]
     assert report["runQualityControls"] == ["MISSING_EFFECT_ALLELE_FREQUENCY_FROM_SOURCE"]
+    with duckdb.connect() as con:
+        columns = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{tmp_path / 'stats.parquet'}')").fetchall()
+    assert [row[0] for row in columns] == list(CANONICAL_REGION_STATS_SCHEMA.column_names)
 
 
 def test_regional_staging_keeps_only_projected_variants_inside_regions(tmp_path: Path) -> None:

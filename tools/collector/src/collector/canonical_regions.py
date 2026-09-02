@@ -897,12 +897,14 @@ def build_regional_output_tables(
                     CASE WHEN components.nVariantsAboveMafCutoff = 0 THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[] ELSE []::VARCHAR[] END
                 )))
             ) ORDER BY components.studyId)::{component_type} AS components,
-            overlap.nIntersectionVariants,
-            overlap.nUnionVariants,
-            overlap.variantOverlapProportion,
+            CASE WHEN count(*) FILTER (WHERE components.nVariantsAboveMafCutoff = 0) > 0 THEN NULL ELSE overlap.nIntersectionVariants END AS nIntersectionVariants,
+            CASE WHEN count(*) FILTER (WHERE components.nVariantsAboveMafCutoff = 0) > 0 THEN NULL ELSE overlap.nUnionVariants END AS nUnionVariants,
+            CASE WHEN count(*) FILTER (WHERE components.nVariantsAboveMafCutoff = 0) > 0 THEN NULL ELSE overlap.variantOverlapProportion END AS variantOverlapProportion,
             list_sort(list_distinct(list_concat(
                 merged.qualityControls,
                 CASE
+                    WHEN count(*) FILTER (WHERE components.nVariantsAboveMafCutoff = 0) > 0
+                    THEN ['NO_VARIANTS_IN_LOCUS']::VARCHAR[]
                     WHEN overlap.variantOverlapProportion < {min_variant_overlap_proportion}
                     THEN ['{INSUFFICIENT_VARIANT_OVERLAP_QC}']::VARCHAR[]
                     ELSE []::VARCHAR[]
@@ -935,22 +937,45 @@ def build_regional_output_tables(
     con.execute(
         f"""
         CREATE TEMP TABLE {stats_table_name} AS
-        SELECT
-            publishedFineMappingLocusSetId AS fineMappingLocusSetId,
-            chromosome,
-            locusStart,
-            locusEnd,
-            nVariants,
-            nVariantsAboveMafCutoff,
-            inputLoci,
-            components,
-            nIntersectionVariants,
-            nUnionVariants,
-            variantOverlapProportion,
-            {min_variant_overlap_proportion}::DOUBLE AS minimumVariantOverlapProportion,
-            qualityControls
-        FROM canonical_region_final_status
-        WHERE hasCompleteComponentLeads
+        SELECT * FROM (
+            SELECT
+                publishedFineMappingLocusSetId AS fineMappingLocusSetId,
+                chromosome,
+                locusStart,
+                locusEnd,
+                nVariants,
+                nVariantsAboveMafCutoff,
+                inputLoci,
+                components,
+                nIntersectionVariants,
+                nUnionVariants,
+                variantOverlapProportion,
+                {min_variant_overlap_proportion}::DOUBLE AS minimumVariantOverlapProportion,
+                qualityControls
+            FROM canonical_region_final_status
+
+            UNION ALL
+
+            SELECT
+                CAST(NULL AS VARCHAR) AS fineMappingLocusSetId,
+                chromosome,
+                locusStart,
+                locusEnd,
+                nVariants,
+                nVariantsAboveMafCutoff,
+                inputLoci,
+                components,
+                CAST(NULL AS INTEGER) AS nIntersectionVariants,
+                CAST(NULL AS INTEGER) AS nUnionVariants,
+                CAST(NULL AS DOUBLE) AS variantOverlapProportion,
+                {min_variant_overlap_proportion}::DOUBLE AS minimumVariantOverlapProportion,
+                list_sort(list_distinct(list_concat(
+                    qualityControls,
+                    ['NO_VARIANTS_IN_LOCUS']::VARCHAR[]
+                ))) AS qualityControls
+            FROM canonical_region_status
+            WHERE fineMappingLocusSetId IS NULL
+        )
         ORDER BY locusStart, locusEnd, fineMappingLocusSetId
         """
     )
@@ -1229,16 +1254,6 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         started = perf_counter()
         _write_stats_parquet_from_table(con, stats_table_name, config.stats_parquet_output)
     timings["statistics"] = round(perf_counter() - started, 6)
-    missing_no_variant_count = max(0, len(regions) - int(stats_summary["nCandidateLocusSets"]))
-    not_promoted_reasons = dict(stats_summary["notPromotedReasons"])
-    if missing_no_variant_count:
-        not_promoted_reasons["NO_VARIANTS_IN_LOCUS"] = missing_no_variant_count
-    final_stats_summary: StatsSummary = {
-        "nCandidateLocusSets": len(regions),
-        "nPublishedLocusSets": stats_summary["nPublishedLocusSets"],
-        "nNotPromotedLocusSets": len(regions) - stats_summary["nPublishedLocusSets"],
-        "notPromotedReasons": dict(sorted(not_promoted_reasons.items())),
-    }
     _write_stats_json(
         config.stats_json_output,
         config,
@@ -1246,6 +1261,6 @@ def run_collect_canonical_regions(config: CollectCanonicalRegionsConfig) -> tupl
         regions,
         timings,
         published_locus_sizes,
-        stats_summary=final_stats_summary,
+        stats_summary=stats_summary,
     )
     return prepared_inputs

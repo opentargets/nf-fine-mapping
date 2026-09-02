@@ -101,6 +101,22 @@ own output by ``fineMappingLocusSetId`` instead of by ``runId``, removing
 any locus set with zero LD pairs in any ancestry before it reaches
 ``FINE_MAPPING``. No further validation stage runs after LD annotation.
 
+Within ``LOCUS_COLLECTION`` itself, candidate-level QC is recorded in
+``stats.parquet`` before this stage emits any run-level ``EMPTY_DATASET``
+status. ``INSUFFICIENT_VARIANT_OVERLAP`` marks candidates whose exact
+post-MAF multi-study Jaccard score falls below
+``canonical_region_min_variant_overlap_proportion``. ``NO_VARIANTS_IN_LOCUS``
+takes precedence whenever any component has zero post-MAF variants; in that
+case the overlap fields are null and the candidate is not also labelled as an
+insufficient-overlap failure.
+
+Because ``stats.parquet`` now retains unpublished candidates, a null
+``fineMappingLocusSetId`` in that file means the candidate failed a blocking
+collection QC and was not materialized under
+``fine_mapping_locus_sets/``. The stage-level ``LOCUS_COLLECTION /
+EMPTY_DATASET`` status still means the published locus-set directory ended up
+empty after applying those candidate-level blockers.
+
 .. _duplicate-summary-statistics-limitation:
 
 Duplicate summary-statistics limitation

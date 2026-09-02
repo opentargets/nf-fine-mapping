@@ -38,6 +38,12 @@ empty under the current canonical-region algorithm — they are vestigial
 channel names from an earlier, since-removed classification step and carry
 no data.
 
+The locus-collection stats artifact is broader than the downstream emission.
+``ch_full_overlap_loci`` contains only published locus sets with a non-null
+``fineMappingLocusSetId``, while ``stats.parquet`` retains unpublished
+candidates too. Consumers must not assume every statistics row corresponds to a
+materialized locus-set file.
+
 Locus annotation
 ----------------
 
