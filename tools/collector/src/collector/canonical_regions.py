@@ -910,7 +910,6 @@ def build_regional_output_tables(
                     ELSE []::VARCHAR[]
                 END
             ))) AS qualityControls,
-            count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*) AS hasCompleteComponentLeads,
             CASE
                 WHEN count(*) FILTER (WHERE components.leadVariantId IS NOT NULL) = count(*)
                  AND overlap.variantOverlapProportion >= {min_variant_overlap_proportion}
