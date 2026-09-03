@@ -31,13 +31,8 @@ def intro() -> Void {
     log.info(
         """
         ${CYAN}${BOLD}
-        IDIC Infinite Diversity in Infinite Combinations
-         __   _______   __    ______
-        |  | |       \\ |  |  /      |
-        |  | |  .--.  ||  | |  ,----'
-        |  | |  |  |  ||  | |  |
-        |  | |  '--'  ||  | |  `----.
-        |__| |_______/ |__|  \\______|
+        nf-fine-mapping
+        Open Targets multi-ancestry fine-mapping at scale
         ${RESET}
 
         ${BOLD}Here is your fancy configuration:${RESET}
@@ -404,16 +399,34 @@ output {
         path '.'
         mode 'copy'
     }
+    // Scoped by runId + fine_mapping_locus_set_id: every result shares the same
+    // relative filenames (multisusie/fit.h5ad, etc.), so a flat `path '.'` here
+    // collides across locus sets (the second locus set's file 412s against the
+    // first's, which is session-fatal). study_locus_path and extended_results_path
+    // are optional process outputs (absent when a locus fails to converge); a
+    // null path is simply skipped by the `>>` publish operator.
     multisusie_results {
-        path '.'
+        path { r ->
+            r.study_locus_path >> "multisusie/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.extended_results_path >> "multisusie/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.stats_path >> "multisusie/${r.runId}/${r.fine_mapping_locus_set_id}/"
+        }
         mode 'copy'
     }
     susiex_results {
-        path '.'
+        path { r ->
+            r.study_locus_path >> "susiex/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.extended_results_path >> "susiex/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.stats_path >> "susiex/${r.runId}/${r.fine_mapping_locus_set_id}/"
+        }
         mode 'copy'
     }
     sushie_results {
-        path '.'
+        path { r ->
+            r.study_locus_path >> "sushie/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.extended_results_path >> "sushie/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.stats_path >> "sushie/${r.runId}/${r.fine_mapping_locus_set_id}/"
+        }
         mode 'copy'
     }
     pipeline_versions {
