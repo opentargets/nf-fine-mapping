@@ -80,7 +80,7 @@ source for what gets published. All paths below are relative to
      - LD Annotation
      - JSONL records flagging locus sets with no valid LD pairs.
 
-IDIC performs summary-statistics fine-mapping using out-of-sample LD. The
+nf-fine-mapping performs summary-statistics fine-mapping using out-of-sample LD. The
 workflow is designed for multi-study and multi-ancestry analyses and emits
 Gentropy-compatible datasets for downstream Open Targets processing.
 

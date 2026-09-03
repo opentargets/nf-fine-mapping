@@ -1,6 +1,6 @@
 {
-    "name": "opentargets/finemapping",
-    "homePage": "https://github.com/opentargets/finemapping",
+    "name": "opentargets/nf-fine-mapping",
+    "homePage": "https://github.com/opentargets/nf-fine-mapping",
     "repos": {
         "https://github.com/nf-core/modules.git": {
             "modules": {

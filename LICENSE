@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) The opentargets/finemapping team
+Copyright (c) The opentargets/nf-fine-mapping team
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

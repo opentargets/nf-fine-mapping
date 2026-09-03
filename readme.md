@@ -1,6 +1,6 @@
-# IDIC Infinite Diversity in Infinite Combinations fine-mapping
+# nf-fine-mapping
 
-**opentargets/IDIC** is a workflow designed to perform the fine-mapping of Genome Wide Association Studies (GWAS) summary statistics. 
+**opentargets/nf-fine-mapping** is a workflow designed to perform the fine-mapping of Genome Wide Association Studies (GWAS) summary statistics. 
 
 The workflow is designed to be an integral part of the Open Targets ecosystem and fits into the data model designed for post GWAS analysis in [Open Targets Gentropy](https://github.com/opentargets/gentropy). The workflow is designed to be run by default on the Google Cloud Platform (GCP) with support of [Nextflow](https://www.nextflow.io/) and contrainerization. 
 
@@ -20,7 +20,7 @@ The fine-mapping process can be run on two resolutions:
 
 Our workflow is designed to be run at scale (pilot run was performed on 26.06 OpenTargets study index that reflects all representative studies from GWAS Catalog up to May 2026, N~7k study pairs/triplets). Due to the scale of the data we can not rely on in-sample-ld.
 
-IDIC workflow implements the **summary statistics resolution** fine-mappong approach with **out-of-sample LD**. Workflow utilizes **panUKBB LD Matrices** openly available to derive the LD information.
+nf-fine-mapping implements the **summary statistics resolution** fine-mapping approach with **out-of-sample LD**. Workflow utilizes **panUKBB LD Matrices** openly available to derive the LD information.
 
 The workflow allows for running following fine-mapping methods via execution routes (subworkflows)
 

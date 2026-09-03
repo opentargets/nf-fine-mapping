@@ -1,7 +1,7 @@
-IDIC fine-mapping pipeline
-==========================
+nf-fine-mapping pipeline
+========================
 
-IDIC is an Open Targets workflow for fine-mapping GWAS summary statistics at
+nf-fine-mapping is an Open Targets workflow for fine-mapping GWAS summary statistics at
 scale. It uses Nextflow for orchestration, containerized execution, Open
 Targets Gentropy-compatible data models, and pan-UK Biobank linkage
 disequilibrium resources.

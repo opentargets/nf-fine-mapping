@@ -1,4 +1,4 @@
-"""Sphinx configuration for the IDIC fine-mapping pipeline."""
+"""Sphinx configuration for the nf-fine-mapping pipeline."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 COLLECTOR_ROOT = REPOSITORY_ROOT / "tools" / "collector"
 sys.path.insert(0, str(COLLECTOR_ROOT / "src"))
 
-project = "IDIC fine-mapping"
+project = "nf-fine-mapping"
 copyright = "2026, Open Targets"
 author = "Open Targets"
 release = "0.1"
@@ -29,5 +29,5 @@ html_theme_options = {
     "show_toc_level": 2,
     "navigation_with_keys": True,
 }
-html_title = "IDIC fine-mapping"
+html_title = "nf-fine-mapping"
 html_static_path = ["_static"]
