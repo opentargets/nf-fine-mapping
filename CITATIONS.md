@@ -1,4 +1,4 @@
-# opentargets/finemapping: Citations
+# opentargets/nf-fine-mapping: Citations
 
 ## [nf-core](https://pubmed.ncbi.nlm.nih.gov/32055031/)
 
@@ -24,7 +24,27 @@
 
 > Lu Z, Wang X, Carr M, Kim A, Gazal S, Mohammadi P, Wu L, Pirruccello J, Kachuri L, Gusev A, Mancuso N. Improved multiancestry fine-mapping identifies cis-regulatory variants underlying molecular traits and disease risk. Nat Genet. 2025 Aug;57(8):1881-1889. doi: 10.1038/s41588-025-02262-7. PubMed PMID: 40691406.
 
+## Single-ancestry fine-mapping methods
+
+### [SuSiE-inf / FINEMAP-inf](https://pubmed.ncbi.nlm.nih.gov/38036779/)
+
+> Cui R, Elzur RA, Kanai M, Ulirsch JC, Weissbrod O, Daly MJ, Neale BM, Fan Z, Finucane HK. Improving fine-mapping by modeling infinitesimal effects. Nat Genet. 2024 Jan;56(1):162-169. doi: 10.1038/s41588-023-01597-3. PubMed PMID: 38036779.
+
+Used as the ancestry-matched single-ancestry baseline that multi-ancestry
+credible-set sizes are compared against, and the strategy Gentropy already
+applies across the Open Targets Platform.
+
 ## Reference resources and frameworks
+
+### [Open Targets Platform / Gentropy](https://doi.org/10.1093/nar/gkae1128)
+
+> Buniello A, Suveges D, Cruz-Castillo C, Bernal Llinares M, Cornu H, Lopez I, Tsukanov K, Roldán-Romero JM, Mehta C, Fumis L, McNeill G, Hayhurst JD, Martinez Osorio RE, Barkhordari E, Ferrer J, Carmona M, Uniyal P, Falaguera MJ, Rusina P, Smit I, Schwartzentruber J, Alegbe T, Ho VW, Considine D, Ge X, Szyszkowski S, Tsepilov Y, Ghoussaini M, Dunham I, Hulcoop DG, McDonagh EM, Ochoa D. Open Targets Platform: facilitating therapeutic hypotheses building in drug discovery. Nucleic Acids Res. 2025 Jan 6;53(D1):D1467-D1475. doi: 10.1093/nar/gkae1128.
+
+> Open Targets Gentropy. https://github.com/opentargets/gentropy
+
+Gentropy has no standalone publication; per the Open Targets citation guidance
+(<https://platform-docs.opentargets.org/citation>) cite the Platform paper
+above, optionally alongside the software URL.
 
 ### [Pan-UK Biobank](https://pubmed.ncbi.nlm.nih.gov/40968291/)
 
