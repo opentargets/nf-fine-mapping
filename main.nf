@@ -446,9 +446,12 @@ output {
         mode 'copy'
     }
     // COLLECT_CANONICAL_REGIONS writes locus parquets under fine_mapping_locus_sets/;
-    // publishing to collected_loci/ makes the final path collected_loci/fine_mapping_locus_sets/*.
+    // publishing to collected_loci/{runId}/ makes the final path
+    // collected_loci/{runId}/fine_mapping_locus_sets/*. Scoped by runId: every
+    // run's COLLECT_CANONICAL_REGIONS task can write the same relative
+    // filenames, so a flat `path 'collected_loci'` collides across runs.
     full_overlap_loci {
-        path 'collected_loci'
+        path { r -> r.collected_locus_path >> "collected_loci/${r.runId}/" }
         mode 'copy'
     }
     partial_overlap_loci {
@@ -459,9 +462,13 @@ output {
         path 'collected_loci'
         mode 'copy'
     }
-    // stats.parquet / stats.json are flat files — collected_loci/stats/ is the target.
+    // Scoped by runId: every run emits the same relative filenames
+    // (stats.json, stats.parquet), so a flat `path` here collides across runs.
     collect_loci_stats {
-        path 'collected_loci/stats'
+        path { r ->
+            r.stats_path >> "collected_loci/stats/${r.runId}/"
+            r.stats_parquet_path >> "collected_loci/stats/${r.runId}/"
+        }
         mode 'copy'
     }
     // HAILING_DUCKS_LD_ANNOTATION writes fine_mapping_locus_sets/ and
