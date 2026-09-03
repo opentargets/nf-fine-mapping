@@ -319,8 +319,39 @@ def test_variant_present_in_one_arm_keeps_unit_diagonal(tmp_path: Path) -> None:
     assert ld[(VARIANTS[0], VARIANTS[2])] == pytest.approx(-0.2 / math.sqrt(2.0), abs=1e-12)
 
 
+def test_variants_unresolved_by_the_ld_panel_are_reported_not_refused(tmp_path: Path) -> None:
+    """A variant the panel could not resolve is not a dropped pair.
+
+    Hailing Ducks returns a complete triangle over the variants it *resolved*,
+    which is a subset of those requested: across the 404 ancestry x locus
+    records of the 26.09 run, n_ld_pairs equals C(n_resolved, 2) + n_resolved in
+    404 cases and C(n_requested, 2) + n_requested in 52. Counting requested
+    variants makes an untouched locus look up to 52% incomplete, so the
+    denominator is the variants present in the LD.
+    """
+    _write_metadata(tmp_path / "metadata.jsonl", [("STUDY_A", "nfe", 100_000.0)])
+    _write_locus_set(
+        tmp_path / "locus_set.parquet",
+        "LOCUS",
+        {"STUDY_A": [(variant, 0.20, 0.05) for variant in VARIANTS]},
+    )
+    # the panel resolved only two of the three requested variants
+    resolved = VARIANTS[:2]
+    _write_ld(
+        tmp_path / "ld.parquet",
+        _full_triangle("nfe", resolved, {(resolved[0], resolved[1]): 0.6}),
+    )
+
+    stats = run_meta_collapse(_config(tmp_path))
+
+    assert stats["nPairsMissingWithBothVariantsPresent"] == 0
+    assert stats["missingPairFraction"] == 0.0
+    assert stats["nVariantsAbsentFromLd"] == 1
+    assert stats["maxAbsDiagonalDeviation"] < 1e-12
+
+
 def test_missing_within_arm_pairs_are_refused(tmp_path: Path) -> None:
-    """An absent pair would be summed as zero correlation, so refuse instead."""
+    """An absent pair between two RESOLVED variants is refused."""
     _two_arm_fixture(tmp_path)
     rows = [
         row

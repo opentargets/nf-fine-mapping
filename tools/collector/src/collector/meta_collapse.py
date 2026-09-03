@@ -316,37 +316,62 @@ def _diagonal_deviation(con: duckdb.DuckDBPyConnection) -> float:
     return float(row[0]) if row else 0.0
 
 
-def _missing_pair_count(con: duckdb.DuckDBPyConnection) -> tuple[int, int]:
+def _missing_pair_count(con: duckdb.DuckDBPyConnection) -> tuple[int, int, int]:
     """Pairs absent from an arm's LD although both variants are present there.
 
-    Each arm's LD is a complete upper triangle including the diagonal, so the
-    expected row count is C(n, 2) + n for an arm contributing n variants. Any
-    shortfall means pairs were dropped, and a dropped pair is treated as zero
-    correlation by the sum in ``_collapse_ld`` -- which understates LD and makes
-    the fine-mapper over-split. Counted here so it can be refused.
+    An arm's LD is a complete upper triangle including the diagonal **over the
+    variants the reference panel could resolve**, so the expected row count is
+    C(m, 2) + m for an arm whose LD mentions m variants. A shortfall means pairs
+    were dropped between resolvable variants, and a dropped pair is summed as
+    zero correlation by ``_collapse_ld`` -- understating LD and making the
+    fine-mapper over-split. That is what this refuses.
+
+    The denominator is deliberately the variants present in the LD, not the
+    variants in the locus set. Hailing Ducks resolves a subset: across the 404
+    ancestry x locus records of the 26.09 test3 run, ``n_ld_pairs`` equals
+    C(n_resolved, 2) + n_resolved in 404 cases and C(n_requested, 2) +
+    n_requested in only 52. Counting requested variants therefore reports up to
+    52% of pairs "missing" on a locus where nothing was dropped at all -- 12.7%
+    across that whole run.
+
+    Variants in the locus set that the panel could not resolve are reported
+    separately as ``nVariantsAbsentFromLd`` and are not an error: the joint arm
+    is handed exactly the same locus set and the same LD, so every arm sees the
+    identical variant/LD mismatch. Consistency across arms is what the
+    comparison requires.
     """
     rows = con.execute(
         """
-        WITH arm_variants AS (
-            SELECT ancestry, count(DISTINCT variantId) AS n
-            FROM variant_weights
-            GROUP BY ancestry
+        WITH ld_variants AS (
+            SELECT DISTINCT ancestry, variantIdI AS variantId FROM canonical_ld
+            UNION
+            SELECT DISTINCT ancestry, variantIdJ AS variantId FROM canonical_ld
+        ),
+        arm_resolved AS (
+            SELECT ancestry, count(*) AS m FROM ld_variants GROUP BY ancestry
         ),
         arm_pairs AS (
-            SELECT ancestry, count(*) AS observed
-            FROM canonical_ld
-            GROUP BY ancestry
+            SELECT ancestry, count(*) AS observed FROM canonical_ld GROUP BY ancestry
         )
         SELECT
-            COALESCE(SUM(CAST(v.n AS BIGINT) * (CAST(v.n AS BIGINT) + 1) / 2), 0) AS expected,
-            COALESCE(SUM(p.observed), 0)                                          AS observed
-        FROM arm_variants AS v
-        LEFT JOIN arm_pairs AS p ON p.ancestry = v.ancestry
+            COALESCE(SUM(CAST(r.m AS BIGINT) * (CAST(r.m AS BIGINT) + 1) / 2), 0) AS expected,
+            COALESCE(SUM(p.observed), 0)                                          AS observed,
+            (
+                SELECT count(*)
+                FROM variant_weights AS w
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ld_variants AS l
+                    WHERE l.ancestry = w.ancestry AND l.variantId = w.variantId
+                )
+            )                                                                     AS absent_from_ld
+        FROM arm_resolved AS r
+        LEFT JOIN arm_pairs AS p ON p.ancestry = r.ancestry
         """
     ).fetchone()
     expected = int(rows[0]) if rows else 0
     observed = int(rows[1]) if rows else 0
-    return max(expected - observed, 0), expected
+    absent = int(rows[2]) if rows else 0
+    return max(expected - observed, 0), expected, absent
 
 
 def _collect_stats(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig, sample_size_total: float) -> dict[str, Any]:
@@ -371,7 +396,7 @@ def _collect_stats(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig, s
     ).fetchone()[0]
     pairs_in = con.execute("SELECT count(*) FROM canonical_ld").fetchone()[0]
     pairs_out = con.execute("SELECT count(*) FROM collapsed_ld").fetchone()[0]
-    missing_pairs, expected_pairs = _missing_pair_count(con)
+    missing_pairs, expected_pairs, absent_from_ld = _missing_pair_count(con)
     deviation = _diagonal_deviation(con)
 
     return {
@@ -388,6 +413,10 @@ def _collect_stats(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig, s
         "nPairsExpected": int(expected_pairs),
         "nPairsMissingWithBothVariantsPresent": int(missing_pairs),
         "missingPairFraction": (missing_pairs / expected_pairs) if expected_pairs else 0.0,
+        # Locus-set variants the LD panel could not resolve. Reported, never
+        # fatal: the joint arm receives the same locus set and the same LD, so
+        # every arm sees an identical variant/LD mismatch.
+        "nVariantsAbsentFromLd": int(absent_from_ld),
         "maxAbsDiagonalDeviation": deviation,
         "sampleSizeTotal": sample_size_total,
         "pairOrderCanonicalisationApplied": True,
