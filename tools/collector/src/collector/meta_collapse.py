@@ -152,24 +152,24 @@ def _create_exploded_locus(con: duckdb.DuckDBPyConnection, input_glob: str) -> N
         f"""
         CREATE TABLE locus_variants AS
         SELECT
-            metadata.ancestry           AS ancestry,
-            metadata.sampleSize         AS sampleSize,
-            rows.studyId                AS studyId,
-            rows.studyLocusId           AS studyLocusId,
-            rows.fineMappingLocusSetId  AS fineMappingLocusSetId,
-            rows.chromosome             AS chromosome,
-            rows.locusStart             AS locusStart,
-            rows.locusEnd               AS locusEnd,
-            rows.qualityControls        AS qualityControls,
+            metadata.ancestry                 AS ancestry,
+            metadata.sampleSize               AS sampleSize,
+            locus_rows.studyId                AS studyId,
+            locus_rows.studyLocusId           AS studyLocusId,
+            locus_rows.fineMappingLocusSetId  AS fineMappingLocusSetId,
+            locus_rows.chromosome             AS chromosome,
+            locus_rows.locusStart             AS locusStart,
+            locus_rows.locusEnd               AS locusEnd,
+            locus_rows.qualityControls        AS qualityControls,
             CAST(entry.variantId AS VARCHAR)      AS variantId,
             CAST(entry.beta AS DOUBLE)            AS beta,
             CAST(entry.standardError AS DOUBLE)   AS standardError,
             CAST(entry.pValueMantissa AS FLOAT)   AS pValueMantissa,
             CAST(entry.pValueExponent AS INTEGER) AS pValueExponent
-        FROM read_parquet({_quote_sql_string(input_glob)}) AS rows,
-             UNNEST(rows.locus) AS exploded(entry)
+        FROM read_parquet({_quote_sql_string(input_glob)}) AS locus_rows,
+             UNNEST(locus_rows.locus) AS exploded(entry)
         JOIN study_metadata AS metadata
-          ON metadata.studyId = rows.studyId
+          ON metadata.studyId = locus_rows.studyId
         WHERE entry.standardError IS NOT NULL
           AND entry.standardError > 0
           AND entry.beta IS NOT NULL
@@ -288,10 +288,10 @@ def _filter_single_arm(con: duckdb.DuckDBPyConnection, input_glob: str, ancestry
     con.execute(
         f"""
         CREATE TABLE collapsed_locus AS
-        SELECT rows.*
-        FROM read_parquet({_quote_sql_string(input_glob)}) AS rows
+        SELECT locus_rows.*
+        FROM read_parquet({_quote_sql_string(input_glob)}) AS locus_rows
         JOIN study_metadata AS metadata
-          ON metadata.studyId = rows.studyId
+          ON metadata.studyId = locus_rows.studyId
         WHERE metadata.ancestry = {_quote_sql_string(ancestry)}
         """
     )

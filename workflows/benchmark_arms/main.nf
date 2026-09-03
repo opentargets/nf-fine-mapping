@@ -31,8 +31,14 @@ def SUPPORTED_ARMS = ['joint', 'meta', 'single'] as Set
 
 def resolve_benchmark_arms() {
     def configured = params.benchmark_arms ?: ['joint']
+    // A value from a config file arrives as a List, but `--benchmark_arms
+    // joint,meta,single` on the command line arrives as a String. Accept both,
+    // so the documented CLI invocation works without a params file.
+    if (configured instanceof CharSequence) {
+        configured = configured.toString().split(',').collect { arm -> arm.trim() }.findAll { arm -> arm }
+    }
     if (!(configured instanceof List) || configured.isEmpty()) {
-        error "params.benchmark_arms must be a non-empty list."
+        error "params.benchmark_arms must be a non-empty list, or a comma-separated string."
     }
     def arms = configured.collect { arm -> arm.toString().toLowerCase() }
     def duplicates = arms.countBy { arm -> arm }.findAll { _arm, count -> count > 1 }.keySet().toList().sort()
