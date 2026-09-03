@@ -6,7 +6,7 @@ process MULTISUSIE_FINE_MAPPING {
     tag "${runId}:${fine_mapping_locus_set_id}"
 
     label "multisusie"
-    container params.multisusie_container ?: 'ghcr.io/project-defiant/multisusie:d19b4cd1108c5e49c50187592d917dab5f29e835'
+    container params.multisusie_container ?: 'ghcr.io/project-defiant/multisusie:71c973ee9514f43c0abda99774a6eb3868fab5f6'
 
     input:
     tuple(
