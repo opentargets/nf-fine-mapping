@@ -107,6 +107,24 @@ nextflow run main.nf -profile testFullCollectorHailingDucks -stub-run \
     --benchmark_arms joint,meta,single
 ```
 
+> **On the list parameter.** `validateParameters()` runs before any workflow
+> code, so the schema has to accept what the command line actually delivers. A
+> config file supplies `benchmark_arms` as a list, but `--benchmark_arms
+> joint,meta,single` arrives as a string, so the schema declares
+> `"type": ["array", "string"]` with a `pattern` constraining the string form to
+> the same three values the array form's `enum` allows. Both are validated;
+> `BENCHMARK_ARMS` splits the string.
+>
+> If a future nf-schema release rejects the union type, use a params file
+> instead and leave the schema strict:
+>
+> ```bash
+> cat > /tmp/benchmark-arms.json <<'JSON'
+> {"benchmark_arms": ["joint", "meta", "single"]}
+> JSON
+> nextflow run main.nf -profile googleCloudTest -params-file /tmp/benchmark-arms.json ...
+> ```
+
 Confirms the channel wiring, the aliased process invocations and the publish
 paths without running anything real. Check the summary reports
 `COLLECTOR_META_COLLAPSE_META`, `COLLECTOR_META_COLLAPSE_SINGLE`,

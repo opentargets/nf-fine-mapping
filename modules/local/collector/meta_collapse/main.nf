@@ -25,6 +25,11 @@ process COLLECTOR_META_COLLAPSE {
         multi_ancestry_pairwise_ld_path: Path,
     )
 
+    // Two named outputs rather than one, so each is consumed exactly once
+    // downstream: `collapsed` feeds the fine-mapping process and `stats` feeds
+    // the publish channel. HAILING_DUCKS_LD_ANNOTATION splits `annotation` and
+    // `stats` for the same reason -- reusing a single queue channel for two
+    // consumers is the pattern this codebase avoids.
     output:
     collapsed = record(
         runId: runId,
@@ -33,8 +38,8 @@ process COLLECTOR_META_COLLAPSE {
         metas: collapsed_metas,
         fine_mapping_locus_set_path: file("meta_collapse/${arm}/fine_mapping_locus_set.parquet"),
         multi_ancestry_pairwise_ld_path: file("meta_collapse/${arm}/multi_ancestry_pairwise_ld.parquet"),
-        stats_path: file("meta_collapse/${runId}/${fine_mapping_locus_set_id}/${arm}/stats.json"),
     )
+    stats = file("meta_collapse/${runId}/${fine_mapping_locus_set_id}/${arm}/stats.json")
 
     topic:
     tuple("${task.process}", "collector", "1.1.0") >> "versions"

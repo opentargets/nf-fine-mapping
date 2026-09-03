@@ -24,12 +24,15 @@ include { COLLECTOR_META_COLLAPSE as COLLECTOR_META_COLLAPSE_SINGLE } from '../.
 include { MULTISUSIE_FINE_MAPPING as MULTISUSIE_FINE_MAPPING_META } from '../../modules/local/multisusie/fine_mapping/main.nf'
 include { MULTISUSIE_FINE_MAPPING as MULTISUSIE_FINE_MAPPING_SINGLE } from '../../modules/local/multisusie/fine_mapping/main.nf'
 
-// 'joint' is the production path and is not re-run here; it is accepted in the
-// list so that params.benchmark_arms reads as the full set of arms in play.
-def SUPPORTED_ARMS = ['joint', 'meta', 'single'] as Set
-
-
 def resolve_benchmark_arms() {
+    // Declared inside the function: with nextflow.enable.types, a top-level
+    // `def X = ...` is a statement, and statements cannot be mixed with script
+    // declarations. workflows/fine_mapping/main.nf scopes supported_methods the
+    // same way.
+    //
+    // 'joint' is the production path and is not re-run here; it is accepted in
+    // the list so params.benchmark_arms reads as the full set of arms in play.
+    def supported_arms = ['joint', 'meta', 'single'] as Set
     def configured = params.benchmark_arms ?: ['joint']
     // A value from a config file arrives as a List, but `--benchmark_arms
     // joint,meta,single` on the command line arrives as a String. Accept both,
@@ -45,9 +48,9 @@ def resolve_benchmark_arms() {
     if (duplicates) {
         error "Duplicate benchmark arms: ${duplicates.join(', ')}"
     }
-    def unsupported = arms.findAll { arm -> !SUPPORTED_ARMS.contains(arm) }.sort()
+    def unsupported = arms.findAll { arm -> !supported_arms.contains(arm) }.sort()
     if (unsupported) {
-        error "Unsupported benchmark arms: ${unsupported.join(', ')}. Supported: ${SUPPORTED_ARMS.sort().join(', ')}"
+        error "Unsupported benchmark arms: ${unsupported.join(', ')}. Supported: ${supported_arms.sort().join(', ')}"
     }
     return arms
 }
@@ -96,7 +99,7 @@ workflow BENCHMARK_ARMS {
     def arms = resolve_benchmark_arms()
 
     if (arms.contains('meta')) {
-        ch_meta_collapsed = COLLECTOR_META_COLLAPSE_META(
+        ch_meta_collapse_out = COLLECTOR_META_COLLAPSE_META(
             ch_locus_annotation.map { r ->
                 tuple(
                     r.runId,
@@ -110,9 +113,9 @@ workflow BENCHMARK_ARMS {
                     r.multi_ancestry_pairwise_ld_path,
                 )
             }
-        ).collapsed
-        ch_meta_results = MULTISUSIE_FINE_MAPPING_META(to_fine_mapping_input(ch_meta_collapsed)).results
-        ch_meta_stats = ch_meta_collapsed.map { r -> r.stats_path }
+        )
+        ch_meta_results = MULTISUSIE_FINE_MAPPING_META(to_fine_mapping_input(ch_meta_collapse_out.collapsed))
+        ch_meta_stats = ch_meta_collapse_out.stats
     }
     else {
         ch_meta_results = channel.empty()
@@ -120,7 +123,7 @@ workflow BENCHMARK_ARMS {
     }
 
     if (arms.contains('single')) {
-        ch_single_collapsed = COLLECTOR_META_COLLAPSE_SINGLE(
+        ch_single_collapse_out = COLLECTOR_META_COLLAPSE_SINGLE(
             ch_locus_annotation.map { r ->
                 def selected = single_arm_meta(r.metas)
                 tuple(
@@ -135,9 +138,9 @@ workflow BENCHMARK_ARMS {
                     r.multi_ancestry_pairwise_ld_path,
                 )
             }
-        ).collapsed
-        ch_single_results = MULTISUSIE_FINE_MAPPING_SINGLE(to_fine_mapping_input(ch_single_collapsed)).results
-        ch_single_stats = ch_single_collapsed.map { r -> r.stats_path }
+        )
+        ch_single_results = MULTISUSIE_FINE_MAPPING_SINGLE(to_fine_mapping_input(ch_single_collapse_out.collapsed))
+        ch_single_stats = ch_single_collapse_out.stats
     }
     else {
         ch_single_results = channel.empty()
