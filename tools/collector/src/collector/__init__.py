@@ -15,6 +15,14 @@ from collector.hailing_ld import HailingLdConfig, HailingLdReference, run_hailin
 from collector.ld_pair_stats import emit_empty_ld_pair_status
 from collector.ld_parity import LdParityConfig, compare_ld_outputs
 from collector.locus_breaker import LocusBreakerConfig, run_locus_breaker
+from collector.meta_collapse import (
+    DEFAULT_DIAGONAL_TOLERANCE,
+    DEFAULT_MAX_MISSING_PAIR_FRACTION,
+    DEFAULT_META_ANCESTRY,
+    MetaCollapseConfig,
+    MetaCollapseError,
+    run_meta_collapse,
+)
 
 app = typer.Typer()
 
@@ -78,6 +86,60 @@ def hailing_ld(
         )
     except (FileNotFoundError, IsADirectoryError, OSError, RuntimeError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
+
+
+@app.command(name="meta_collapse")
+def meta_collapse(
+    input: Annotated[Path, typer.Option("--input", help="FineMappingLocusSet Parquet file or directory dataset.")],
+    multi_ancestry_pairwise_ld: Annotated[
+        Path, typer.Option("--multi_ancestry_pairwise_ld", help="MultiAncestryPairwiseLD Parquet from LD annotation.")
+    ],
+    study_metadata: Annotated[Path, typer.Option("--study_metadata", help="Study metadata JSONL with studyId, ancestry and sampleSize.")],
+    output: Annotated[Path, typer.Option("--output", help="Collapsed FineMappingLocusSet output Parquet file.")],
+    ld_output: Annotated[Path, typer.Option("--ld_output", help="Collapsed MultiAncestryPairwiseLD output Parquet file.")],
+    stats_output: Annotated[Path, typer.Option("--stats_output", help="Collapse statistics JSON file.")],
+    run_id: Annotated[str, typer.Option("--run_id", help="Pipeline run identifier.")],
+    fine_mapping_locus_set_id: Annotated[str, typer.Option("--fine_mapping_locus_set_id", help="Fine-mapping locus-set identifier.")],
+    mode: Annotated[str, typer.Option("--mode", help="Collapse mode: 'meta' or 'single'.")] = "meta",
+    target_ancestry: Annotated[str | None, typer.Option("--target_ancestry", help="Ancestry to retain when --mode single.")] = None,
+    meta_ancestry: Annotated[str, typer.Option("--meta_ancestry", help="Ancestry label written for the collapsed arm.")] = DEFAULT_META_ANCESTRY,
+    diagonal_tolerance: Annotated[
+        float, typer.Option("--diagonal_tolerance", min=0, help="Maximum accepted |r - 1| on the collapsed LD diagonal.")
+    ] = DEFAULT_DIAGONAL_TOLERANCE,
+    max_missing_pair_fraction: Annotated[
+        float,
+        typer.Option("--max_missing_pair_fraction", min=0, max=1, help="Maximum accepted fraction of absent within-arm LD pairs."),
+    ] = DEFAULT_MAX_MISSING_PAIR_FRACTION,
+):
+    """Collapse a multi-ancestry locus set into a single-population comparator arm."""
+    if mode not in ("meta", "single"):
+        raise typer.BadParameter("mode must be 'meta' or 'single'")
+    if mode == "single" and not target_ancestry:
+        raise typer.BadParameter("--target_ancestry is required when --mode single")
+    try:
+        stats = run_meta_collapse(
+            MetaCollapseConfig(
+                input_path=input,
+                ld_path=multi_ancestry_pairwise_ld,
+                study_metadata_path=study_metadata,
+                output_path=output,
+                ld_output_path=ld_output,
+                stats_output_path=stats_output,
+                mode=mode,
+                run_id=run_id,
+                fine_mapping_locus_set_id=fine_mapping_locus_set_id,
+                target_ancestry=target_ancestry,
+                meta_ancestry=meta_ancestry,
+                diagonal_tolerance=diagonal_tolerance,
+                max_missing_pair_fraction=max_missing_pair_fraction,
+            )
+        )
+    except MetaCollapseError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
+    except (FileNotFoundError, IsADirectoryError, OSError, RuntimeError, ValidationError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    typer.echo(f"Collapsed {stats['nAncestryArms']} ancestry arms into mode={stats['mode']} at {output}")
 
 
 @app.command()

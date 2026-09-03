@@ -7,6 +7,7 @@ include { LOCUS_BREAKER    } from './workflows/locus_breaker/main.nf'
 include { LOCUS_COLLECTION } from './workflows/locus_collection/main.nf'
 include { LOCUS_ANNOTATION } from './workflows/locus_annotation/main.nf'
 include { FINE_MAPPING     } from './workflows/fine_mapping/main.nf'
+include { BENCHMARK_ARMS   } from './workflows/benchmark_arms/main.nf'
 include { validateParameters; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 params {
@@ -359,6 +360,13 @@ workflow {
     ld_pair_stats = locus_annotation.map { annotation_row -> annotation_row.stats_path }
     fine_mapping_out = FINE_MAPPING(locus_annotation)
 
+    // Comparator arms for the resolution benchmark. Emits nothing unless
+    // params.benchmark_arms names an arm beyond 'joint', so the production
+    // path is unchanged by default. Placed after LOCUS_ANNOTATION so the
+    // per-ancestry LD is reused rather than re-retrieved: on -resume the
+    // upstream tasks cache-hit and only these arms execute.
+    benchmark_arms_out = BENCHMARK_ARMS(locus_annotation)
+
     ch_versions = channel.topic('versions')
         .map { record -> groovy.json.JsonOutput.toJson([process: record[0], tool: record[1], version: record[2]]) }
         .collect()
@@ -379,6 +387,9 @@ workflow {
     fine_mapping_locus_sets = fine_mapping_locus_sets
     ld_pair_stats         = ld_pair_stats
     multisusie_results    = fine_mapping_out.ch_multisusie
+    multisusie_meta_results   = benchmark_arms_out.ch_meta_results
+    multisusie_single_results = benchmark_arms_out.ch_single_results
+    meta_collapse_stats       = benchmark_arms_out.ch_meta_collapse_stats
     susiex_results        = fine_mapping_out.ch_susiex
     sushie_results        = fine_mapping_out.ch_sushie
     pipeline_versions     = pipeline_versions
@@ -411,6 +422,29 @@ output {
             r.extended_results_path >> "multisusie/${r.runId}/${r.fine_mapping_locus_set_id}/"
             r.stats_path >> "multisusie/${r.runId}/${r.fine_mapping_locus_set_id}/"
         }
+        mode 'copy'
+    }
+    // Comparator arms publish to sibling prefixes rather than under
+    // multisusie/, so the joint arm's paths are byte-identical to a run without
+    // this feature and existing consumers keep working.
+    multisusie_meta_results {
+        path { r ->
+            r.study_locus_path >> "multisusie_meta/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.extended_results_path >> "multisusie_meta/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.stats_path >> "multisusie_meta/${r.runId}/${r.fine_mapping_locus_set_id}/"
+        }
+        mode 'copy'
+    }
+    multisusie_single_results {
+        path { r ->
+            r.study_locus_path >> "multisusie_single/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.extended_results_path >> "multisusie_single/${r.runId}/${r.fine_mapping_locus_set_id}/"
+            r.stats_path >> "multisusie_single/${r.runId}/${r.fine_mapping_locus_set_id}/"
+        }
+        mode 'copy'
+    }
+    meta_collapse_stats {
+        path '.'
         mode 'copy'
     }
     susiex_results {
