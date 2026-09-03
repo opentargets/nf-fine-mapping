@@ -177,8 +177,69 @@ def _create_exploded_locus(con: duckdb.DuckDBPyConnection, input_glob: str) -> N
     )
 
 
+def _restrict_to_ld_backed_arms(con: duckdb.DuckDBPyConnection) -> None:
+    """Keep, per variant, only the arms whose LD can actually support it.
+
+    ``diag(R_meta)[i] = sum_a u[a,i]^2 * R_a[i,i]`` equals 1 only when every arm
+    carrying weight for variant *i* also supplies a diagonal row for *i*. The
+    reference panel resolves a subset of the requested variants, and the subset
+    differs by ancestry, so a variant can sit in two arms' summary statistics
+    while appearing in only one arm's LD. Its weight then sums to less than 1
+    and the diagonal falls short by exactly the missing arm's ``u^2`` -- 0.189
+    on the locus that first exposed this.
+
+    The fix has to move ``z`` and ``R`` together. ``R_meta`` must be the
+    covariance of the very statistics handed to the fine-mapper, so an arm that
+    cannot contribute to ``R`` must not contribute to ``z`` either. Weighting
+    ``z`` over all arms while weighting ``R`` over LD-backed arms only would be
+    internally inconsistent and would quietly misspecify the likelihood.
+
+    A variant absent from *every* arm's LD keeps its full set of arms: it can
+    never enter ``R_meta``, so the diagonal invariant is unaffected, and
+    dropping it would make the meta arm's variant set differ from the joint
+    arm's -- which the comparison depends on holding fixed.
+
+    ``locus_variants_all`` is retained so the exclusions can be counted.
+    """
+    con.execute(
+        """
+        CREATE TABLE ld_presence AS
+        SELECT DISTINCT ancestry, variantIdI AS variantId FROM canonical_ld
+        UNION
+        SELECT DISTINCT ancestry, variantIdJ AS variantId FROM canonical_ld
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE contributing_locus_variants AS
+        WITH flagged AS (
+            SELECT
+                lv.*,
+                CASE WHEN p.variantId IS NULL THEN FALSE ELSE TRUE END AS in_ld
+            FROM locus_variants AS lv
+            LEFT JOIN ld_presence AS p
+              ON p.ancestry = lv.ancestry AND p.variantId = lv.variantId
+        ),
+        scoped AS (
+            SELECT *, bool_or(in_ld) OVER (PARTITION BY variantId) AS any_arm_in_ld
+            FROM flagged
+        )
+        SELECT * EXCLUDE (in_ld, any_arm_in_ld)
+        FROM scoped
+        WHERE in_ld OR NOT any_arm_in_ld
+        """
+    )
+    con.execute("ALTER TABLE locus_variants RENAME TO locus_variants_all")
+    con.execute("ALTER TABLE contributing_locus_variants RENAME TO locus_variants")
+
+
 def _create_weights(con: duckdb.DuckDBPyConnection) -> None:
-    """u[a,i], normalised over the arms in which variant i is observed."""
+    """u[a,i], normalised over the arms that contribute to variant i.
+
+    Contributing arms are those selected by ``_restrict_to_ld_backed_arms``, so
+    ``sum_a u[a,i]^2 = 1`` holds over exactly the arms that also supply LD, and
+    the collapsed diagonal is 1 by construction.
+    """
     con.execute(
         """
         CREATE TABLE variant_weights AS
@@ -357,7 +418,7 @@ def _missing_pair_count(con: duckdb.DuckDBPyConnection) -> tuple[int, int, int]:
             COALESCE(SUM(CAST(r.m AS BIGINT) * (CAST(r.m AS BIGINT) + 1) / 2), 0) AS expected,
             COALESCE(SUM(p.observed), 0)                                          AS observed,
             (
-                SELECT count(*)
+                SELECT count(DISTINCT w.variantId)
                 FROM variant_weights AS w
                 WHERE NOT EXISTS (
                     SELECT 1 FROM ld_variants AS l
@@ -417,6 +478,14 @@ def _collect_stats(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig, s
         # fatal: the joint arm receives the same locus set and the same LD, so
         # every arm sees an identical variant/LD mismatch.
         "nVariantsAbsentFromLd": int(absent_from_ld),
+        # (arm, variant) pairs excluded from the collapse because that arm's LD
+        # could not resolve the variant while another arm's could. Excluded from
+        # z and R together, so R_meta stays the covariance of the z it accompanies.
+        "nArmVariantContributionsDropped": int(
+            con.execute(
+                "SELECT (SELECT count(*) FROM locus_variants_all) - (SELECT count(*) FROM locus_variants)"
+            ).fetchone()[0]
+        ),
         "maxAbsDiagonalDeviation": deviation,
         "sampleSizeTotal": sample_size_total,
         "pairOrderCanonicalisationApplied": True,
@@ -453,8 +522,11 @@ def run_meta_collapse(config: MetaCollapseConfig) -> dict[str, Any]:
     with duckdb.connect() as con:
         _register_metadata(con, metadata)
         _create_exploded_locus(con, input_glob)
-        _create_weights(con)
+        # Order matters: the LD has to be read before the weights, because which
+        # arms a variant is weighted over depends on which arms resolved it.
         _create_canonical_ld(con, ld_glob)
+        _restrict_to_ld_backed_arms(con)
+        _create_weights(con)
 
         if con.execute("SELECT count(*) FROM locus_variants").fetchone()[0] == 0:
             raise MetaCollapseError(f"Locus set {config.fine_mapping_locus_set_id} has no usable variants")

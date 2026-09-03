@@ -350,6 +350,56 @@ def test_variants_unresolved_by_the_ld_panel_are_reported_not_refused(tmp_path: 
     assert stats["maxAbsDiagonalDeviation"] < 1e-12
 
 
+def test_variant_resolved_in_only_one_arms_ld_keeps_a_unit_diagonal(tmp_path: Path) -> None:
+    """The arms a variant is weighted over are the arms whose LD resolved it.
+
+    Regression for the 26.09 run: a variant present in both arms' summary
+    statistics but resolvable in only one arm's LD was weighted over both, so
+    its diagonal fell short by the missing arm's u^2 -- 0.189 on the locus that
+    exposed it. z and R must be weighted over the same arms, or R_meta stops
+    being the covariance of the z it accompanies.
+    """
+    correlations = {
+        (VARIANTS[0], VARIANTS[1]): 0.6,
+        (VARIANTS[0], VARIANTS[2]): -0.2,
+        (VARIANTS[1], VARIANTS[2]): 0.35,
+    }
+    _write_metadata(
+        tmp_path / "metadata.jsonl",
+        [("STUDY_A", "nfe", 22_955.0), ("STUDY_B", "afr", 3_978.0)],
+    )
+    # both arms carry summary statistics for all three variants
+    _write_locus_set(
+        tmp_path / "locus_set.parquet",
+        "LOCUS",
+        {
+            "STUDY_A": [(variant, 0.20, 0.010) for variant in VARIANTS],
+            "STUDY_B": [(variant, 0.20, 0.024) for variant in VARIANTS],
+        },
+    )
+    # but afr's panel resolved only the first two
+    _write_ld(
+        tmp_path / "ld.parquet",
+        _full_triangle("nfe", VARIANTS, correlations)
+        + _full_triangle("afr", VARIANTS[:2], {(VARIANTS[0], VARIANTS[1]): 0.6}),
+    )
+
+    stats = run_meta_collapse(_config(tmp_path))
+
+    assert stats["maxAbsDiagonalDeviation"] < 1e-12
+    assert stats["nArmVariantContributionsDropped"] == 1
+    ld = _read_ld(tmp_path / "out" / "ld.parquet")
+    for variant in VARIANTS:
+        assert ld[(variant, variant)] == pytest.approx(1.0, abs=1e-12)
+    # VARIANTS[2] is weighted on nfe alone (u = 1); VARIANTS[0] is shared, so it
+    # keeps its two-arm nfe weight. Only the nfe term survives in the sum:
+    #   R_meta[0,2] = u_nfe[0] * u_nfe[2] * R_nfe[0,2] = u_nfe[0] * 1 * (-0.2)
+    u_nfe_shared = (1 / 0.010) / math.sqrt((1 / 0.010) ** 2 + (1 / 0.024) ** 2)
+    assert ld[(VARIANTS[0], VARIANTS[2])] == pytest.approx(
+        u_nfe_shared * -0.2, abs=1e-12
+    )
+
+
 def test_missing_within_arm_pairs_are_refused(tmp_path: Path) -> None:
     """An absent pair between two RESOLVED variants is refused."""
     _two_arm_fixture(tmp_path)
