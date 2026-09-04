@@ -270,6 +270,15 @@ def collect_canonical_regions(
     canonical_region_min_maf: Annotated[
         float, typer.Option("--canonical_region_min_maf", min=0, help="Strict minimum MAF for canonical-region variants.")
     ] = 0.01,
+    canonical_region_min_variant_overlap_proportion: Annotated[
+        float,
+        typer.Option(
+            "--canonical_region_min_variant_overlap_proportion",
+            min=0,
+            max=1,
+            help="Minimum Jaccard overlap proportion required for a canonical-region candidate.",
+        ),
+    ] = 0.5,
     canonical_region_max_region_span_bp: Annotated[
         int,
         typer.Option(
@@ -291,6 +300,7 @@ def collect_canonical_regions(
                 stats_parquet_output=stats_parquet_output,
                 stats_json_output=stats_json_output,
                 canonical_region_min_maf=canonical_region_min_maf,
+                canonical_region_min_variant_overlap_proportion=canonical_region_min_variant_overlap_proportion,
                 canonical_region_max_region_span_bp=canonical_region_max_region_span_bp,
             )
         )

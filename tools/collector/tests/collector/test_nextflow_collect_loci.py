@@ -70,6 +70,8 @@ def test_multisusie_process_uses_configured_purity_and_disables_low_memory():
 def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumping():
     workflow = LOCUS_COLLECTION_WORKFLOW.read_text()
     module = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
+    nextflow_config = NEXTFLOW_CONFIG.read_text()
+    schema = NEXTFLOW_SCHEMA.read_text()
 
     assert "workflow LOCUS_COLLECTION" in workflow
     assert "include { COLLECT_CANONICAL_REGIONS }" in workflow
@@ -82,6 +84,7 @@ def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumpin
     assert "--fine_mapping_locus_set_output_dir fine_mapping_locus_sets" in module
     assert "--stats_parquet_output stats.parquet" in module
     assert "--stats_json_output stats.json" in module
+    assert "--canonical_region_min_variant_overlap_proportion '${params.canonical_region_min_variant_overlap_proportion}'" in module
     assert "workflow LOCUS_COLLECTION" in workflow
     assert (
         "tuple(runId: String, metas: List, locus_breaker_paths: List<Path>, ancestries: List<String>, summary_statistics_paths: List<Path>)" in module
@@ -89,6 +92,8 @@ def test_locus_collection_workflow_wires_collect_canonical_regions_after_clumpin
     assert "loci = tuple(runId, metas, file(\"fine_mapping_locus_sets\", type: 'dir'))" in module
     assert 'stats = tuple(runId, metas, file("stats.parquet"), file("stats.json"))' in module
     assert "ch_locus_collection_status = collected.status.filter { path -> path }" in workflow
+    assert "canonical_region_min_variant_overlap_proportion" in nextflow_config
+    assert '"canonical_region_min_variant_overlap_proportion"' in schema
 
 
 def test_locus_annotation_workflow_selects_gentropy_or_hailing_ducks_after_full_overlaps():
@@ -146,6 +151,13 @@ def test_main_workflow_publishes_collect_finemapping_loci_outputs():
     assert "locus_annotation {" not in workflow
     assert "path 'locus_annotation/multi_ancestry_pairwise_ld'" not in workflow
     assert "validation/manifest" in workflow
+
+
+def test_collect_canonical_regions_publishes_stats_artifacts():
+    module = COLLECT_CANONICAL_REGIONS_MODULE.read_text()
+
+    assert "publishDir \"${params.output_dir}\", mode: 'copy', pattern: 'stats.*'" in module
+    assert '"collected_loci/stats/${runId}--${safe_study_set}--${filename}"' in module
 
 
 def test_main_workflow_filters_invalid_runs_from_manifest_locus_and_collection_channels():

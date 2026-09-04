@@ -13,6 +13,7 @@
     "route": {"type": "string", "description": "Manifest route to execute.", "fa_icon": "fas fa-route"},
     "locus_breaker_method": {"type": "string", "enum": ["collector"], "default": "collector", "description": "Implementation used for ancestry-specific locus breaking."},
     "canonical_region_min_maf": {"type": "number", "minimum": 0, "exclusiveMaximum": 0.5, "default": 0.01, "description": "Strict minimum MAF for canonical-region variants, calculated as min(EAF, 1-EAF)."},
+    "canonical_region_min_variant_overlap_proportion": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Minimum exact-variant overlap proportion required for a canonical-region candidate after MAF filtering."},
     "locus_breaker_large_loci_size": {"type": "integer", "minimum": 1, "default": 1500000, "description": "Locus size threshold above which the collector locus-breaker replaces a locus with fixed-width WBC leads; every emitted locus is bounded to this size."},
     "canonical_region_max_region_span_bp": {"type": "integer", "minimum": 1, "default": 3000000, "description": "Inclusive maximum span of a merged canonical region in base pairs."},
     "ld_annotation_method": {"type": "string", "enum": ["hailing_ducks"], "default": "hailing_ducks", "description": "Backend used for ancestry-specific LD annotation."},

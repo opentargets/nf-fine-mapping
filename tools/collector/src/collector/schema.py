@@ -176,7 +176,7 @@ CANONICAL_COMPONENT_SCHEMA = StructSchema(
 
 CANONICAL_REGION_STATS_SCHEMA = DatasetSchema(
     fields=(
-        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR", nullable=False),
+        DatasetField(name="fineMappingLocusSetId", duckdb_type="VARCHAR"),
         DatasetField(name="chromosome", duckdb_type="VARCHAR", nullable=False),
         DatasetField(name="locusStart", duckdb_type="INTEGER", nullable=False),
         DatasetField(name="locusEnd", duckdb_type="INTEGER", nullable=False),
@@ -184,6 +184,11 @@ CANONICAL_REGION_STATS_SCHEMA = DatasetSchema(
         DatasetField(name="nVariantsAboveMafCutoff", duckdb_type="INTEGER", nullable=False),
         DatasetField(name="inputLoci", duckdb_type=ListSchema(item_schema=CANONICAL_INPUT_LOCUS_SCHEMA), nullable=False),
         DatasetField(name="components", duckdb_type=ListSchema(item_schema=CANONICAL_COMPONENT_SCHEMA), nullable=False),
+        DatasetField(name="nIntersectionVariants", duckdb_type="INTEGER"),
+        DatasetField(name="nUnionVariants", duckdb_type="INTEGER"),
+        DatasetField(name="variantOverlapProportion", duckdb_type="DOUBLE"),
+        DatasetField(name="minimumVariantOverlapProportion", duckdb_type="DOUBLE", nullable=False),
+        DatasetField(name="qualityControls", duckdb_type="VARCHAR[]", nullable=False),
     )
 )
 

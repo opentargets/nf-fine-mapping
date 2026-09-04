@@ -52,6 +52,102 @@ nextflow_pipeline {
         }
     }
 
+    test("fails when canonical variant-overlap threshold has the wrong type") {
+        when {
+            params {
+                canonical_region_min_variant_overlap_proportion = "notanumber"
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("canonical_region_min_variant_overlap_proportion") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails when canonical variant-overlap threshold is below zero") {
+        when {
+            params {
+                canonical_region_min_variant_overlap_proportion = -0.1
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("canonical_region_min_variant_overlap_proportion") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("fails when canonical variant-overlap threshold is above one") {
+        when {
+            params {
+                canonical_region_min_variant_overlap_proportion = 1.1
+            }
+        }
+
+        then {
+            def output = [workflow.stdout, workflow.stderr]
+                .findAll { stream -> stream != null && stream.toString() }
+                .collect { stream -> stream.toString() }
+                .join("\n")
+
+            assertAll(
+                { assert workflow.failed },
+                { assert workflow.exitStatus != 0 },
+                { assert output.contains("canonical_region_min_variant_overlap_proportion") },
+                { assert workflow.trace.tasks().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds when canonical variant-overlap threshold is zero") {
+        when {
+            params {
+                canonical_region_min_variant_overlap_proportion = 0.0
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 }
+            )
+        }
+    }
+
+    test("succeeds when canonical variant-overlap threshold is one") {
+        when {
+            params {
+                canonical_region_min_variant_overlap_proportion = 1.0
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert workflow.trace.failed().size() == 0 }
+            )
+        }
+    }
+
     test("fails when MultiSuSiE purity threshold is zero") {
         when {
             params {

@@ -66,3 +66,17 @@ The command writes one locus-set Parquet file per published
 :doc:`overview`), one stats Parquet file, and one JSON statistics document
 per run. The published output is the input for downstream LD annotation
 and fine-mapping.
+
+Publication eligibility is evaluated after the final locus bounds are fixed.
+For each candidate locus set, the collector builds one distinct, exact
+``variantId`` set per study from variants inside those final bounds that also
+pass the strict MAF cutoff. It then computes the multi-study Jaccard overlap
+``intersection / union`` and compares the unrounded value with
+``params.canonical_region_min_variant_overlap_proportion``. Candidates at or
+above the threshold keep their full post-MAF variant lists; the collector does
+not trim published arrays down to the shared intersection.
+
+``stats.parquet`` retains every final candidate, including candidates that are
+not published. A blocking QC leaves ``fineMappingLocusSetId`` null in the
+statistics row, while the locus-set Parquet directory still contains only the
+published candidates with non-null IDs.
