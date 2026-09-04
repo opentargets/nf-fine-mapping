@@ -78,6 +78,43 @@ def single_arm_meta(metas) {
 }
 
 
+// Temporary scope limit while the collapse is still being shaken out on real
+// data. Applied here rather than in main.nf so it touches only the comparator
+// arms: FINE_MAPPING keeps the full channel, so nothing cached is invalidated
+// and the published joint results stay complete.
+//
+// params.benchmark_arms_locus_set_ids selects named locus sets, which is what
+// you want when re-testing a specific failure. params.benchmark_arms_max_loci
+// takes the first n, which is a smoke test -- channel order out of a process is
+// not guaranteed, so `take` does not promise the *same* n across runs. Filter by
+// id when the identity matters.
+def select_benchmark_loci(ch_locus_annotation) {
+    def selected = ch_locus_annotation
+
+    def configured_ids = params.benchmark_arms_locus_set_ids
+    if (configured_ids) {
+        def wanted = (configured_ids instanceof CharSequence
+            ? configured_ids.toString().split(',').collect { id -> id.trim() }.findAll { id -> id }
+            : configured_ids.collect { id -> id.toString() }) as Set
+        if (!wanted) {
+            error "params.benchmark_arms_locus_set_ids was set but resolved to nothing."
+        }
+        log.info "BENCHMARK_ARMS restricted to ${wanted.size()} locus set(s): ${wanted.sort().join(', ')}"
+        selected = selected.filter { r -> wanted.contains(r.fine_mapping_locus_set_id.toString()) }
+    }
+
+    def limit = (params.benchmark_arms_max_loci ?: 0) as int
+    if (limit < 0) {
+        error "params.benchmark_arms_max_loci must be zero or positive."
+    }
+    if (limit > 0) {
+        log.info "BENCHMARK_ARMS limited to the first ${limit} locus set(s) (temporary scope limit)"
+        selected = selected.take(limit)
+    }
+    return selected
+}
+
+
 def to_fine_mapping_input(ch_collapsed) {
     return ch_collapsed.map { r ->
         tuple(
@@ -97,10 +134,13 @@ workflow BENCHMARK_ARMS {
 
     main:
     def arms = resolve_benchmark_arms()
+    // Selected once, then used by both arms, so meta and single see the same
+    // locus sets even under a `take` limit.
+    ch_selected = select_benchmark_loci(ch_locus_annotation)
 
     if (arms.contains('meta')) {
         ch_meta_collapse_out = COLLECTOR_META_COLLAPSE_META(
-            ch_locus_annotation.map { r ->
+            ch_selected.map { r ->
                 tuple(
                     r.runId,
                     r.fine_mapping_locus_set_id,
@@ -124,7 +164,7 @@ workflow BENCHMARK_ARMS {
 
     if (arms.contains('single')) {
         ch_single_collapse_out = COLLECTOR_META_COLLAPSE_SINGLE(
-            ch_locus_annotation.map { r ->
+            ch_selected.map { r ->
                 def selected = single_arm_meta(r.metas)
                 tuple(
                     r.runId,
