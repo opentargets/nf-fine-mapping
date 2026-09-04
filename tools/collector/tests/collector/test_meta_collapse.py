@@ -400,6 +400,45 @@ def test_variant_resolved_in_only_one_arms_ld_keeps_a_unit_diagonal(tmp_path: Pa
     )
 
 
+def test_written_correlations_never_exceed_one(tmp_path: Path) -> None:
+    """MultiSuSiE rejects r > 1, and float64 sums land just outside.
+
+    Regression for "Invalid LD value for 17_45933097_A_AC/...: 1.0000000000000004"
+    on the 26.09 run. Three arms with awkward standard errors make the diagonal
+    sum accumulate rounding; the written value must still be <= 1 exactly, while
+    the reported deviation continues to describe the unclamped sum.
+    """
+    correlations = {
+        (VARIANTS[0], VARIANTS[1]): 0.6,
+        (VARIANTS[0], VARIANTS[2]): -0.2,
+        (VARIANTS[1], VARIANTS[2]): 0.35,
+    }
+    _write_metadata(
+        tmp_path / "metadata.jsonl",
+        [("STUDY_A", "nfe", 149_855.0), ("STUDY_B", "afr", 45_778.0), ("STUDY_C", "eas", 3_389.0)],
+    )
+    _write_locus_set(
+        tmp_path / "locus_set.parquet",
+        "LOCUS",
+        {
+            "STUDY_A": [(v, 0.13, 0.0071) for v in VARIANTS],
+            "STUDY_B": [(v, 0.17, 0.0133) for v in VARIANTS],
+            "STUDY_C": [(v, 0.11, 0.0479) for v in VARIANTS],
+        },
+    )
+    _write_ld(
+        tmp_path / "ld.parquet",
+        _full_triangle("nfe", VARIANTS, correlations)
+        + _full_triangle("afr", VARIANTS, correlations)
+        + _full_triangle("eas", VARIANTS, correlations),
+    )
+
+    run_meta_collapse(_config(tmp_path))
+
+    for (variant_i, variant_j), value in _read_ld(tmp_path / "out" / "ld.parquet").items():
+        assert -1.0 <= value <= 1.0, f"{variant_i}/{variant_j} wrote {value!r}"
+
+
 def test_missing_within_arm_pairs_are_refused(tmp_path: Path) -> None:
     """An absent pair between two RESOLVED variants is refused."""
     _two_arm_fixture(tmp_path)

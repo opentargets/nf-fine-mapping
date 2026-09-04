@@ -494,7 +494,20 @@ def _collect_stats(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig, s
 
 
 def _write_outputs(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig) -> None:
-    """Deterministic output: sorted before COPY so bytes are reproducible."""
+    """Deterministic output: sorted before COPY so bytes are reproducible.
+
+    Correlations are clamped to [-1, 1] on the way out. ``R_meta[i,j]`` is
+    bounded by 1 in exact arithmetic -- the diagonal is ``sum_a u[a,i]^2 = 1``
+    and Cauchy-Schwarz bounds the off-diagonals -- but summing three or more
+    float64 products lands a hair outside, e.g. 1.0000000000000004, which
+    MultiSuSiE rejects with "Invalid LD value". The clamp corrects 4e-16 of
+    accumulated rounding and nothing else.
+
+    Deliberately applied here and not in ``_collapse_ld``: the diagonal guard in
+    ``_collect_stats`` reads the *unclamped* table, so it still measures the true
+    deviation. Clamping first would make that check trivially pass and hide a
+    genuinely wrong weighting.
+    """
     for path in (config.output_path, config.ld_output_path, config.stats_output_path):
         path.parent.mkdir(parents=True, exist_ok=True)
     con.execute(
@@ -502,8 +515,9 @@ def _write_outputs(con: duckdb.DuckDBPyConnection, config: MetaCollapseConfig) -
         f"TO {_quote_sql_string(config.output_path.as_posix())} (FORMAT PARQUET)"
     )
     con.execute(
-        f"COPY (SELECT ancestry, variantIdI, variantIdJ, r FROM collapsed_ld "
-        f"ORDER BY ancestry, variantIdI, variantIdJ) "
+        f"COPY (SELECT ancestry, variantIdI, variantIdJ, "
+        f"       greatest(-1.0, least(1.0, r)) AS r "
+        f"FROM collapsed_ld ORDER BY ancestry, variantIdI, variantIdJ) "
         f"TO {_quote_sql_string(config.ld_output_path.as_posix())} (FORMAT PARQUET)"
     )
 
