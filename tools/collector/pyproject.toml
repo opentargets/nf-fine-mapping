@@ -96,7 +96,7 @@ dev = [
 addopts = "--doctest-modules --cov=src/ --cov-report=xml --cache-clear"
 pythonpath = ["."]
 testpaths = ["tests/collector", "src/collector"]
-markers = ["step_test", "download_jars_from_web", "no_shared_spark"]
+markers = ["step_test", "download_jars_from_web", "no_shared_spark", "slow"]
 filterwarnings = [
     "ignore:.*it is preferred to specify type hints for pandas UDF.*:UserWarning",
 ]
